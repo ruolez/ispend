@@ -25,17 +25,18 @@ NOISE = [
     re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"),
     re.compile(r"\b\d{2}:\d{2}(?::\d{2})?\b"),
     re.compile(r"\b(?=[A-Z0-9]{10,}\b)(?=[A-Z0-9]*\d)[A-Z0-9]+\b"),
-    re.compile(r"\+?\d{1}?[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\b"),
+    re.compile(r"(?<![A-Z0-9])(?:\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\b"),
     re.compile(r"\b\d{6,}\b"),
     re.compile(r"\b(?:AUTHORIZED ON|AUTHORISED ON|VIA|FROM|TO|THE)\s*$"),
     re.compile(r"\b[A-Z]{1,2}\d{4,}\b"),
-    re.compile(r"\b(?:DEBIT|CREDIT|PURCHASE|PAYMENT|ONLINE|MOBILE|RECURRING|WITHDRAWAL|DEPOSIT|POS|EFT|ACH|CHK|CK|WEB|PMT|TXN|TRANS|TRANSACTION|ELECTRONIC|MERCHANT)\b"),
+    re.compile(r"\b(?:DEBIT|CREDIT|PURCHASE|PAYMENT|ONLINE|MOBILE|RECURRING|WITHDRAWAL|DEPOSIT|POS|EFT|ACH|CHK|CK|WEB|PMT|TXN|TRANS|TRANSACTION|ELECTRONIC|MERCHANT|RECEIVED|RCVD|SENT)\b"),
     re.compile(r"\b(?:HTTPS?://)?(?:WWW\.)?([A-Z0-9\-]+)\.(?:COM|CA|NET|ORG|CO|IO|US)\b(?:/\S*)?"),
     re.compile(r"\b\d+(?:\.\d+)?\s?(?:USD|CAD)\b"),
     re.compile(r"\b(?:USD|CAD)\s?\d+(?:\.\d+)?\b"),
 ]
 _DOMAIN = NOISE[-3]
 _GENERIC_WORDS = NOISE[-4]
+LEADING_PREPOSITIONS = {"TO", "FROM", "AT", "FOR", "BY", "VIA", "WITH"}
 GENERIC_RESIDUE = {"THANK", "YOU", "SENT", "RECEIVED", "RCVD", "FROM", "TO", "IN", "OUT", "FEE", "BY", "AT", "AND", "THE", "OF"}
 STATES = {
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME",
@@ -51,7 +52,7 @@ ALIASES = [
     ("AUTOPAY PAYMENT", "Card Payment"), ("AUTOMATIC PAYMENT", "Card Payment"),
     ("ONLINE PAYMENT THANK YOU", "Card Payment"), ("MOBILE PAYMENT THANK YOU", "Card Payment"),
     ("INTERNET PAYMENT THANK YOU", "Card Payment"), ("PAYMENT RECEIVED THANK YOU", "Card Payment"),
-    ("INTERAC E-TRANSFER", "Interac e-Transfer"), ("E-TRANSFER", "Interac e-Transfer"),
+    ("INTERAC E-TRANSFER", "Interac e-Transfer"), ("E-TRANSFER", "Interac e-Transfer"), ("AT&T", "AT&T"),
     ("AMAZON", "Amazon"), ("AMZN", "Amazon"), ("AMAZON PRIME", "Amazon Prime"), ("PRIME VIDEO", "Amazon Prime Video"),
     ("WAL-MART", "Walmart"), ("WAL MART", "Walmart"), ("WALMART", "Walmart"), ("WM SUPERCENTER", "Walmart"),
     ("WM SUPERC", "Walmart"), ("MCDONALD", "McDonald's"), ("MCDONALDS", "McDonald's"), ("STARBUCKS", "Starbucks"),
@@ -106,6 +107,7 @@ def clean_description(description, light=False):
     text = (description or "").upper().replace("’", "'").replace("’", "'")
     text = re.sub(r"[ \t]+", " ", text)
     text = text.strip()
+    had_prefix = False
     for _ in range(3):
         if light:
             break
@@ -113,6 +115,9 @@ def clean_description(description, light=False):
         if stripped == text:
             break
         text = stripped
+        had_prefix = True
+    if light:
+        text = text.replace("-", " ")
     text = _DOMAIN.sub(lambda m: m.group(1) + " ", text)
     text = _STAR_CODE.sub(" ", text)
     text = text.replace("*", " ")
@@ -124,6 +129,8 @@ def clean_description(description, light=False):
     tokens = [t.strip("-./'") for t in text.split()]
     tokens = [t for t in tokens if t]
     tokens = _strip_location(tokens)
+    while had_prefix and len(tokens) > 1 and tokens[0] in LEADING_PREPOSITIONS:
+        tokens = tokens[1:]
     tokens = [t for t in tokens if not re.fullmatch(r"\d+", t) or len(tokens) == 1]
     clean = " ".join(tokens).strip()
     if not light and (not tokens or all(t in GENERIC_RESIDUE for t in tokens)):
@@ -134,7 +141,7 @@ def clean_description(description, light=False):
 
 
 def _alias_key(text):
-    return re.sub(r"[^A-Z0-9 ]+", "", text.upper()).strip()
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]+", " ", text.upper())).strip()
 
 
 def _alias_for(clean):

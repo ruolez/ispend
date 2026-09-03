@@ -59,10 +59,14 @@ class PaymentDescriptionsTest(unittest.TestCase):
         for raw in ["Payment Thank You-Mobile", "AUTOMATIC PAYMENT - THANK", "ONLINE PAYMENT THANK YOU",
                     "AUTOPAY PAYMENT - THANK YOU"]:
             with self.subTest(raw=raw):
-                m = merchant.normalize(raw)
+                m = normalize(raw)
                 self.assertEqual((m.key, m.name), ("CARD PAYMENT", "Card Payment"))
 
     def test_etransfer_keeps_counterparty(self):
-        m = merchant.normalize("INTERAC E-TRANSFER SENT")
+        m = normalize("INTERAC E-TRANSFER SENT")
         self.assertEqual(m.name, "Interac e-Transfer")
-        self.assertEqual(merchant.normalize("INTERAC E-TRANSFER RECEIVED JOHN SMITH").key, "JOHN SMITH")
+        self.assertEqual(normalize("INTERAC E-TRANSFER RECEIVED JOHN SMITH").key, "JOHN SMITH")
+
+    def test_leading_preposition_is_dropped(self):
+        self.assertEqual(normalize("ONLINE PAYMENT TO AMEX CARD 1234").key, "AMEX")
+        self.assertEqual(normalize("ZELLE PAYMENT FROM JANE DOE CONF# ABC123").name, "Zelle")

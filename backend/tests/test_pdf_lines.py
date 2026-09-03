@@ -122,8 +122,8 @@ class UnreadableLineTest(unittest.TestCase):
     def test_date_led_line_without_amount_becomes_invalid_row(self):
         from datetime import date
         lines = [
-            pdf_lines.Line(text="08/05/24 SHELL OIL 57442 SKOKIE IL $52.10", top=10.0, x0=72.0, words=[], page=1),
-            pdf_lines.Line(text="08/09/24 AMAZON .COM*2K4J75 AMZN.COM/BILL WA $31 wl", top=24.0, x0=72.0, words=[], page=1),
+            pdf_lines.Line(text="08/05/24 SHELL OIL 57442 SKOKIE IL $52.10", top=10.0, x0=72.0, x1=400.0, words=[], page=1),
+            pdf_lines.Line(text="08/09/24 AMAZON .COM*2K4J75 AMZN.COM/BILL WA $31 wl", top=24.0, x0=72.0, x1=400.0, words=[], page=1),
         ]
         rows = pdf_lines.rows_to_transactions(lines, None, (date(2024, 7, 21), date(2024, 8, 20)))
         self.assertEqual([(r.txn_date, r.amount, r.is_valid, r.problems) for r in rows], [
