@@ -241,6 +241,7 @@ html[data-sidebar="rail"] .sb-collapse-row { display: none; }
 .input-group > .input.has-trailing { padding-right: 36px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-4); }
 .field > label, .label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+.btn .label { color: inherit; font-size: inherit; font-weight: inherit; }
 .field .hint { margin-top: -2px; }
 .field-row { display: flex; gap: var(--sp-3); }
 .field-row > .field { flex: 1; min-width: 0; }
