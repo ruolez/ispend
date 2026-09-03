@@ -1,0 +1,71 @@
+import logging
+
+from flask import Flask, jsonify
+
+import config
+import db
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def create_app():
+    app = Flask(__name__)
+    app.secret_key = config.SECRET_KEY
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 14,
+        MAX_CONTENT_LENGTH=config.MAX_UPLOAD_BYTES,
+    )
+
+    db.run_migrations()
+
+    import accounts_api
+    import ai_api
+    import auth
+    import categories_api
+    import merchants_api
+    import reports_api
+    import review_api
+    import rules_api
+    import settings_api
+    import statements_api
+    import transactions_api
+
+    for module in (
+        auth, settings_api, accounts_api, categories_api, statements_api,
+        transactions_api, review_api, rules_api, merchants_api, reports_api, ai_api,
+    ):
+        app.register_blueprint(module.bp)
+
+    app.teardown_appcontext(db.close_db)
+
+    with app.app_context():
+        import importer
+        importer.recover_interrupted()
+
+    @app.after_request
+    def no_cache(response):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    @app.errorhandler(413)
+    def too_large(_e):
+        return jsonify({"error": "File is too large (limit %d MB)" % (config.MAX_UPLOAD_BYTES // (1024 * 1024))}), 413
+
+    @app.errorhandler(404)
+    def not_found(_e):
+        return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(Exception)
+    def unhandled(e):
+        app.logger.exception("Unhandled error")
+        return jsonify({"error": "Internal error: %s" % e}), 500
+
+    @app.get("/api/health")
+    def health():
+        return jsonify({"status": "ok"})
+
+    return app

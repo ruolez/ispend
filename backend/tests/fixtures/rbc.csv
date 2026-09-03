@@ -1,0 +1,6 @@
+"Account Type","Account Number","Transaction Date","Cheque Number","Description 1","Description 2","CAD$","USD$"
+Chequing,01234-5678901,8/1/2024,,"TIM HORTONS #4412","TORONTO ON",-4.25,
+Chequing,01234-5678901,8/2/2024,,"PAYROLL DEPOSIT","ACME LTD",3200.00,
+Chequing,01234-5678901,8/5/2024,,"LOBLAWS #1234","TORONTO ON",-96.40,
+Chequing,01234-5678901,8/7/2024,,"INTERAC E-TRANSFER SENT","JOHN SMITH",-150.00,
+Chequing,01234-5678901,8/9/2024,,"BELL CANADA","PAP",-85.00,

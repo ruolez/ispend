@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Sign in · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/login.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-mark" id="login-mark"></div>
+      <h1>Welcome back</h1>
+      <div class="login-sub">Sign in to iSpend to see where your money goes.</div>
+      <div class="error-box login-error" id="login-error" role="alert"></div>
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="username">Username</label>
+          <input class="input" type="text" id="username" autocomplete="username" required autofocus spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input class="input" type="password" id="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
+      </form>
+      <div class="login-foot"><span>iSpend</span><button type="button" class="btn btn-ghost btn-xs" id="login-theme">Theme</button></div>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pages/login.js"></script>
+</body>
+</html>

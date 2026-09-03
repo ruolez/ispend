@@ -1,0 +1,4 @@
+Account Number,Transaction Date,Transaction Amount,Transaction Type,Transaction Description,Balance
+1234,08/01/24,75.00,Debit,Withdrawal to Chase,925.00
+1234,08/05/24,1500.00,Credit,Deposit from ACME PAYROLL,2425.00
+1234,08/09/24,45.50,Debit,Debit Card Purchase - TRADER JOE'S #123,2379.50

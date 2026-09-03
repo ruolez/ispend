@@ -1,0 +1,205 @@
+/* ============================================================
+   iSpend design tokens — light first, dark via prefers-color-scheme
+   (system) or an explicit [data-theme]. Category palette c1..c12 is
+   theme-aware; categories store a slot key, never a hex.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --surface-3: #e9ecf1;
+  --surface-overlay: #ffffff;
+  --border: #e5e8ee;
+  --border-strong: #cfd5df;
+
+  --text-1: #111827;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9aa3b2;
+
+  --accent: #4f6ef7;
+  --accent-hover: #3d5ce6;
+  --accent-fg: #ffffff;
+  --accent-soft: #eceffe;
+  --accent-ring: rgba(79, 110, 247, 0.28);
+
+  --success: #15803d;
+  --success-soft: #ecfdf3;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --info-soft: #eff6ff;
+  --overlay: rgba(17, 24, 39, 0.45);
+
+  --chart-grid: #eceff3;
+  --chart-axis: #cfd5df;
+  --chart-muted: #9aa3b2;
+
+  --c1: #2a78d6;
+  --c2: #eb6834;
+  --c3: #1baf7a;
+  --c4: #eda100;
+  --c5: #e87ba4;
+  --c6: #008300;
+  --c7: #4a3aa7;
+  --c8: #e34948;
+  --c9: #0d9488;
+  --c10: #a3611c;
+  --c11: #6366f1;
+  --c12: #c0399a;
+
+  --sh-1: 0 1px 2px rgba(17, 24, 39, 0.05);
+  --sh-2: 0 4px 12px -2px rgba(17, 24, 39, 0.10), 0 0 0 1px rgba(17, 24, 39, 0.04);
+  --sh-3: 0 16px 40px -8px rgba(17, 24, 39, 0.22);
+
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --fs-3xl: 34px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  --dur-1: 100ms;
+  --dur-2: 160ms;
+  --dur-3: 240ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --sidebar-w: 240px;
+  --sidebar-rail-w: 64px;
+  --topbar-h: 56px;
+  --row-h: 40px;
+  --cell-py: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0c0e13;
+    --surface: #161a22;
+    --surface-2: #1c212b;
+    --surface-3: #242a36;
+    --surface-overlay: #1c212b;
+    --border: #262c38;
+    --border-strong: #353d4c;
+    --text-1: #f1f3f7;
+    --text-2: #b3bbc8;
+    --text-3: #8a93a3;
+    --text-4: #5d6678;
+    --accent: #7c94ff;
+    --accent-hover: #93a7ff;
+    --accent-fg: #0c0e13;
+    --accent-soft: #252c47;
+    --accent-ring: rgba(124, 148, 255, 0.35);
+    --success: #4ade80;
+    --success-soft: #12281c;
+    --danger: #f87171;
+    --danger-soft: #2d1717;
+    --warning: #fbbf24;
+    --warning-soft: #2b2411;
+    --info-soft: #172033;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --chart-grid: #242a36;
+    --chart-axis: #353d4c;
+    --chart-muted: #6b7280;
+    --c1: #3987e5;
+    --c2: #d95926;
+    --c3: #199e70;
+    --c4: #c98500;
+    --c5: #d55181;
+    --c6: #008300;
+    --c7: #9085e9;
+    --c8: #e66767;
+    --c9: #0f9f90;
+    --c10: #b8732d;
+    --c11: #6f7ae6;
+    --c12: #d04fae;
+    --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --sh-2: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --sh-3: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0e13;
+  --surface: #161a22;
+  --surface-2: #1c212b;
+  --surface-3: #242a36;
+  --surface-overlay: #1c212b;
+  --border: #262c38;
+  --border-strong: #353d4c;
+  --text-1: #f1f3f7;
+  --text-2: #b3bbc8;
+  --text-3: #8a93a3;
+  --text-4: #5d6678;
+  --accent: #7c94ff;
+  --accent-hover: #93a7ff;
+  --accent-fg: #0c0e13;
+  --accent-soft: #252c47;
+  --accent-ring: rgba(124, 148, 255, 0.35);
+  --success: #4ade80;
+  --success-soft: #12281c;
+  --danger: #f87171;
+  --danger-soft: #2d1717;
+  --warning: #fbbf24;
+  --warning-soft: #2b2411;
+  --info-soft: #172033;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --chart-grid: #242a36;
+  --chart-axis: #353d4c;
+  --chart-muted: #6b7280;
+  --c1: #3987e5;
+  --c2: #d95926;
+  --c3: #199e70;
+  --c4: #c98500;
+  --c5: #d55181;
+  --c6: #008300;
+  --c7: #9085e9;
+  --c8: #e66767;
+  --c9: #0f9f90;
+  --c10: #b8732d;
+  --c11: #6f7ae6;
+  --c12: #d04fae;
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sh-2: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --sh-3: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border: var(--border-strong); }
+}
+
+html[data-density="compact"] {
+  --row-h: 32px;
+  --cell-py: 6px;
+}

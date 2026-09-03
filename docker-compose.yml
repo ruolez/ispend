@@ -1,0 +1,99 @@
+# Production compose. Tuned for a 2 vCPU / 4 GiB host.
+# Per-container memory limits guarantee no single service can OOM the VM.
+# For local development with live-reload, add the dev overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: ispend-nginx
+    ports:
+      - "${APP_PORT:-5559}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: ${NGINX_MEM_LIMIT:-128M}
+        reservations:
+          memory: 16M
+
+  backend:
+    build: ./backend
+    container_name: ispend-backend
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=ispend
+      - POSTGRES_USER=ispend
+      - STATEMENTS_DIR=/data/statements
+      - GUNICORN_WORKERS=2
+      - GUNICORN_THREADS=4
+    volumes:
+      # Code is baked into the image in production; only uploaded statements persist.
+      - statements:/data/statements
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          # OCR (tesseract + ghostscript) peaks well above a plain Flask worker.
+          memory: ${BACKEND_MEM_LIMIT:-1536M}
+        reservations:
+          memory: 128M
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ispend-postgres
+    environment:
+      - POSTGRES_DB=ispend
+      - POSTGRES_USER=ispend
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    command:
+      - postgres
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "shared_buffers=${PG_SHARED_BUFFERS:-256MB}"
+      - "-c"
+      - "effective_cache_size=${PG_EFFECTIVE_CACHE:-768MB}"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ispend -d ispend"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: ${POSTGRES_MEM_LIMIT:-1024M}
+        reservations:
+          memory: 128M
+
+volumes:
+  pgdata:
+  statements:

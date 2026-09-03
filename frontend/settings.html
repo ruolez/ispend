@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Settings · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/settings.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head"><div><h1>Settings</h1><div class="page-sub">Accounts, AI, appearance and users</div></div></div>
+    <div class="settings-layout">
+      <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+        <a class="nav-item" href="#accounts" data-tab="accounts"></a>
+        <a class="nav-item" href="#ai" data-tab="ai" data-admin></a>
+        <a class="nav-item" href="#appearance" data-tab="appearance"></a>
+        <a class="nav-item" href="#users" data-tab="users" data-admin></a>
+        <a class="nav-item" href="#account" data-tab="account"></a>
+      </nav>
+      <div id="settings-panels">
+        <section class="tab-panel" data-panel="accounts">
+          <div class="settings-section">
+            <div class="row-between mb-4"><div><h2>Accounts</h2><div class="sub" style="margin:0">Bank and card accounts your statements are imported into.</div></div>
+              <button type="button" class="btn btn-primary" data-act="add-account"></button></div>
+            <div id="accounts-table"></div>
+          </div>
+        </section>
+        <section class="tab-panel" data-panel="ai">
+          <div class="settings-section">
+            <h2>AI assistance</h2>
+            <div class="sub">Optional. When configured, iSpend can suggest categories for unknown charges and write monthly insights through OpenRouter. Suggestions are never applied without your confirmation.</div>
+            <div class="card"><div class="card-body" id="ai-panel"></div></div>
+          </div>
+        </section>
+        <section class="tab-panel" data-panel="appearance">
+          <div class="settings-section">
+            <h2>Appearance</h2>
+            <div class="sub">Theme and density are saved to this browser and to your profile.</div>
+            <div class="card"><div class="card-body" id="appearance-panel"></div></div>
+          </div>
+        </section>
+        <section class="tab-panel" data-panel="users">
+          <div class="settings-section">
+            <div class="row-between mb-4"><div><h2>Users</h2><div class="sub" style="margin:0">Each user has their own accounts, transactions, categories and rules.</div></div>
+              <button type="button" class="btn btn-primary" data-act="add-user"></button></div>
+            <div id="users-table"></div>
+          </div>
+        </section>
+        <section class="tab-panel" data-panel="account">
+          <div class="settings-section">
+            <h2>My account</h2>
+            <div class="sub">Signed in as <b id="me-name"></b>.</div>
+            <div class="card"><div class="card-body" id="account-panel"></div></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/settings.js"></script>
+</body>
+</html>
