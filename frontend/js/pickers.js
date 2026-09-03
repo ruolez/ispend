@@ -61,7 +61,7 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
         flat.filter((c) => c.parent_id === p.id).forEach((c) => { rows.push({ id: c.id }); html += optionHtml({ ...c, parent_name: null }, { key: 'c' + c.id }); });
       });
     } else {
-      const ranked = flat.map((c) => ({ c, s: score(c, q) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || a.path.localeCompare?.(b.path) || 0);
+      const ranked = flat.map((c) => ({ c, s: score(c, q) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || (a.c.path || "").localeCompare(b.c.path || ""));
       ranked.forEach(({ c }) => { rows.push({ id: c.id }); html += optionHtml(c); });
       const exact = flat.some((c) => c.name.toLowerCase() === q);
       if (allowCreate && !exact) {
@@ -104,6 +104,7 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
   }
   const pop = ui.popover(anchor, el, { onClose: () => { if (anchor && anchor.focus) anchor.focus(); } });
   build('');
+  pop.position();
   input.addEventListener('input', () => build(input.value));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, rows.length - 1); highlight(); }

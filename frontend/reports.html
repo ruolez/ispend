@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Reports · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/reports.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Reports</h1><div class="page-sub">Where the money goes, by category, merchant and month</div></div>
+      <div class="page-actions"><button type="button" class="btn btn-secondary" data-act="export"></button></div>
+    </div>
+    <div class="tabs" role="tablist" id="report-tabs">
+      <button type="button" class="tab" role="tab" data-tab="category">By category</button>
+      <button type="button" class="tab" role="tab" data-tab="trend">Trend</button>
+      <button type="button" class="tab" role="tab" data-tab="merchants">Merchants</button>
+      <button type="button" class="tab" role="tab" data-tab="compare">Compare months</button>
+    </div>
+    <div class="filter-row" id="filter-row">
+      <button type="button" class="btn btn-secondary" id="range-btn"></button>
+      <button type="button" class="btn btn-secondary" id="acct-btn"></button>
+      <div class="seg" id="months-seg"><button type="button" class="seg-btn" data-months="6">6m</button><button type="button" class="seg-btn active" data-months="12">12m</button><button type="button" class="seg-btn" data-months="24">24m</button></div>
+      <span class="hint grow" id="filter-hint">Transfers and excluded transactions are never counted.</span>
+    </div>
+    <div id="report-error"></div>
+    <section class="tab-panel" data-panel="category" id="panel-category"></section>
+    <section class="tab-panel" data-panel="trend" id="panel-trend"></section>
+    <section class="tab-panel" data-panel="merchants" id="panel-merchants"></section>
+    <section class="tab-panel" data-panel="compare" id="panel-compare"></section>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/reports.js"></script>
+</body>
+</html>

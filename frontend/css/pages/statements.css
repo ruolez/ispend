@@ -1,0 +1,17 @@
+.st-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.st-file-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); flex: 0 0 auto; }
+.st-file-icon.pdf { background: var(--danger-soft); color: var(--danger); }
+.st-file-icon.csv { background: var(--success-soft); color: var(--success); }
+.st-file-icon.xlsx, .st-file-icon.xls { background: var(--info-soft); color: var(--accent); }
+.st-file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.st-file-meta { font-size: var(--fs-xs); color: var(--text-4); }
+.st-status { display: inline-flex; align-items: center; gap: 6px; }
+.st-counts { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st-counts .muted { color: var(--text-4); }
+@media (max-width: 768px) {
+  .tbl-statements thead { display: none; }
+  .tbl-statements tr { display: grid; grid-template-columns: 1fr auto; padding: 10px 12px; gap: 4px 10px; border-bottom: 1px solid var(--border); }
+  .tbl-statements td { display: block; padding: 0; border: 0; height: auto; }
+  .tbl-statements td.col-actions { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
+  .tbl-statements td.hide-mobile { display: none; }
+}

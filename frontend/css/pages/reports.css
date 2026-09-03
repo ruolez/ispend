@@ -1,0 +1,25 @@
+/* Reports */
+.filter-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.filter-row .hint { text-align: right; }
+.share-bar { display: inline-block; width: 100%; max-width: 140px; height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; vertical-align: middle; }
+.share-bar > span { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: inherit; }
+.share-cell { display: flex; align-items: center; gap: 8px; }
+.share-cell .pct { font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; width: 42px; text-align: right; }
+.cat-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cat-cell .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spark-cell canvas { width: 96px; height: 28px; display: block; }
+.trend-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.trend-chips .chip { cursor: pointer; }
+.trend-chips .chip .dot { margin-right: 2px; }
+.trend-chips .chip.active { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text-1); }
+.compare-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.compare-row input[type="month"] { width: 170px; }
+.delta { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+.delta--up { color: var(--danger); }
+.delta--down { color: var(--success); }
+.delta--flat { color: var(--text-4); }
+.delta .ico { width: 12px; height: 12px; }
+.tbl.report-tbl tbody tr.is-clickable:hover .name { color: var(--accent); }
+.totals-row td { font-weight: 600; background: var(--surface-2); }
+.chart-toolbar { display: flex; align-items: center; gap: var(--sp-2); }
+@media (max-width: 640px) { .filter-row .hint { display: none; } .spark-cell, .col-avg, .col-count { display: none; } }

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Insights · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/insights.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Insights</h1><div class="page-sub">Subscriptions, unusual charges and a monthly read on your spending</div></div>
+      <div class="page-actions"><div class="row"><button type="button" class="btn btn-icon btn-secondary" data-act="prev-month" aria-label="Previous month"></button><input type="month" id="month" class="input" aria-label="Month"><button type="button" class="btn btn-icon btn-secondary" data-act="next-month" aria-label="Next month"></button></div></div>
+    </div>
+    <div id="ins-error"></div>
+    <div class="stat-grid" id="ins-stats">
+      <div class="stat is-loading"><div class="stat-label">Active subscriptions</div><div class="stat-value">0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading"><div class="stat-label">Recurring per month</div><div class="stat-value">$0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading"><div class="stat-label">Unusual charges</div><div class="stat-value">0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+    </div>
+    <div class="grid grid-2-1 mt-4 ins-grid">
+      <div class="col gap-4">
+        <section class="card"><header class="card-head"><h2>Recurring charges</h2><div class="card-actions"><span class="hint">Detected from repeating amounts and dates</span></div></header><div id="recurring"></div></section>
+        <section class="card"><header class="card-head"><h2>Unusual activity</h2><div class="card-actions"><span class="hint">Last 45 days</span></div></header><div class="card-body" id="anomalies"></div></section>
+      </div>
+      <section class="card ai-card"><header class="card-head"><h2 class="row gap-2"><span class="ai-mark"></span>AI insights</h2><div class="card-actions" id="ai-actions"></div></header><div class="card-body" id="ai-panel"></div></section>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/insights.js"></script>
+</body>
+</html>

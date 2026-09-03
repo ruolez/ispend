@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Categories · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/categories.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Categories</h1><div class="page-sub">Organize spending into groups. Colors and icons show up everywhere.</div></div>
+      <div class="page-actions">
+        <button type="button" class="btn btn-secondary" data-act="reset-defaults" title="Re-add any missing default categories">Reset defaults</button>
+        <button type="button" class="btn btn-primary" data-act="add-category"></button>
+      </div>
+    </div>
+    <div id="cat-error"></div>
+    <div class="cat-layout">
+      <div class="card cat-tree-card">
+        <div class="cat-tree-head"><span class="cat-col-name">Category</span><span class="cat-col-count">Transactions</span><span class="cat-col-total">This month</span><span class="cat-col-actions"></span></div>
+        <div id="cat-tree" class="cat-tree" role="tree"></div>
+      </div>
+      <aside class="cat-side" id="cat-side"></aside>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/categories.js"></script>
+</body>
+</html>

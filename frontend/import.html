@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Import · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/import.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Import statements</h1><div class="page-sub">Upload CSV, Excel or PDF statements. Scanned PDFs are read with OCR.</div></div>
+    </div>
+    <div class="stepper" id="stepper" aria-label="Import progress">
+      <div class="step active" data-step="upload"><span class="step-num">1</span>Upload</div><span class="step-line"></span>
+      <div class="step" data-step="review"><span class="step-num">2</span>Review</div><span class="step-line"></span>
+      <div class="step" data-step="done"><span class="step-num">3</span>Done</div>
+    </div>
+    <section id="step-upload"></section>
+    <section id="step-review" hidden></section>
+    <section id="step-done" hidden></section>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/import.js"></script>
+</body>
+</html>

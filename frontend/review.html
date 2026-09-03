@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Review · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/review.css">
+</head>
+<body>
+  <main id="main" class="main main--narrow">
+    <div class="page-head">
+      <div><h1>Review</h1><div class="page-sub">Charges that still need a category. One decision covers every charge from the same merchant.</div></div>
+      <div class="page-actions">
+        <button type="button" class="btn btn-secondary" id="btn-ai" hidden></button>
+        <div class="seg" id="rv-mode" role="group" aria-label="Mode">
+          <button type="button" class="seg-btn active" data-mode="merchant" aria-pressed="true">By merchant</button>
+          <button type="button" class="seg-btn" data-mode="single" aria-pressed="false">One by one</button>
+        </div>
+      </div>
+    </div>
+    <div class="rv-progress card" id="rv-progress"></div>
+    <div id="rv-list" class="rv-list"></div>
+    <div class="sr-only" aria-live="polite" id="rv-live"></div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/review.js"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Dashboard · iSpend</title>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/dashboard.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Dashboard</h1><div class="page-sub" id="dash-sub">Your spending at a glance</div></div>
+      <div class="page-actions">
+        <div class="seg" id="range-seg" role="tablist" aria-label="Period">
+          <button type="button" class="seg-btn" data-range="this-month">This month</button>
+          <button type="button" class="seg-btn" data-range="last-month">Last month</button>
+          <button type="button" class="seg-btn" data-range="last-90">Last 90 days</button>
+        </div>
+        <a class="btn btn-primary" href="/import.html" id="import-btn">Import statement</a>
+      </div>
+    </div>
+
+    <div id="dash-error"></div>
+
+    <div class="stat-grid" id="kpis">
+      <div class="stat is-loading" data-kpi="spent"><div class="stat-label">Spent</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading" data-kpi="income"><div class="stat-label">Income</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading" data-kpi="net"><div class="stat-label">Net</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading" data-kpi="txn"><div class="stat-label">Transactions</div><div class="stat-value">0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+    </div>
+
+    <div id="dash-body">
+      <div class="grid grid-2-1 mt-4">
+        <section class="card chart-card">
+          <header class="card-head"><h2>Spending by month</h2><div class="card-actions"><span class="hint" id="monthly-hint">Click a bar to see its transactions</span></div></header>
+          <div class="chart-body is-loading" style="--h:280px"><canvas id="ch-monthly" role="img" aria-label="Spending and income by month"></canvas></div>
+          <footer class="chart-legend" id="ch-monthly-legend"></footer>
+        </section>
+        <section class="card chart-card">
+          <header class="card-head"><h2>Top categories</h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/reports.html?tab=category">All reports</a></div></header>
+          <div class="donut-wrap">
+            <div class="chart-body is-loading" style="--h:200px"><canvas id="ch-donut" role="img" aria-label="Spending by category"></canvas></div>
+            <div class="legend-list donut-legend" id="ch-donut-legend"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid grid-1-1 mt-4">
+        <section class="card">
+          <header class="card-head"><h2>Recent transactions</h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/transactions.html">View all</a></div></header>
+          <div class="card-body pt-0" id="recent-list"><div class="list">${''}</div></div>
+        </section>
+        <section class="card">
+          <header class="card-head"><h2>Needs attention</h2></header>
+          <div class="card-body" id="attention"></div>
+        </section>
+      </div>
+    </div>
+    <div class="card mt-4" id="dash-empty" hidden></div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/dashboard.js"></script>
+</body>
+</html>
