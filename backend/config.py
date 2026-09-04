@@ -19,4 +19,7 @@ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.
 OPENROUTER_TIMEOUT = int(os.environ.get("OPENROUTER_TIMEOUT", 90))
 AI_BATCH_SIZE = int(os.environ.get("AI_BATCH_SIZE", 40))
 
+# Set to 1 when the app is served over HTTPS (install.sh does this for SSL installs).
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+
 APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/Chicago")

@@ -4,3 +4,5 @@ __pycache__/
 data/
 .DS_Store
 backend/tests/.tmp/
+nginx/nginx.ssl.conf
+certbot-www/

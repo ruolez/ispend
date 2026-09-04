@@ -1,0 +1,14 @@
+# HTTPS overlay, enabled by install.sh through COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ssl.yml
+# nginx serves the generated nginx/nginx.ssl.conf, the host's Let's Encrypt
+# certificates (read-only) and the ACME webroot used for renewals.
+services:
+  nginx:
+    ports:
+      - "${APP_PORT:-80}:80"
+      - "${APP_HTTPS_PORT:-443}:443"
+    volumes:
+      - ${NGINX_CONF:-./nginx/nginx.ssl.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./certbot-www:/var/www/certbot:ro

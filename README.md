@@ -14,13 +14,24 @@ Self-hosted personal finance analyzer. Upload bank and credit-card statements (C
 
 nginx (port 5559) → Flask + gunicorn (Python 3.12) → PostgreSQL 16, all in Docker Compose. Frontend is plain HTML/CSS/JS served by nginx with Chart.js vendored locally.
 
-## Quick start (Ubuntu 24 LTS)
+## Quick start (Ubuntu 22.04 / 24.04 LTS)
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/ruolez/ispend/main/install.sh)"
 ```
 
-The installer offers Install / Update / Remove, installs Docker if needed, generates secrets into `/opt/ispend/.env`, tunes container memory limits to the host and prints the admin password when done. Update keeps the database and uploaded statements (a backup is written to `/opt/ispend-backups` first).
+The installer menu offers:
+
+| Option | What it does |
+|---|---|
+| **Install** | Installs Docker if needed, clones the repo to `/opt/ispend`, generates secrets into `.env`, tunes container memory to the host, builds the images and starts the stack. Asks for a **domain name** and issues a **Let's Encrypt certificate** (HTTP on port 80 redirects to HTTPS on 443); answer "n" to run plain HTTP on a port of your choice instead. Prints the admin password when done. |
+| **Update** | Backs up the database and uploaded statements, pulls the latest code from GitHub, rebuilds the images while the old stack keeps serving, then swaps to the new build. Users, accounts, transactions, settings and the certificate are all kept; database migrations apply automatically on startup; unused Docker images are pruned. |
+| **SSL** | Installs or repairs HTTPS for an existing installation: prompts for the domain, issues (or reuses / force-renews) the certificate and switches nginx to HTTPS. |
+| **Remove** | Stops and removes the containers, optionally after a final backup; asks separately before deleting data volumes and the certificate. |
+
+Non-interactive: `install.sh install|update|ssl|remove`.
+
+Certificates are issued with certbot in webroot mode (nginx serves `/.well-known/acme-challenge/` from `certbot-www/`) and renewed automatically by `certbot.timer`; a deploy hook reloads nginx inside the container after each renewal. HTTPS installs set `SESSION_COOKIE_SECURE=1`.
 
 ## Local development
 
@@ -80,6 +91,6 @@ install.sh          Ubuntu installer / updater
 
 ## Security notes
 
-- Session cookies (HttpOnly, SameSite=Lax); run behind HTTPS if exposed beyond a trusted LAN.
+- Session cookies (HttpOnly, SameSite=Lax, Secure when installed with HTTPS); use the installer's Let's Encrypt option when the app is reachable from the internet.
 - Uploaded statements are stored in a private Docker volume and are only downloadable by their owner.
 - Every mutating action is written to `audit_log`.

@@ -15,6 +15,7 @@ def create_app():
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
         PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 14,
         MAX_CONTENT_LENGTH=config.MAX_UPLOAD_BYTES,
     )
