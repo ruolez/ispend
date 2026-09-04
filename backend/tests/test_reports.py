@@ -146,3 +146,26 @@ class MonthlyDrillDownTest(unittest.TestCase):
         self.assertIn("c.parent_id = %s", sql)
         self.assertIn("Directly in", sql)
         self.assertEqual((params[0], params[-1], out["parent_id"], out["series"]), (42, 42, 42, []))
+
+
+class CompareMonthsTest(unittest.TestCase):
+    def _run(self, **kw):
+        calls = []
+        fake = types.SimpleNamespace(query=lambda sql, params=None, **k: calls.append((sql, params)) or [])
+        with mock.patch.object(reports, "db", fake):
+            out = reports.month_over_month(1, "2026-07", **kw)
+        return out, calls[0][1]
+
+    def test_default_compares_with_previous_month(self):
+        out, params = self._run()
+        self.assertEqual((out["month"], out["previous_month"]), ("2026-07", "2026-06"))
+        self.assertEqual(params[:4], (date(2026, 7, 1), date(2026, 7, 31), date(2026, 6, 1), date(2026, 6, 30)))
+
+    def test_vs_picks_any_month(self):
+        out, params = self._run(vs="2025-12")
+        self.assertEqual(out["previous_month"], "2025-12")
+        self.assertEqual(params[2:4], (date(2025, 12, 1), date(2025, 12, 31)))
+
+    def test_same_month_falls_back_to_previous(self):
+        out, _ = self._run(vs="2026-07")
+        self.assertEqual(out["previous_month"], "2026-06")

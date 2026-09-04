@@ -24,3 +24,11 @@
 .totals-row td { font-weight: 600; background: var(--surface-2); }
 .chart-toolbar { display: flex; align-items: center; gap: var(--sp-2); }
 @media (max-width: 640px) { .filter-row .hint { display: none; } .spark-cell, .col-avg, .col-count { display: none; } }
+
+/* compare tab: two month pickers */
+.compare-row { display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+.cmp-pick { display: flex; flex-direction: column; gap: 4px; }
+.cmp-label { font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.cmp-swap { margin-bottom: 2px; }
+.cmp-quick { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.compare-row .hint { flex-basis: 100%; }

@@ -12,6 +12,7 @@ initNav('reports').then(async (me) => {
   if (q.acct) q.acct.split(',').forEach((a) => state.accounts.add(a));
   if (q.months && [6, 12, 24].includes(Number(q.months))) state.months = Number(q.months);
   state.month = q.month || currentMonth();
+  state.vs = q.vs || null;
   state.transfers = q.transfers === '1';
   $('#incl-transfers').checked = state.transfers;
   paintTransfersHint();
@@ -33,6 +34,8 @@ initNav('reports').then(async (me) => {
 });
 
 function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Transfers and excluded transactions are left out.'; }
+function shiftMonth(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function prevMonthOf(ym) { return shiftMonth(ym, -1); }
 function paintMonths() { $$('#months-seg .seg-btn').forEach((b) => { const on = Number(b.dataset.months) === state.months; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function renderAcctBtn() {
@@ -41,7 +44,7 @@ function renderAcctBtn() {
   $('#acct-btn').innerHTML = `${icon('landmark', 'ico-sm')}<span>${esc(label)}</span>${icon('chevron-down', 'ico-sm')}`;
 }
 function sync() {
-  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, transfers: state.transfers ? '1' : null }, { replace: true });
+  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, vs: state.tab === 'compare' && state.vs && state.vs !== prevMonthOf(state.month) ? state.vs : null, transfers: state.transfers ? '1' : null }, { replace: true });
 }
 function switchTab(tab, noPush) {
   state.tab = tab;
@@ -70,8 +73,12 @@ function onAction(e) {
   if (act === 'reload') return loadTab(true);
   if (act === 'export') return exportCsv();
   if (act === 'pct') { state.pct = !state.pct; return loadCategory(); }
-  if (act === 'compare-go') { state.month = $('#cmp-month').value || currentMonth(); sync(); return loadCompare(true); }
-  if (act === 'cmp-prev' || act === 'cmp-next') { const [y, m] = state.month.split('-').map(Number); const d = new Date(y, m - 1 + (act === 'cmp-next' ? 1 : -1), 1); state.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; sync(); return loadCompare(true); }
+  if (act === 'compare-go') { state.month = $('#cmp-month').value || currentMonth(); state.vs = $('#cmp-vs').value || null; sync(); return loadCompare(true); }
+  if (act === 'cmp-prev' || act === 'cmp-next') { state.month = shiftMonth(state.month, act === 'cmp-next' ? 1 : -1); sync(); return loadCompare(true); }
+  if (act === 'vs-prev' || act === 'vs-next') { state.vs = shiftMonth(state.vs || prevMonthOf(state.month), act === 'vs-next' ? 1 : -1); sync(); return loadCompare(true); }
+  if (act === 'vs-previous') { state.vs = null; sync(); return loadCompare(true); }
+  if (act === 'vs-year') { state.vs = shiftMonth(state.month, -12); sync(); return loadCompare(true); }
+  if (act === 'vs-swap') { const a = state.month; state.month = state.vs || prevMonthOf(a); state.vs = a; sync(); return loadCompare(true); }
 }
 function exportCsv() {
   const rq = rangeToQuery(state.range);
@@ -79,7 +86,7 @@ function exportCsv() {
     category: `/api/reports/by-category${toQuery({ ...rq, level: 'top', ...acctQuery(), format: 'csv' })}`,
     trend: `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery(), format: 'csv' })}`,
     merchants: `/api/reports/top-merchants${toQuery({ ...rq, limit: 200, ...acctQuery(), format: 'csv' })}`,
-    compare: `/api/reports/month-over-month${toQuery({ month: state.month, ...acctQuery(), format: 'csv' })}`,
+    compare: `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery(), format: 'csv' })}`,
   };
   const a = document.createElement('a'); a.href = urls[state.tab]; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
 }
@@ -209,12 +216,19 @@ function renderMerchants(res, cats) {
 /* ---------- Compare ---------- */
 async function loadCompare(force) {
   const host = $('#panel-compare');
-  if (!host.querySelector('#ch-compare')) host.innerHTML = `<div class="compare-row mb-4"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-prev" aria-label="Previous month">${icon('chevron-left')}</button><input type="month" id="cmp-month" class="input" value="${esc(state.month)}"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-next" aria-label="Next month">${icon('chevron-right')}</button><button type="button" class="btn btn-secondary" data-act="compare-go">Compare</button><span class="hint" id="cmp-hint"></span></div>
+  if (!host.querySelector('#ch-compare')) host.innerHTML = `<div class="compare-row mb-4">
+      <div class="cmp-pick"><label for="cmp-month" class="cmp-label">This period</label><div class="row gap-1"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-prev" aria-label="Previous month">${icon('chevron-left')}</button><input type="month" id="cmp-month" class="input" value="${esc(state.month)}"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-next" aria-label="Next month">${icon('chevron-right')}</button></div></div>
+      <button type="button" class="btn btn-icon btn-ghost cmp-swap" data-act="vs-swap" title="Swap months" aria-label="Swap months">${icon('arrow-left-right')}</button>
+      <div class="cmp-pick"><label for="cmp-vs" class="cmp-label">Compare with</label><div class="row gap-1"><button type="button" class="btn btn-icon btn-secondary" data-act="vs-prev" aria-label="Earlier month">${icon('chevron-left')}</button><input type="month" id="cmp-vs" class="input" value="${esc(state.vs || prevMonthOf(state.month))}"><button type="button" class="btn btn-icon btn-secondary" data-act="vs-next" aria-label="Later month">${icon('chevron-right')}</button></div></div>
+      <div class="cmp-quick"><span class="text-4 fs-xs">Quick:</span><button type="button" class="btn btn-ghost btn-xs" data-act="vs-previous">Previous month</button><button type="button" class="btn btn-ghost btn-xs" data-act="vs-year">Same month last year</button></div>
+      <span class="hint" id="cmp-hint"></span></div>
     <section class="card chart-card"><header class="card-head"><h2 id="cmp-title">This month vs last</h2></header><div class="chart-body is-loading" style="--h:300px"><canvas id="ch-compare"></canvas></div><footer class="chart-legend" id="ch-compare-legend"></footer></section>
     <section class="card mt-4"><div class="tbl-wrap" style="border:0;box-shadow:none"><table class="tbl report-tbl"><thead><tr><th>Category</th><th class="right" id="cmp-h-prev">Previous</th><th class="right" id="cmp-h-cur">Current</th><th class="right">Change</th></tr></thead><tbody id="cmp-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
   $('#cmp-month').value = state.month;
+  $('#cmp-vs').value = state.vs || prevMonthOf(state.month);
   $('#cmp-month').onchange = (e) => { state.month = e.target.value || currentMonth(); sync(); loadCompare(true); };
-  try { const data = await cached(`mom-${state.month}`, `/api/reports/month-over-month${toQuery({ month: state.month, ...acctQuery() })}`, force); renderCompare(data); }
+  $('#cmp-vs').onchange = (e) => { state.vs = e.target.value || null; sync(); loadCompare(true); };
+  try { const data = await cached(`mom-${state.month}-${state.vs || ''}`, `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery() })}`, force); renderCompare(data); }
   catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
 function deltaHtml(delta, pct) {
@@ -225,6 +239,7 @@ function renderCompare(data) {
   const body = $('#ch-compare').closest('.chart-body'); body.classList.remove('is-loading');
   const cur = state.currency;
   $('#cmp-title').textContent = `${fmtMonth(data.month, { long: true })} vs ${fmtMonth(data.previous_month, { long: true })}`;
+  $('#cmp-h-prev').textContent = fmtMonth(data.previous_month); $('#cmp-h-cur').textContent = fmtMonth(data.month);
   $('#cmp-h-prev').textContent = fmtMonth(data.previous_month); $('#cmp-h-cur').textContent = fmtMonth(data.month);
   const t = data.totals;
   $('#cmp-hint').innerHTML = t.previous || t.current ? `Spent ${fmtMoney(t.current, cur)} vs ${fmtMoney(t.previous, cur)} · ${deltaHtml(t.delta, t.pct)}` : '';

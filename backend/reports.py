@@ -335,10 +335,16 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
     return out
 
 
-def month_over_month(uid, month=None, account_ids=None, include_transfers=False):
+def month_over_month(uid, month=None, account_ids=None, include_transfers=False, vs=None):
+    """Compare one month with another (default: the month before it)."""
     y, m = parse_month(month)
     cur_start, cur_end = month_bounds(y, m)
-    py, pm = shift_month(y, m, -1)
+    if vs:
+        py, pm = parse_month(vs)
+        if (py, pm) == (y, m):
+            py, pm = shift_month(y, m, -1)
+    else:
+        py, pm = shift_month(y, m, -1)
     prev_start, prev_end = month_bounds(py, pm)
     acct_sql, acct_params = _acct(account_ids)
     rows = db.query(
@@ -346,10 +352,10 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False)
                    COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN -t.amount END), 0) AS current,
                    COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN -t.amount END), 0) AS previous
             FROM transactions t {_CAT_JOIN}
-            WHERE {spending_where(include_transfers)} AND t.txn_date BETWEEN %s AND %s{acct_sql}
+            WHERE {spending_where(include_transfers)} AND (t.txn_date BETWEEN %s AND %s OR t.txn_date BETWEEN %s AND %s){acct_sql}
             GROUP BY g.id, g.name, g.color, g.icon
             ORDER BY current DESC, previous DESC""",
-        (cur_start, cur_end, prev_start, prev_end, uid, prev_start, cur_end, *acct_params),
+        (cur_start, cur_end, prev_start, prev_end, uid, cur_start, cur_end, prev_start, prev_end, *acct_params),
     )
     cats = []
     tot_cur = tot_prev = 0.0

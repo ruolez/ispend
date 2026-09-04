@@ -133,10 +133,12 @@ def top_merchants():
 @bp.get("/month-over-month")
 @login_required
 def month_over_month():
-    data = reports.month_over_month(_uid(), request.args.get("month"), _accounts(), include_transfers=_inc())
+    data = reports.month_over_month(_uid(), request.args.get("month"), _accounts(), include_transfers=_inc(),
+                                    vs=request.args.get("vs"))
     if _wants_csv():
         rows = [*data["categories"], {"name": "Total", **data["totals"]}]
-        return _csv_response(rows, f"compare-{data['month']}.csv", ["name", "current", "previous", "delta", "pct"])
+        return _csv_response(rows, f"compare-{data['month']}-vs-{data['previous_month']}.csv",
+                             ["name", "current", "previous", "delta", "pct"])
     return jsonify(data)
 
 
