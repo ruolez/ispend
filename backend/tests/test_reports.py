@@ -118,3 +118,18 @@ class DashboardAssemblyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MonthRangeTest(unittest.TestCase):
+    def test_specific_month_with_previous_month_comparison(self):
+        r = reports.resolve_range("month:2026-07", now=date(2026, 9, 3))
+        self.assertEqual((r["name"], r["label"], r["start"], r["end"], r["prev_start"], r["prev_end"]),
+                         ("month:2026-07", "July 2026", date(2026, 7, 1), date(2026, 7, 31), date(2026, 6, 1), date(2026, 6, 30)))
+
+    def test_january_compares_with_december(self):
+        r = reports.resolve_range("month:2026-01", now=date(2026, 9, 3))
+        self.assertEqual((r["prev_start"], r["prev_end"]), (date(2025, 12, 1), date(2025, 12, 31)))
+
+    def test_invalid_month_falls_back_to_current(self):
+        r = reports.resolve_range("month:2026-13", now=date(2026, 9, 3))
+        self.assertEqual((r["name"], r["start"]), ("month:2026-09", date(2026, 9, 1)))

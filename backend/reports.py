@@ -91,6 +91,20 @@ def resolve_range(range_name=None, date_from=None, date_to=None, now=None):
         prev_start, prev_end = date(t.year - 2, 1, 1), date(t.year - 2, 12, 31)
     elif name == "all":
         start, end, prev_start, prev_end = ALL_START, ALL_END, None, None
+    elif name.startswith("month:"):
+        # month:YYYY-MM — one calendar month, compared with the month before it
+        try:
+            y, m = (int(x) for x in name[6:].split("-", 1))
+            if not 1 <= m <= 12:
+                raise ValueError
+        except ValueError:
+            y, m = t.year, t.month
+            name = f"month:{y:04d}-{m:02d}"
+        start, end = month_bounds(y, m)
+        py, pm = shift_month(y, m, -1)
+        prev_start, prev_end = month_bounds(py, pm)
+        return {"name": name, "label": start.strftime("%B %Y"), "start": start, "end": end,
+                "prev_start": prev_start, "prev_end": prev_end}
     else:
         name = "custom"
         start = _parse_date(date_from) or ALL_START

@@ -1,28 +1,77 @@
 /* Dashboard: one aggregate call, KPIs with deltas + sparklines, monthly bar, category donut, recent, needs attention. */
 const RANGES = ['this-month', 'last-month', 'last-90'];
+const MONTH_RE = /^month:\d{4}-\d{2}$/;
+const MONTHS_BACK = 24;
 const state = { range: 'this-month', data: null, currency: 'USD', me: null };
+
+const validRange = (r) => RANGES.includes(r) || MONTH_RE.test(r || '');
+const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const shiftYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return ymOf(d); };
+const currentYm = () => ymOf(new Date());
+/* The month the current range "sits on" — used as the anchor for the ‹ › arrows. */
+function anchorYm() {
+  if (MONTH_RE.test(state.range)) return state.range.slice(6);
+  if (state.range === 'last-month') return shiftYm(currentYm(), -1);
+  return currentYm();
+}
+
+function setRange(r) {
+  state.range = validRange(r) ? r : 'this-month';
+  setQs({ range: state.range === 'this-month' ? null : state.range }, { replace: true, merge: true });
+  load();
+}
 
 initNav('dashboard').then(async (me) => {
   state.me = me;
   const q = qs();
-  state.range = RANGES.includes(q.range) ? q.range : 'this-month';
+  state.range = validRange(q.range) ? q.range : 'this-month';
   state.currency = await store.displayCurrency();
-  state.seg = ui.segmented($('#range-seg'), { onChange: (b) => {
-    state.range = b.dataset.range;
-    setQs({ range: state.range === 'this-month' ? null : state.range }, { replace: true, merge: true });
-    load();
-  } });
+  state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setRange(b.dataset.range) });
+  // In month mode no preset is checked, so a click on the "current" preset would not fire onChange.
+  $('#range-seg').addEventListener('click', (e) => { const b = e.target.closest('.seg-btn'); if (b && MONTH_RE.test(state.range)) setRange(b.dataset.range); });
+  $('[data-month="prev"]').innerHTML = icon('chevron-left');
+  $('[data-month="next"]').innerHTML = icon('chevron-right');
+  $('#month-nav').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.month === 'prev') return setRange(`month:${shiftYm(anchorYm(), -1)}`);
+    if (b.dataset.month === 'next') { const n = shiftYm(anchorYm(), 1); if (n <= currentYm()) setRange(n === currentYm() ? 'this-month' : `month:${n}`); return; }
+    if (b.id === 'month-btn') openMonthMenu(b);
+  });
   document.body.addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]'); if (!a) return;
     if (a.dataset.act === 'reload') load();
   });
-  window.addEventListener('popstate', () => { const r = qs().range; state.range = RANGES.includes(r) ? r : 'this-month'; load(); });
+  window.addEventListener('popstate', () => { const r = qs().range; state.range = validRange(r) ? r : 'this-month'; load(); });
   load();
 });
 
+function openMonthMenu(anchor) {
+  const cur = anchorYm();
+  const items = [];
+  let ym = currentYm();
+  for (let i = 0; i < MONTHS_BACK; i++) {
+    const value = i === 0 ? 'this-month' : `month:${ym}`;
+    const selected = state.range === value || (MONTH_RE.test(state.range) && state.range.slice(6) === ym) || (i === 0 && state.range === 'this-month');
+    if (ym.endsWith('-12') || i === 0) items.push({ label: ym.slice(0, 4), header: true });
+    items.push({ label: fmtMonth(ym, { long: true }).replace(/ \d{4}$/, ''), checked: selected, onClick: ((v) => () => setRange(v))(value) });
+    ym = shiftYm(ym, -1);
+  }
+  anchor.setAttribute('aria-expanded', 'true');
+  ui.menu(anchor, items, { placement: 'bottom-end', onClose: () => anchor.setAttribute('aria-expanded', 'false') });
+  void cur;
+}
+
 function renderSeg() {
-  const idx = $$('#range-seg .seg-btn').findIndex((b) => b.dataset.range === state.range);
+  const buttons = $$('#range-seg .seg-btn');
+  const idx = buttons.findIndex((b) => b.dataset.range === state.range);
+  const monthMode = MONTH_RE.test(state.range);
   if (state.seg && idx >= 0 && state.seg.current() !== idx) state.seg.select(idx, { focus: false, silent: true });
+  if (monthMode) buttons.forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
+  const btn = $('#month-btn');
+  btn.innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${monthMode ? esc(fmtMonth(state.range.slice(6), { long: true })) : 'Pick a month'}</span>${icon('chevron-down', 'ico-sm')}`;
+  btn.classList.toggle('is-active', monthMode);
+  const next = $('[data-month="next"]');
+  next.disabled = shiftYm(anchorYm(), 1) > currentYm();
 }
 
 async function load() {

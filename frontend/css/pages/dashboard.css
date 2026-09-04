@@ -49,3 +49,10 @@
 .grid-2-1 > .chart-card { display: flex; flex-direction: column; }
 .grid-2-1 > .chart-card .chart-body { flex: 1 1 auto; min-height: 260px; }
 .grid-2-1 > .chart-card .donut-wrap { flex: 1 1 auto; }
+
+/* month navigation next to the range presets */
+.month-nav { display: inline-flex; align-items: center; gap: 4px; }
+.month-nav .btn-icon { width: 36px; padding: 0; }
+.month-nav #month-btn { gap: 6px; min-width: 150px; justify-content: space-between; }
+.month-nav #month-btn.is-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 640px) { .month-nav #month-btn { min-width: 0; } }
