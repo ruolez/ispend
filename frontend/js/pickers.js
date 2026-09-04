@@ -150,6 +150,7 @@ function rangeDates(value) {
 }
 function rangeLabel(value) {
   if (!value || (!value.preset && !value.from && !value.to)) return 'All time';
+  if (value.preset && value.preset.startsWith('month:')) return fmtMonth(value.preset.slice(6), { long: true });
   if (value.preset) { const p = RANGE_PRESETS.find((x) => x.key === value.preset); if (p) return p.label; }
   const { from, to } = value;
   if (from && to) return `${fmtDate(from)} – ${fmtDate(to)}`;
@@ -202,4 +203,28 @@ function dateRangePicker({ anchor, value = { preset: 'this-month' }, onChange, a
 function mountRangeButton(btn, value, onChange) {
   btn.innerHTML = `${icon('calendar', 'ico-sm')}<span>${esc(rangeLabel(value))}</span>${icon('chevron-down', 'ico-sm')}`;
   btn.onclick = () => dateRangePicker({ anchor: btn, value, onChange: (v) => { mountRangeButton(btn, v, onChange); onChange(v); } });
+}
+
+
+/* ---------- shared period (session) ----------
+   The period a user picks on one page (Dashboard, Transactions, Reports, Insights) follows
+   them to the others. Stored as a picker value: {preset:'last-month'|'month:2026-07'|...} or {from,to}. */
+const PERIOD_KEY = 'ispend.period';
+function periodGet() { try { return JSON.parse(sessionStorage.getItem(PERIOD_KEY) || 'null'); } catch { return null; } }
+function periodSet(value) { try { if (value) sessionStorage.setItem(PERIOD_KEY, JSON.stringify(value)); } catch { /* ignore */ } }
+/* Explicit URL range wins, then the shared period, then the page default. */
+function initialRange(q, fallback = { preset: 'this-month' }) {
+  if (q && (q.range || q.from || q.to)) { const v = rangeFromQuery(q, fallback); periodSet(v); return v; }
+  return periodGet() || fallback;
+}
+/* Month (YYYY-MM) that a period sits on — for pages that work per month. */
+function periodMonth(value, now = new Date()) {
+  const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  if (!value) return ym(now);
+  if (value.preset && value.preset.startsWith('month:')) return value.preset.slice(6);
+  if (value.preset === 'last-month') return ym(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  if (value.preset) return ym(now);
+  if (value.to) return value.to.slice(0, 7);
+  if (value.from) return value.from.slice(0, 7);
+  return ym(now);
 }

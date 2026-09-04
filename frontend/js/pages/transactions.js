@@ -38,7 +38,7 @@ initNav('transactions').then(async () => {
   $('#f-q').addEventListener('input', debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250));
   $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
   $('#f-clear').addEventListener('click', clearFilters);
-  $('#f-range').addEventListener('click', () => dateRangePicker({ anchor: $('#f-range'), value: tx.filters.range, onChange: (v) => { tx.filters.range = v; applyFilters(); } }));
+  $('#f-range').addEventListener('click', () => dateRangePicker({ anchor: $('#f-range'), value: tx.filters.range, onChange: (v) => { tx.filters.range = v; periodSet(v); applyFilters(); } }));
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   $('#f-status').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); });
@@ -83,8 +83,8 @@ function currencyOf(item) { const a = acctOf(item.account_id); return item.curre
 /* ---------- URL state ---------- */
 function readUrl() {
   const q = qs();
-  tx.filters.range = rangeFromQuery(q, { preset: 'this-month' });
-  if (q.statement) tx.filters.range = rangeFromQuery(q, { preset: 'all' });
+  tx.filters.range = initialRange(q, { preset: 'this-month' });
+  if (q.statement && !(q.range || q.from || q.to)) tx.filters.range = { preset: 'all' };
   tx.filters.acct = (q.acct || '').split(',').filter(Boolean).map(Number);
   tx.filters.cat = (q.cat || '').split(',').filter(Boolean);
   tx.filters.status = STATUS_OPTS.some(([k]) => k === q.status) ? q.status : 'all';
@@ -122,7 +122,7 @@ function toggleSort(key) {
 /* ---------- toolbar ---------- */
 function paintToolbar() {
   const f = tx.filters;
-  mountRangeButton($('#f-range'), f.range, (v) => { f.range = v; applyFilters(); });
+  mountRangeButton($('#f-range'), f.range, (v) => { f.range = v; periodSet(v); applyFilters(); });
   const acctBtn = $('#f-accounts');
   acctBtn.innerHTML = `${icon('landmark', 'ico-sm')}<span>${f.acct.length ? (f.acct.length === 1 && acctOf(f.acct[0]) ? esc(acctOf(f.acct[0]).name) : `${f.acct.length} accounts`) : 'All accounts'}</span>${icon('chevron-down', 'ico-sm')}`;
   acctBtn.classList.toggle('active', !!f.acct.length);

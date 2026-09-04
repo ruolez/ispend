@@ -5,7 +5,7 @@ const KIND = { unusual_amount: { label: 'Unusual amount', icon: 'trending-up' },
 initNav('insights').then(async (me) => {
   state.me = me;
   state.currency = await store.displayCurrency();
-  state.month = qs().month || currentMonth();
+  state.month = qs().month || periodMonth(periodGet()) || currentMonth();
   $('#month').value = state.month;
   $('[data-act="prev-month"]').innerHTML = icon('chevron-left'); $('[data-act="next-month"]').innerHTML = icon('chevron-right');
   $('.ai-mark').innerHTML = icon('sparkles');
@@ -17,7 +17,7 @@ initNav('insights').then(async (me) => {
 
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function shiftMonth(ym, delta) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-function sync() { $('#month').value = state.month; setQs({ month: state.month === currentMonth() ? null : state.month }, { replace: true }); }
+function sync() { $('#month').value = state.month; periodSet({ preset: state.month === currentMonth() ? 'this-month' : `month:${state.month}` }); setQs({ month: state.month === currentMonth() ? null : state.month }, { replace: true }); }
 
 async function load() {
   $('#ins-error').innerHTML = '';

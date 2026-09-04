@@ -1,13 +1,14 @@
 /* Reports: category (stacked monthly + table), trend (lines), merchants (leaderboard), compare (month over month). */
 const TABS = ['category', 'trend', 'merchants', 'compare'];
-const state = { tab: 'category', range: { preset: 'this-month' }, accounts: new Set(), months: 12, pct: false, month: null, sort: { key: 'total', dir: 'desc' }, trendSel: null, currency: 'USD', cache: {}, accountsList: [], transfers: false };
+const state = { parent: null, tab: 'category', range: { preset: 'this-month' }, accounts: new Set(), months: 12, pct: false, month: null, sort: { key: 'total', dir: 'desc' }, trendSel: null, currency: 'USD', cache: {}, accountsList: [], transfers: false };
 const acctQuery = () => ({ ...(state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {}), ...(state.transfers ? { include_transfers: 1 } : {}) });
 
 initNav('reports').then(async (me) => {
   state.currency = await store.displayCurrency();
   const q = qs();
   state.tab = TABS.includes(q.tab) ? q.tab : 'category';
-  state.range = rangeFromQuery(q, { preset: 'this-month' });
+  state.range = initialRange(q, { preset: 'this-month' });
+  state.parent = q.parent ? Number(q.parent) : null;
   if (q.acct) q.acct.split(',').forEach((a) => state.accounts.add(a));
   if (q.months && [6, 12, 24].includes(Number(q.months))) state.months = Number(q.months);
   state.month = q.month || currentMonth();
@@ -21,7 +22,7 @@ initNav('reports').then(async (me) => {
   paintMonths();
   $('#months-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-months]'); if (!b) return; state.months = Number(b.dataset.months); paintMonths(); sync(); loadTab(true); });
   document.body.addEventListener('click', onAction);
-  mountRangeButton($('#range-btn'), state.range, (v) => { state.range = v; sync(); loadTab(true); });
+  mountRangeButton($('#range-btn'), state.range, (v) => { state.range = v; periodSet(v); sync(); loadTab(true); });
   renderAcctBtn();
   $('#acct-btn').addEventListener('click', () => ui.multiFilter($('#acct-btn'), {
     title: 'Accounts', options: state.accountsList.map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: state.accounts,
@@ -88,7 +89,7 @@ function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme(
 async function loadCategory(force) {
   const host = $('#panel-category');
   if (!host.querySelector('#ch-stack')) {
-    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2>Spending by month</h2><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-act="pct" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-act="pct" data-mode="pct">%</button></div></div></header>
+    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">Spending by month</h2><select id="stack-parent" class="select select-sm" aria-label="Drill into a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-act="pct" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-act="pct" data-mode="pct">%</button></div></div></header>
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
       <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
@@ -96,7 +97,7 @@ async function loadCategory(force) {
   const rq = rangeToQuery(state.range);
   try {
     const [monthly, byCat] = await Promise.all([
-      cached(`monthly-${state.months}`, `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery() })}`, force),
+      cached(`monthly-${state.months}-${state.parent || ''}`, `/api/reports/monthly${toQuery({ months: state.months, parent_id: state.parent || null, ...acctQuery() })}`, force),
       cached(`bycat-${JSON.stringify(rq)}`, `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery() })}`, force),
     ]);
     renderStack(monthly);
@@ -104,7 +105,18 @@ async function loadCategory(force) {
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
 let isolated = null;
+async function fillParentSelect() {
+  const sel = $('#stack-parent'); if (!sel || sel.dataset.filled) return;
+  const flat = await store.categoriesFlat();
+  const kids = new Set(flat.filter((c) => c.parent_id).map((c) => c.parent_id));
+  sel.innerHTML = '<option value="">All categories</option>' + flat.filter((c) => !c.parent_id && kids.has(c.id)).map((c) => `<option value="${c.id}">${esc(c.name)} · subcategories</option>`).join('');
+  sel.value = state.parent ? String(state.parent) : '';
+  sel.dataset.filled = '1';
+  sel.addEventListener('change', () => { state.parent = sel.value ? Number(sel.value) : null; isolated = null; setQs({ parent: state.parent }, { replace: true, merge: true }); loadTab(true); });
+}
 function renderStack(data) {
+  fillParentSelect();
+  const title = $('#stack-title'); if (title) title.textContent = data.parent_id ? 'Subcategories by month' : 'Spending by month';
   const body = $('#ch-stack').closest('.chart-body'); body.classList.remove('is-loading');
   const legend = $('#ch-stack-legend');
   if (!data.series.length) { charts.destroyChart($('#ch-stack')); body.innerHTML = ui.emptyState({ icon: 'bar-chart', title: 'No spending yet', body: 'Import a statement to see monthly spending here.', action: { label: 'Import statement', href: '/import.html' } }); legend.innerHTML = ''; return; }

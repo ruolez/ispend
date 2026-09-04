@@ -75,13 +75,14 @@ function setQs(obj, { replace = true, merge = true } = {}) {
 /* ---------- per-page query memory (session) ----------
    Filters, sorts and tabs live in the URL; remember each page's last query so returning
    through the sidebar restores it. Keys that open a specific thing are not remembered. */
+const PERIOD_QS = ['range', 'from', 'to', 'month'];
 const TRANSIENT_QS = { '/transactions.html': ['open'], '/import.html': ['statement'], '/rules.html': ['cat'], '/statements.html': ['open'] };
 function _qsKey(path) { return `ispend.q:${path}`; }
 function rememberQuery() {
   try {
     const p = new URLSearchParams(location.search);
     const hadParams = Array.from(p.keys()).length > 0;
-    (TRANSIENT_QS[location.pathname] || []).forEach((k) => p.delete(k));
+    (TRANSIENT_QS[location.pathname] || []).concat(PERIOD_QS).forEach((k) => p.delete(k));
     const q = p.toString();
     if (hadParams && !q) return; // a deep link with only transient keys must not erase remembered filters
     sessionStorage.setItem(_qsKey(location.pathname), (q ? `?${q}` : '') + (location.hash || ''));

@@ -207,3 +207,10 @@ class SuggestTest(unittest.TestCase):
         self.assertIn("COALESCE(m.category_id, h.recent_category_id)", sql)
         self.assertEqual((params[0], params[-2:]), (1, ("star%", 8)))
         self.assertEqual(out, rows)
+
+
+class MonthRangeBoundsTest(unittest.TestCase):
+    def test_month_preset_gives_first_and_last_day(self):
+        self.assertEqual(tapi.range_bounds("month:2026-02"), (date(2026, 2, 1), date(2026, 2, 28)))
+        self.assertEqual(tapi.range_bounds("month:2026-12"), (date(2026, 12, 1), date(2026, 12, 31)))
+        self.assertEqual(tapi.range_bounds("month:bogus"), (None, None))

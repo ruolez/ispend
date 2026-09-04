@@ -206,20 +206,36 @@ def _month_list(months, end=None):
     return out
 
 
-def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False):
+def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None):
+    """Top-level categories by month; with parent_id, that category's subcategories by month
+    (charges filed directly on the parent appear as 'Directly in <parent>')."""
     months = max(1, min(int(months or 12), 60))
     month_keys = _month_list(months)
     fy, fm = (int(x) for x in month_keys[0].split("-"))
     first = date(fy, fm, 1)
     acct_sql, acct_params = _acct(account_ids)
-    rows = db.query(
-        f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
-                   g.id AS category_id, g.name, g.color, SUM(-t.amount) AS total
-            FROM transactions t {_CAT_JOIN}
-            WHERE {spending_where(include_transfers)} AND t.txn_date >= %s{acct_sql}
-            GROUP BY 1, 2, 3, 4""",
-        (uid, first, *acct_params),
-    )
+    if parent_id:
+        top_n = 1000
+        rows = db.query(
+            f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
+                       c.id AS category_id,
+                       CASE WHEN c.id = %s THEN 'Directly in ' || c.name ELSE c.name END AS name,
+                       c.color, SUM(-t.amount) AS total
+                FROM transactions t JOIN categories c ON c.id = t.category_id
+                WHERE {spending_where(include_transfers)} AND t.txn_date >= %s
+                  AND c.user_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
+                GROUP BY 1, 2, 3, 4""",
+            (parent_id, uid, first, uid, parent_id, parent_id, *acct_params),
+        )
+    else:
+        rows = db.query(
+            f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
+                       g.id AS category_id, g.name, g.color, SUM(-t.amount) AS total
+                FROM transactions t {_CAT_JOIN}
+                WHERE {spending_where(include_transfers)} AND t.txn_date >= %s{acct_sql}
+                GROUP BY 1, 2, 3, 4""",
+            (uid, first, *acct_params),
+        )
     cats = {}
     for r in rows:
         cid = r["category_id"]
@@ -246,7 +262,7 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
     if other:
         series.append(other)
     totals = [round(sum(s["values"][j] for s in series), 2) for j in range(len(month_keys))]
-    return {"months": month_keys, "series": series, "totals": totals}
+    return {"months": month_keys, "series": series, "totals": totals, "parent_id": parent_id}
 
 
 def trends(uid, months=12, account_ids=None, include_transfers=False):
@@ -425,8 +441,8 @@ def anomalies(uid, lookback_days=45):
 
 # ---------- Dashboard aggregate ----------
 
-def dashboard(uid, range_name=None, account_ids=None):
-    r = resolve_range(range_name or "this-month")
+def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=None):
+    r = resolve_range(range_name or ("custom" if (date_from or date_to) else "this-month"), date_from, date_to)
     cur = summary(uid, r["start"], r["end"], account_ids)
     prev = summary(uid, r["prev_start"], r["prev_end"], account_ids) if r["prev_start"] else None
     cats = by_category(uid, r["start"], r["end"], "top", account_ids)

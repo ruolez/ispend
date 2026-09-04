@@ -48,7 +48,8 @@ def _inc():
 @bp.get("/dashboard")
 @login_required
 def dashboard():
-    return jsonify(reports.dashboard(_uid(), request.args.get("range"), _accounts()))
+    return jsonify(reports.dashboard(_uid(), request.args.get("range"), _accounts(),
+                                     request.args.get("from"), request.args.get("to")))
 
 
 @bp.get("/summary")
@@ -83,7 +84,12 @@ def monthly():
         months = int(months)
     except ValueError:
         return api_error("months must be an integer")
-    data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc())
+    parent_id = request.args.get("parent_id")
+    try:
+        parent_id = int(parent_id) if parent_id else None
+    except ValueError:
+        return api_error("parent_id must be an integer")
+    data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id)
     if _wants_csv():
         rows = []
         for s in data["series"]:

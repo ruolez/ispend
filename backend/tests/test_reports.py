@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 import unittest
 from datetime import date, timedelta
 from decimal import Decimal
@@ -133,3 +134,15 @@ class MonthRangeTest(unittest.TestCase):
     def test_invalid_month_falls_back_to_current(self):
         r = reports.resolve_range("month:2026-13", now=date(2026, 9, 3))
         self.assertEqual((r["name"], r["start"]), ("month:2026-09", date(2026, 9, 1)))
+
+
+class MonthlyDrillDownTest(unittest.TestCase):
+    def test_parent_id_restricts_to_subcategories(self):
+        calls = []
+        fake = types.SimpleNamespace(query=lambda sql, params=None, **kw: calls.append((sql, params)) or [])
+        with mock.patch.object(reports, "db", fake):
+            out = reports.monthly_by_category(1, 3, parent_id=42)
+        sql, params = calls[0]
+        self.assertIn("c.parent_id = %s", sql)
+        self.assertIn("Directly in", sql)
+        self.assertEqual((params[0], params[-1], out["parent_id"], out["series"]), (42, 42, 42, []))

@@ -56,3 +56,6 @@
 .month-nav #month-btn { gap: 6px; min-width: 150px; justify-content: space-between; }
 .month-nav #month-btn.is-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 640px) { .month-nav #month-btn { min-width: 0; } }
+
+.legend-drill { margin-left: 4px; color: var(--text-4); vertical-align: middle; }
+#donut-head h2 { margin: 0; }

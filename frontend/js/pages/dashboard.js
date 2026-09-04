@@ -2,76 +2,79 @@
 const RANGES = ['this-month', 'last-month', 'last-90'];
 const MONTH_RE = /^month:\d{4}-\d{2}$/;
 const MONTHS_BACK = 24;
-const state = { range: 'this-month', data: null, currency: 'USD', me: null };
+/* state.period is a picker value ({preset} or {from,to}) shared with the other pages. */
+const state = { period: { preset: 'this-month' }, data: null, currency: 'USD', me: null, drill: null };
 
-const validRange = (r) => RANGES.includes(r) || MONTH_RE.test(r || '');
 const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-const shiftYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return ymOf(d); };
+const shiftYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); return ymOf(new Date(y, m - 1 + n, 1)); };
 const currentYm = () => ymOf(new Date());
-/* The month the current range "sits on" — used as the anchor for the ‹ › arrows. */
-function anchorYm() {
-  if (MONTH_RE.test(state.range)) return state.range.slice(6);
-  if (state.range === 'last-month') return shiftYm(currentYm(), -1);
-  return currentYm();
-}
+const presetOf = () => state.period.preset || '';
+/* The month the current period "sits on" — anchor for the ‹ › arrows. */
+function anchorYm() { return periodMonth(state.period); }
 
-function setRange(r) {
-  state.range = validRange(r) ? r : 'this-month';
-  setQs({ range: state.range === 'this-month' ? null : state.range }, { replace: true, merge: true });
+function setPeriod(v) {
+  state.period = v && (v.preset || v.from || v.to) ? v : { preset: 'this-month' };
+  state.drill = null;
+  periodSet(state.period);
+  const q = rangeToQuery(state.period);
+  setQs({ range: q.range === 'this-month' ? null : q.range, from: q.from, to: q.to }, { replace: true, merge: true });
   load();
 }
 
 initNav('dashboard').then(async (me) => {
   state.me = me;
-  const q = qs();
-  state.range = validRange(q.range) ? q.range : 'this-month';
+  state.period = initialRange(qs(), { preset: 'this-month' });
   state.currency = await store.displayCurrency();
-  state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setRange(b.dataset.range) });
-  // In month mode no preset is checked, so a click on the "current" preset would not fire onChange.
-  $('#range-seg').addEventListener('click', (e) => { const b = e.target.closest('.seg-btn'); if (b && MONTH_RE.test(state.range)) setRange(b.dataset.range); });
+  state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setPeriod({ preset: b.dataset.range }) });
+  // When no preset is checked (month or custom period) a click on the "current" preset would not fire onChange.
+  $('#range-seg').addEventListener('click', (e) => { const b = e.target.closest('.seg-btn'); if (b && !RANGES.includes(presetOf())) setPeriod({ preset: b.dataset.range }); });
   $('[data-month="prev"]').innerHTML = icon('chevron-left');
   $('[data-month="next"]').innerHTML = icon('chevron-right');
   $('#month-nav').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.month === 'prev') return setRange(`month:${shiftYm(anchorYm(), -1)}`);
-    if (b.dataset.month === 'next') { const n = shiftYm(anchorYm(), 1); if (n <= currentYm()) setRange(n === currentYm() ? 'this-month' : `month:${n}`); return; }
+    if (b.dataset.month === 'prev') return setPeriod({ preset: `month:${shiftYm(anchorYm(), -1)}` });
+    if (b.dataset.month === 'next') { const n = shiftYm(anchorYm(), 1); if (n <= currentYm()) setPeriod({ preset: n === currentYm() ? 'this-month' : `month:${n}` }); return; }
     if (b.id === 'month-btn') openMonthMenu(b);
   });
   document.body.addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]'); if (!a) return;
     if (a.dataset.act === 'reload') load();
+    if (a.dataset.act === 'drill-up') { state.drill = null; renderDonut(state.data); }
   });
-  window.addEventListener('popstate', () => { const r = qs().range; state.range = validRange(r) ? r : 'this-month'; load(); });
+  window.addEventListener('popstate', () => { state.period = initialRange(qs(), { preset: 'this-month' }); load(); });
   load();
 });
 
 function openMonthMenu(anchor) {
-  const cur = anchorYm();
-  const items = [];
+  const items = [{ label: 'Custom range…', icon: 'calendar', onClick: () => dateRangePicker({ anchor, value: state.period, onChange: (v) => setPeriod(v) }) }, { divider: true }];
   let ym = currentYm();
   for (let i = 0; i < MONTHS_BACK; i++) {
     const value = i === 0 ? 'this-month' : `month:${ym}`;
-    const selected = state.range === value || (MONTH_RE.test(state.range) && state.range.slice(6) === ym) || (i === 0 && state.range === 'this-month');
+    const selected = presetOf() === value;
     if (ym.endsWith('-12') || i === 0) items.push({ label: ym.slice(0, 4), header: true });
-    items.push({ label: fmtMonth(ym, { long: true }).replace(/ \d{4}$/, ''), checked: selected, onClick: ((v) => () => setRange(v))(value) });
+    items.push({ label: fmtMonth(ym, { long: true }).replace(/ \d{4}$/, ''), checked: selected, onClick: ((v) => () => setPeriod({ preset: v }))(value) });
     ym = shiftYm(ym, -1);
   }
   anchor.setAttribute('aria-expanded', 'true');
   ui.menu(anchor, items, { placement: 'bottom-end', onClose: () => anchor.setAttribute('aria-expanded', 'false') });
-  void cur;
 }
 
 function renderSeg() {
   const buttons = $$('#range-seg .seg-btn');
-  const idx = buttons.findIndex((b) => b.dataset.range === state.range);
-  const monthMode = MONTH_RE.test(state.range);
+  const preset = presetOf();
+  const idx = buttons.findIndex((b) => b.dataset.range === preset);
+  const other = idx < 0;
   if (state.seg && idx >= 0 && state.seg.current() !== idx) state.seg.select(idx, { focus: false, silent: true });
-  if (monthMode) buttons.forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
+  if (other) buttons.forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
   const btn = $('#month-btn');
-  btn.innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${monthMode ? esc(fmtMonth(state.range.slice(6), { long: true })) : 'Pick a month'}</span>${icon('chevron-down', 'ico-sm')}`;
-  btn.classList.toggle('is-active', monthMode);
-  const next = $('[data-month="next"]');
-  next.disabled = shiftYm(anchorYm(), 1) > currentYm();
+  btn.innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${other ? esc(rangeLabel(state.period)) : 'Pick a month'}</span>${icon('chevron-down', 'ico-sm')}`;
+  btn.classList.toggle('is-active', other);
+  $('[data-month="next"]').disabled = shiftYm(anchorYm(), 1) > currentYm();
+}
+
+function dashboardQuery() {
+  const q = rangeToQuery(state.period);
+  return toQuery({ range: q.range, from: q.from, to: q.to });
 }
 
 async function load() {
@@ -83,12 +86,13 @@ async function load() {
   $('#attention').innerHTML = `<div class="col gap-3">${ui.skeleton('100%', 56)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 14)}${ui.skeleton('100%', 14)}</div>`;
   let data;
   try {
-    data = await api(`/api/reports/dashboard?range=${encodeURIComponent(state.range)}`);
+    data = await api(`/api/reports/dashboard${dashboardQuery()}`);
   } catch (err) {
     $('#dash-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
     return;
   }
   state.data = data;
+  state.subCounts = new Map((await store.categoriesFlat()).filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
   const hasAny = data.kpis.txn_count > 0 || data.monthly.some((m) => m.spent || m.income) || data.recent.length > 0;
   $('#dash-body').hidden = !hasAny;
   $('#dash-empty').hidden = hasAny;
@@ -102,6 +106,7 @@ async function load() {
     renderKpis(data);
     return;
   }
+  if (data.range.name === 'custom') data.range.label = rangeLabel(state.period);
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
   loadBreakdown(data.range);
@@ -194,12 +199,34 @@ function renderMonthly(data) {
 }
 
 /* ---------- Donut ---------- */
-function renderDonut(data) {
+async function renderDonut(data) {
   const body = $('#ch-donut').closest('.chart-body');
-  body.classList.remove('is-loading');
-  const cats = data.top_categories;
   const legend = $('#ch-donut-legend');
   const cur = state.currency;
+  const head = $('#donut-head');
+  let cats = data.top_categories;
+  let parent = null;
+  if (state.drill) {
+    body.classList.add('is-loading');
+    try {
+      const [sub, flat] = await Promise.all([
+        api(`/api/reports/by-category${toQuery({ from: data.range.start, to: data.range.end, level: 'sub' })}`),
+        store.categoriesFlat(),
+      ]);
+      parent = flat.find((c) => c.id === state.drill) || data.top_categories.find((c) => c.id === state.drill) || { id: state.drill, name: 'Category' };
+      const own = sub.categories.find((c) => c.id === state.drill);
+      cats = sub.categories.filter((c) => c.parent_id === state.drill).map((c) => ({ ...c }));
+      if (own && own.total > 0 && cats.length) cats.push({ ...own, name: `Directly in ${parent.name}`, direct: true });
+      if (own && !cats.length) cats = [{ ...own, direct: true }];
+      const t = cats.reduce((s, c) => s + c.total, 0);
+      cats.forEach((c) => { c.pct = t ? c.total / t * 100 : 0; });
+      cats.sort((a, b) => b.total - a.total);
+    } catch (err) { body.classList.remove('is-loading'); body.innerHTML = ui.errorBox(err.message); return; }
+  }
+  body.classList.remove('is-loading');
+  head.innerHTML = state.drill
+    ? `<button type="button" class="btn btn-ghost btn-xs" data-act="drill-up">${icon('chevron-left', 'ico-sm')}All categories</button><span class="text-3">·</span><span class="fw-500">${esc(parent.name)}</span>`
+    : '<h2>Top categories</h2>';
   if (!cats.length) {
     charts.destroyChart($('#ch-donut'));
     body.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">${icon('pie-chart')}</div><div class="empty-body">No spending in this period</div></div>`;
@@ -208,23 +235,30 @@ function renderDonut(data) {
   }
   if (!body.querySelector('canvas')) body.innerHTML = '<canvas id="ch-donut" role="img" aria-label="Spending by category"></canvas>';
   const total = cats.reduce((s, c) => s + c.total, 0);
+  const colorOf = (c) => catColor(c.color || (parent && parent.color) || 'muted');
   const chart = charts.makeChart($('#ch-donut'), (t) => ({
     type: 'doughnut',
-    data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.total), backgroundColor: cats.map((c) => catColor(c.color)), hoverOffset: 6, spacing: 2 }] },
-    options: { cutout: '72%', plugins: { tooltip: { callbacks: { label: (c) => `${c.label}: ${fmtMoney(c.parsed, cur)} (${fmtPct(c.parsed / total)})` } } }, onClick: (_e, els) => { if (els.length) goCategory(cats[els[0].index]); } },
-    plugins: [charts.donutCenterPlugin(() => fmtMoney(total, cur, { compact: total >= 100000 }), data.range.label.toLowerCase())],
+    data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.total), backgroundColor: cats.map((c) => colorOf(c)), hoverOffset: 6, spacing: 2 }] },
+    options: { cutout: '72%', plugins: { tooltip: { callbacks: { label: (c) => `${c.label}: ${fmtMoney(c.parsed, cur)} (${fmtPct(c.parsed / total)})` } } }, onClick: (_e, els) => { if (els.length) pickCategory(cats[els[0].index]); } },
+    plugins: [charts.donutCenterPlugin(() => fmtMoney(total, cur, { compact: total >= 100000 }), state.drill ? parent.name : data.range.label.toLowerCase())],
   }));
-  legend.innerHTML = cats.map((c, i) => `<button type="button" class="legend-item" data-i="${i}" title="View transactions">
-    <span class="legend-name"><i class="dot" style="--c:${catColor(c.color)}"></i><span class="truncate">${esc(c.name)}</span><span class="legend-pct">${fmtPct(c.pct / 100)}</span></span>
-    <span class="legend-val">${fmtMoney(c.total, cur)}</span></button>`).join('');
-  legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) goCategory(cats[Number(b.dataset.i)]); };
+  const canDrill = (c) => !state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0;
+  legend.innerHTML = cats.map((c, i) => `<button type="button" class="legend-item" data-i="${i}" title="${canDrill(c) ? 'Show subcategories' : 'View transactions'}">
+    <span class="legend-name"><i class="dot" style="--c:${colorOf(c)}"></i><span class="truncate">${esc(c.name)}</span><span class="legend-pct">${fmtPct(c.pct / 100)}</span></span>
+    <span class="legend-val">${fmtMoney(c.total, cur)}${canDrill(c) ? icon('chevron-right', 'ico-sm legend-drill') : ''}</span></button>`).join('');
+  legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) pickCategory(cats[Number(b.dataset.i)]); };
   legend.onmouseover = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; chart.setActiveElements([{ datasetIndex: 0, index: Number(b.dataset.i) }]); chart.update(); };
   legend.onmouseleave = () => { chart.setActiveElements([]); chart.update(); };
-  window.addEventListener('ispend:theme', () => { legend.querySelectorAll('.dot').forEach((d, i) => { d.style.setProperty('--c', catColor(cats[i].color)); }); });
+  window.addEventListener('ispend:theme', () => { legend.querySelectorAll('.dot').forEach((d, i) => { if (cats[i]) d.style.setProperty('--c', colorOf(cats[i])); }); });
+}
+/* First click on a top-level category drills into its subcategories; a leaf (or a second click) opens transactions. */
+function pickCategory(c) {
+  if (!state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0) { state.drill = c.id; renderDonut(state.data); return; }
+  goCategory(c);
 }
 function goCategory(c) {
   const range = state.data.range;
-  if (c.id == null && c.name === 'Other') { location.href = `/reports.html${toQuery({ tab: 'category', range: state.range })}`; return; }
+  if (c.id == null && c.name === 'Other') { location.href = `/reports.html${toQuery({ tab: 'category', ...rangeToQuery(state.period) })}`; return; }
   location.href = `/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: range.start, to: range.end })}`;
 }
 

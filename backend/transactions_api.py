@@ -55,6 +55,14 @@ def range_bounds(name, ref=None):
         return date(ref.year, 1, 1), None
     if name == "last-year":
         return date(ref.year - 1, 1, 1), date(ref.year - 1, 12, 31)
+    if name and name.startswith("month:"):
+        try:
+            y, m = (int(x) for x in name[6:].split("-", 1))
+            first = date(y, m, 1)
+            last = (date(y + (m // 12), m % 12 + 1, 1) - timedelta(days=1))
+            return first, last
+        except ValueError:
+            return None, None
     return None, None
 
 
