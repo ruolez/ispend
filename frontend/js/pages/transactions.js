@@ -409,6 +409,7 @@ function onBulkClick(e) {
       { label: 'Reject suggestions', icon: 'x', onClick: () => bulk(ids, 'reject_suggestion') },
       { label: 'Not a transfer', icon: 'arrow-left-right', onClick: () => bulk(ids, 'unset_transfer') },
       { label: 'Include in reports', icon: 'eye', onClick: () => bulk(ids, 'include') },
+      { label: 'Flip sign (charge ⇄ payment)', icon: 'arrow-left-right', onClick: () => bulk(ids, 'flip_sign') },
       { divider: true },
       { label: 'Delete…', icon: 'trash', danger: true, onClick: () => deleteItems(ids) },
     ], { placement: 'top-end' });

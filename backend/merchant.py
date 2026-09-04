@@ -9,7 +9,7 @@ PREFIXES = (
     "ONLINE PAYMENT", "RECURRING PAYMENT", "RECURRING", "PAYMENT TO", "ELECTRONIC WITHDRAWAL",
     "DIRECT DEBIT", "DIRECT DEPOSIT", "PREAUTHORIZED", "PRE-AUTHORIZED", "AUTOPAY", "AUTOMATIC PAYMENT",
     "INTERAC", "E-TRANSFER", "INTERAC E-TRANSFER", "WITHDRAWAL", "DEPOSIT", "BILL PAYMENT", "PAYMENT",
-    "CARD PURCHASE", "TFR", "PURCHASE AUTHORIZED ON",
+    "CARD PURCHASE", "TFR", "PURCHASE AUTHORIZED ON", "BPS",
 )
 _PREFIX_RE = re.compile(
     r"^(?:(?:" + "|".join(re.escape(p) for p in sorted(PREFIXES, key=len, reverse=True)) + r")\b\s*[\*\-:#/]*\s*)+",
@@ -52,7 +52,7 @@ ALIASES = [
     ("AUTOPAY PAYMENT", "Card Payment"), ("AUTOMATIC PAYMENT", "Card Payment"),
     ("ONLINE PAYMENT THANK YOU", "Card Payment"), ("MOBILE PAYMENT THANK YOU", "Card Payment"),
     ("INTERNET PAYMENT THANK YOU", "Card Payment"), ("PAYMENT RECEIVED THANK YOU", "Card Payment"),
-    ("INTERAC E-TRANSFER", "Interac e-Transfer"), ("E-TRANSFER", "Interac e-Transfer"), ("AT&T", "AT&T"),
+    ("INTERAC E-TRANSFER", "Interac e-Transfer"), ("E-TRANSFER", "Interac e-Transfer"), ("AT&T", "AT&T"), ("EBAY", "eBay"),
     ("AMAZON", "Amazon"), ("AMZN", "Amazon"), ("AMAZON PRIME", "Amazon Prime"), ("PRIME VIDEO", "Amazon Prime Video"),
     ("WAL-MART", "Walmart"), ("WAL MART", "Walmart"), ("WALMART", "Walmart"), ("WM SUPERCENTER", "Walmart"),
     ("WM SUPERC", "Walmart"), ("MCDONALD", "McDonald's"), ("MCDONALDS", "McDonald's"), ("STARBUCKS", "Starbucks"),
@@ -103,6 +103,103 @@ def _strip_location(tokens):
     return tokens
 
 
+
+_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9&'.\-]*")
+
+
+def _flat(text):
+    return re.sub(r"[^A-Z0-9]", "", text.upper())
+
+
+def split_descriptor(description):
+    """Some exports (Bilt, Apple Card, ...) write "Pretty Merchant Cardholder Name RAW*DESCRIPTOR".
+    When a later part of the text restates the merchant's first word, split into
+    (pretty merchant words, raw descriptor tail). Returns None when the shape is not present."""
+    text = (description or "").strip()
+    words = text.split()
+    if len(words) < 2:
+        return None
+    head = words[0].strip("*#.,")
+    if len(_flat(head)) < 2:
+        return None
+    restart = None
+    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(head) + r"(?![A-Za-z])", text, re.I):
+        if m.start() > 0:
+            restart = m.start()
+    if restart is not None:
+        # include a processor prefix glued to the restatement: "... BPS*BILT HOUSING"
+        m = re.search(r"(?:" + "|".join(re.escape(p) for p in PREFIXES) + r")\s*[\*\-:#/]?\s*$", text[:restart], re.I)
+        if m and m.start() > 0:
+            restart = m.start()
+    if restart is None:
+        return None
+    pretty, tail = text[:restart].strip(), text[restart:].strip()
+    pwords = pretty.split()
+    if not pwords:
+        return None
+    flat_tail = _flat(_PREFIX_RE.sub("", tail))
+    best, concat = 0, ""
+    for k, w in enumerate(pwords, start=1):
+        prev, concat = concat, concat + _flat(w)
+        if flat_tail.startswith(concat):
+            best = k
+            continue
+        if len(flat_tail) > len(prev) and concat.startswith(flat_tail):  # truncated inside this word
+            best = k
+        break
+    if best == 0:
+        return None
+    return " ".join(pwords[:best]), tail
+
+
+def raw_descriptor(description):
+    parts = split_descriptor(description)
+    return parts[1] if parts else (description or "").strip()
+
+
+PHRASE_STOP = {"PAYMENT", "THANK", "YOU", "ONLINE", "MOBILE", "PURCHASE", "DEBIT", "CREDIT", "CARD", "POS", "THE",
+               "AND", "INC", "LLC", "LTD", "COM", "WWW", "STORE", "MARKET", "AUTOPAY", "TRANSFER", "INTERAC"}
+
+
+def frequent_phrases(descriptions, min_share=0.35, min_rows=15):
+    """Word pairs that recur across most descriptions of a statement (a cardholder's name in
+    exports like Bilt's). Returns the dominant pair plus any pair sharing its last word
+    (a second cardholder), uppercased, e.g. ["EUGENE BRAVERMAN", "MARIA BRAVERMAN"]."""
+    docs = [d for d in descriptions if d]
+    if len(docs) < min_rows:
+        return []
+    counts = {}
+    for d in docs:
+        toks = [t.upper() for t in _WORD.findall(d)]
+        seen = set()
+        for a, b in zip(toks, toks[1:]):
+            if not (a.isalpha() and b.isalpha() and len(a) >= 2 and len(b) >= 2):
+                continue
+            if a in PHRASE_STOP or b in PHRASE_STOP or b in STATES or b in COUNTRY_SUFFIX:
+                continue  # "CHICAGO IL" is a location, not a cardholder
+            seen.add(f"{a} {b}")
+        for ph in seen:
+            counts[ph] = counts.get(ph, 0) + 1
+    if not counts:
+        return []
+    top, n = max(counts.items(), key=lambda kv: kv[1])
+    if n / len(docs) < min_share:
+        return []
+    surname = top.split()[1]
+    out = [top]
+    for ph, c in counts.items():
+        if ph != top and ph.split()[1] == surname and c / len(docs) >= 0.03:
+            out.append(ph)
+    return out
+
+
+def strip_phrases(description, phrases):
+    text = description or ""
+    for ph in phrases or ():
+        text = re.sub(r"(?<![A-Za-z])" + re.escape(ph).replace(r"\ ", r"\s+") + r"(?![A-Za-z])", " ", text, flags=re.I)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def clean_description(description, light=False):
     text = (description or "").upper().replace("’", "'").replace("’", "'")
     text = re.sub(r"[ \t]+", " ", text)
@@ -131,7 +228,8 @@ def clean_description(description, light=False):
     tokens = _strip_location(tokens)
     while had_prefix and len(tokens) > 1 and tokens[0] in LEADING_PREPOSITIONS:
         tokens = tokens[1:]
-    tokens = [t for t in tokens if not re.fullmatch(r"\d+", t) or len(tokens) == 1]
+    tokens = [t for i, t in enumerate(tokens) if not re.fullmatch(r"\d+", t) or len(tokens) == 1
+              or (i == 0 and len(tokens) > 1 and len(t) <= 3)]
     clean = " ".join(tokens).strip()
     if not light and (not tokens or all(t in GENERIC_RESIDUE for t in tokens)):
         # Everything meaningful was "noise" (e.g. "Payment Thank You-Mobile"):
@@ -165,9 +263,19 @@ def _title(key):
     return " ".join(words)
 
 
-def normalize(description):
-    original = (description or "").strip()
-    clean = clean_description(original)
+def normalize(description, phrases=()):
+    original = strip_phrases((description or "").strip(), phrases)
+    parts = split_descriptor(original)
+    if parts:
+        pretty_clean, tail_clean = clean_description(parts[0]), clean_description(parts[1])
+        # the raw descriptor usually carries more detail (AMAZON MKTP, SPECTRUM MOBILE); fall back to
+        # the pretty name when the descriptor was truncated or cleans down to less than the name
+        if len(_flat(tail_clean)) > len(_flat(pretty_clean)):
+            original, clean = parts[1], tail_clean
+        else:
+            original, clean = parts[0], pretty_clean
+    else:
+        clean = clean_description(original)
     if not clean:
         clean = re.sub(r"\s+", " ", original.upper()).strip() or "UNKNOWN"
     alias = _alias_for(clean)

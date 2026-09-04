@@ -95,6 +95,7 @@ function openStatementMenu(anchor, s) {
   items.push({ label: 'Download original', icon: 'download', href: `/api/statements/${s.id}/file` });
   if (['error', 'previewed'].includes(s.status)) items.push({ label: 'Parse again', icon: 'refresh', onClick: () => reparseStatement(s) });
   items.push({ divider: true });
+  if (s.status === 'committed') items.push({ label: 'Flip signs…', icon: 'arrow-left-right', onClick: () => flipStatement(s) });
   if (s.status === 'committed') items.push({ label: 'Roll back import…', icon: 'undo', danger: true, onClick: () => rollbackStatement(s) });
   else if (!['parsing', 'committing'].includes(s.status)) items.push({ label: 'Delete', icon: 'trash', danger: true, onClick: () => deleteStatement(s) });
   ui.menu(anchor, items);
@@ -124,5 +125,21 @@ async function rollbackStatement(s) {
     toast(`Rolled back · ${fmtNumber(r.deleted_transactions || 0)} transactions deleted`, { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     loadStatements({ quiet: true });
+  } catch (err) { toast(err.message, { type: 'error' }); }
+}
+
+
+async function flipStatement(s) {
+  const ok = await ui.confirm({
+    title: 'Flip charges and payments?',
+    body: `Every transaction imported from <b>${esc(s.original_filename)}</b> will have its sign reversed: charges become payments and payments become charges. Use this when a card export listed purchases as positive amounts. You can flip again to undo.`,
+    confirmText: 'Flip signs',
+  });
+  if (!ok) return;
+  try {
+    const r = await api(`/api/statements/${s.id}/flip-signs`, { method: 'POST', body: {} });
+    toast(`Flipped ${r.flipped} transactions`, { type: 'success' });
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    load();
   } catch (err) { toast(err.message, { type: 'error' }); }
 }

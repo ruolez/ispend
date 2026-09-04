@@ -577,6 +577,9 @@ def bulk():
             (uid, own + pairs),
         )
         record_events([(i, "transfer", {"is_transfer": False}, uid) for i in own])
+    elif action == "flip_sign":
+        import signs
+        updated = signs.flip_signs(uid, own, reason="bulk")
     elif action in ("exclude", "include"):
         flag = action == "exclude"
         updated = db.execute("UPDATE transactions SET is_excluded = %s, updated_at = now() WHERE id = ANY(%s)", (flag, own))

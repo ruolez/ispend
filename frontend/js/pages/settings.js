@@ -19,6 +19,7 @@ initNav('settings').then(async (me) => {
     if (a.hasAttribute('data-admin') && me.role !== 'admin') a.remove();
   });
   $('[data-act="add-account"]').innerHTML = `${icon('plus')}<span class="label">Add account</span>`;
+  $('[data-act="renormalize"]').innerHTML = `${icon('sparkles')}<span class="label">Re-detect merchant names</span>`;
   $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add user</span>`;
   window.addEventListener('hashchange', showTab);
   showTab();
@@ -287,6 +288,16 @@ async function onAction(e) {
       } },
     ]);
     case 'reload-accounts': return loadAccounts();
+    case 'renormalize': {
+      if (!(await ui.confirm({ title: 'Re-detect merchant names?', body: 'Merchant names on all your transactions will be recomputed. Rules and remembered merchants are updated to match, so nothing stops working. This may take a few seconds.', confirmText: 'Re-detect' }))) return;
+      el.classList.add('is-loading');
+      try {
+        const r = await api('/api/merchants/renormalize', { method: 'POST', body: {} });
+        toast(`${fmtNumber(r.transactions_updated)} transactions renamed, ${fmtNumber(r.rules_updated)} rules updated${r.stripped_phrases && r.stripped_phrases.length ? ` · stripped “${r.stripped_phrases.join('”, “')}”` : ''}`, { type: 'success', duration: 8000 });
+        window.dispatchEvent(new Event('ispend:transactions-changed'));
+      } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); }
+      return;
+    }
     case 'reload-ai': return loadAI();
     case 'reload-users': return loadUsers();
     case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); return; }

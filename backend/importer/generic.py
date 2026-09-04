@@ -187,3 +187,18 @@ def guess_mapping(rows):
     if not m.description:
         warnings.append("No description column detected.")
     return m, warnings
+
+
+def looks_inverted(amounts, account_type=None, min_rows=5, threshold=0.8):
+    """True when a statement's amounts read as mostly money-in although the account is a card.
+
+    Card exports commonly list charges as positive numbers; in our convention money out is
+    negative, so such a file needs its signs flipped. Only credit-type accounts are judged:
+    a savings account really can be mostly deposits.
+    """
+    if account_type not in ("credit_card", "line_of_credit", "loan"):
+        return False
+    vals = [a for a in amounts if a is not None and a != 0]
+    if len(vals) < min_rows:
+        return False
+    return sum(1 for v in vals if v > 0) / len(vals) >= threshold

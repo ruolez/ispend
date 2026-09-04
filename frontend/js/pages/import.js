@@ -220,7 +220,7 @@ function detectionBanner(f) {
 function signCheck(s) {
   const sm = s.summary || { charges: { n: 0, sum: 0 }, payments: { n: 0, sum: 0 } };
   const cur = (imp.accounts.find((a) => a.id === s.account_id) || {}).currency || 'USD';
-  const suspicious = sm.charges.n === 0 && sm.payments.n > 2;
+  const suspicious = (sm.charges.n === 0 && sm.payments.n > 2) || (sm.payments.n >= 5 && sm.payments.n > sm.charges.n * 3);
   return `<div class="section-label mb-2">Does this look right?</div>
     <div class="signcheck">
       <div class="sc-item"><span class="sc-label">Charges</span><span class="sc-value amt amt--expense">${fmtMoney(sm.charges.sum, cur)}</span><span class="sc-sub">${plural(sm.charges.n, 'charge')}</span></div>
@@ -228,7 +228,7 @@ function signCheck(s) {
       <div class="grow"></div>
       <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" title="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
     </div>
-    ${suspicious ? `<div class="notice notice-warning mt-3">${icon('alert-triangle')}<div>Everything parsed as a payment. If these are purchases, use <b>Flip signs</b>.</div></div>` : ''}`;
+    ${suspicious ? `<div class="notice notice-warning mt-3">${icon('alert-triangle')}<div>Most rows parsed as payments or income. Card exports often list purchases as positive numbers; if these are purchases, use <b>Flip signs</b>.</div></div>` : ''}`;
 }
 
 function pdfOptions(s) {

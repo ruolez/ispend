@@ -70,3 +70,44 @@ class PaymentDescriptionsTest(unittest.TestCase):
     def test_leading_preposition_is_dropped(self):
         self.assertEqual(normalize("ONLINE PAYMENT TO AMEX CARD 1234").key, "AMEX")
         self.assertEqual(normalize("ZELLE PAYMENT FROM JANE DOE CONF# ABC123").name, "Zelle")
+
+
+class RawDescriptorTailTest(unittest.TestCase):
+    """Exports that prepend a pretty name and the cardholder must not leak the person's name."""
+
+    def test_caps_tail_wins_over_cardholder_prefix(self):
+        cases = {
+            "Sheep Creek Water Eugene Braverman SHEEP CREEK WATER COMP": "SHEEP CREEK WATER",
+            "Geico Eugene Braverman GEICO *AUTO 800-841-3000": "GEICO AUTO",
+            "Amazon Eugene Braverman AMAZON MKTPL*HT9366PR3": "AMAZON",
+            "Pronto Eugene Braverman PRONTO": "PRONTO",
+            "Chewy Eugene Braverman CHEWY.COM": "CHEWY",
+            "Bilt Housing Payment Eugene Braverman BPS*BILT HOUSING": "BILT HOUSING",
+        }
+        for raw, key in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize(raw).key, key)
+
+    def test_descriptions_without_a_matching_tail_are_untouched(self):
+        self.assertEqual(normalize("Payment - Bilt Housing").key, "BILT HOUSING")
+        self.assertEqual(normalize("Wrightwood Fine Foods").key, "WRIGHTWOOD FINE FOODS")
+        self.assertEqual(normalize("Uber BV").key, "UBER")
+        self.assertEqual(normalize("STARBUCKS STORE 05412 CHICAGO IL").key, "STARBUCKS")
+
+
+class FrequentPhrasesTest(unittest.TestCase):
+    def test_cardholder_name_detected_and_stripped(self):
+        from merchant import frequent_phrases
+        docs = [f"Merchant {i} Eugene Braverman RAW{i}" for i in range(20)] + ["Payment - Bilt Housing"] * 3 \
+            + ["Orangetheory Fitness Maria Braverman OTF RANCHO"] * 2
+        phrases = frequent_phrases(docs)
+        self.assertEqual(phrases, ["EUGENE BRAVERMAN", "MARIA BRAVERMAN"])
+        self.assertEqual(normalize("Intuit Eugene Braverman IN *Spa Femme", phrases).key, "INTUIT IN SPA")
+        name = normalize("Orangetheory Fitness Maria Braverman OTF RANCHO CUCAMO 042", phrases).name
+        self.assertTrue(name.startswith("Orangetheory Fitness") and "Braverman" not in name and "Maria" not in name, name)
+
+    def test_small_or_diverse_statements_yield_no_phrase(self):
+        from merchant import frequent_phrases
+        self.assertEqual(frequent_phrases([f"Merchant {i} Eugene Braverman" for i in range(5)]), [])
+        self.assertEqual(frequent_phrases([f"Shop {i} City {i}" for i in range(30)]), [])
+        self.assertEqual(frequent_phrases([f"Shop {i} CHICAGO IL" for i in range(30)]), [])

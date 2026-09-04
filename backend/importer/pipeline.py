@@ -76,10 +76,38 @@ def parse_statement(statement_id, mapping=None, profile_key=None):
                (statement_id,))
     try:
         result, ocr_path = _parse_file(st, mapping, profile_key)
+        if mapping is None:
+            _auto_flip(st, result)
         _stage(st, result, ocr_path)
     except Exception as e:
         log.exception("parse failed for statement %s", statement_id)
         _set_error(statement_id, f"{e}")
+
+
+AUTO_FLIP_WARNING = ("Amounts were flipped automatically: this looks like a card export that lists charges as "
+                     "positive numbers. Use \u201cFlip signs\u201d in the preview if that is wrong.")
+
+
+def _auto_flip(st, result):
+    """Card exports that list charges as positive get their signs flipped before staging."""
+    from importer import generic
+
+    if not st.get("account_id") or not result.rows:
+        return
+    if result.mapping is not None and result.mapping.flip_sign:
+        return
+    if result.profile and result.profile_confidence and float(result.profile_confidence) >= 0.6:
+        return  # a recognised bank profile already knows its sign convention
+    acct = db.query("SELECT account_type FROM accounts WHERE id = %s", (st["account_id"],), one=True)
+    if not acct or not generic.looks_inverted([r.amount for r in result.rows if r.is_valid], acct["account_type"]):
+        return
+    for r in result.rows:
+        if r.amount is not None:
+            r.amount = -r.amount
+    if result.mapping is not None:
+        result.mapping.flip_sign = True
+    result.warnings = [w for w in result.warnings if "Most amounts are positive" not in w]
+    result.warnings.append(AUTO_FLIP_WARNING)
 
 
 def _parse_file(st, mapping, profile_key):
@@ -140,8 +168,9 @@ def _categorize_rows(user_id, account_id, staged):
 
 def _build_staged(rows, account_id):
     staged = []
+    phrases = merchant.frequent_phrases([r.description for r in rows])
     for r in rows:
-        m = merchant.normalize(r.description)
+        m = merchant.normalize(r.description, phrases)
         fp = dedupe.fingerprint(account_id or 0, r.txn_date, r.amount, m.clean) if r.is_valid else None
         staged.append({"row": r, "merchant": m, "fingerprint": fp, "occurrence": 1, "category_id": None})
     dedupe.assign_occurrences(staged)
@@ -165,6 +194,7 @@ def _stage(st, result, ocr_rel):
             r.is_valid and dup is None, s["category_id"], r.problems,
         ))
     stats = _preview_stats(staged, existing)
+    stats["stripped_phrases"] = merchant.frequent_phrases([r.description for r in result.rows])
     stats["header"] = result.header
     stats["sample"] = result.sample
     with db.transaction():

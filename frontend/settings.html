@@ -28,6 +28,14 @@
               <button type="button" class="btn btn-primary" data-act="add-account"></button></div>
             <div id="accounts-table"></div>
           </div>
+          <div class="settings-section">
+            <h2>Maintenance</h2>
+            <div class="sub">Housekeeping for data that was imported before a normalizer improvement.</div>
+            <div class="card"><div class="card-body row-between" style="gap:16px;flex-wrap:wrap">
+              <div><b>Re-detect merchant names</b><div class="text-3 fs-sm">Recomputes merchant names for every transaction using the current rules (strips cardholder names, processor codes and store numbers). Rules and remembered merchants follow the new names.</div></div>
+              <button type="button" class="btn btn-secondary" data-act="renormalize"></button>
+            </div></div>
+          </div>
         </section>
         <section class="tab-panel" data-panel="ai">
           <div class="settings-section">

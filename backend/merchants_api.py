@@ -70,3 +70,14 @@ def delete_merchant(merchant_key):
     categorizer.forget(uid, merchant_key)
     audit("merchant.forget", {"merchant_key": merchant_key})
     return jsonify({"ok": True})
+
+
+@bp.post("/renormalize")
+@login_required
+def renormalize():
+    """Recompute merchant names for every transaction with the current normalizer; rules and
+    merchant memory keyed on old names are carried along."""
+    import maintenance
+    result = maintenance.renormalize_user(session["user_id"])
+    audit("merchants.renormalize", result)
+    return jsonify(result)

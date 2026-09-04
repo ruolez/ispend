@@ -269,6 +269,27 @@ def delete_statement(statement_id):
     return jsonify({"ok": True, "deleted_transactions": deleted})
 
 
+@bp.post("/<int:statement_id>/flip-signs")
+@login_required
+def flip_signs(statement_id):
+    """Negate every transaction imported from this statement (charges <-> payments)."""
+    import signs
+    st = _get(statement_id)
+    if not st:
+        return api_error("Statement not found", 404)
+    if st["status"] != "committed":
+        return api_error("Only imported statements can be flipped", 409)
+    ids = [r["id"] for r in db.query(
+        "SELECT id FROM transactions WHERE statement_id = %s AND user_id = %s", (statement_id, session["user_id"])) or []]
+    n = signs.flip_signs(session["user_id"], ids, reason=f"statement {statement_id}")
+    mapping = dict(st.get("mapping") or {})
+    mapping["flip_sign"] = not bool(mapping.get("flip_sign"))
+    db.execute("UPDATE statements SET mapping = %s, updated_at = now() WHERE id = %s",
+               (json.dumps(mapping), statement_id))
+    audit("statement.flip_signs", {"id": statement_id, "flipped": n})
+    return jsonify({"flipped": n})
+
+
 @bp.get("/<int:statement_id>/file")
 @login_required
 def download(statement_id):
