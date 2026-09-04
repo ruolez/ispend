@@ -132,3 +132,6 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Breakpoints: 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, `.tb-username` hidden), 640 (2-col stat grid).
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
+
+## Query memory
+`setQs()` also calls `rememberQuery()`: each page's last query (minus transient keys such as `open`, `statement`) is kept in sessionStorage. `initNav()` calls `restoreQuery()` before page scripts read `qs()`, and sidebar links carry `savedQuery(href)`, so filters, sorts, ranges and tabs survive navigating away and back within the session. Pages read state from `qs()` as before; nothing else to do.

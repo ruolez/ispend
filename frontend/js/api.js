@@ -69,6 +69,33 @@ function setQs(obj, { replace = true, merge = true } = {}) {
   const q = params.toString();
   const url = location.pathname + (q ? `?${q}` : '') + location.hash;
   if (replace) history.replaceState(null, '', url); else history.pushState(null, '', url);
+  rememberQuery();
+}
+
+/* ---------- per-page query memory (session) ----------
+   Filters, sorts and tabs live in the URL; remember each page's last query so returning
+   through the sidebar restores it. Keys that open a specific thing are not remembered. */
+const TRANSIENT_QS = { '/transactions.html': ['open'], '/import.html': ['statement'], '/rules.html': ['cat'], '/statements.html': ['open'] };
+function _qsKey(path) { return `ispend.q:${path}`; }
+function rememberQuery() {
+  try {
+    const p = new URLSearchParams(location.search);
+    (TRANSIENT_QS[location.pathname] || []).forEach((k) => p.delete(k));
+    const q = p.toString();
+    sessionStorage.setItem(_qsKey(location.pathname), (q ? `?${q}` : '') + (location.hash || ''));
+  } catch { /* storage unavailable */ }
+}
+function savedQuery(path) {
+  try { return sessionStorage.getItem(_qsKey(path)) || ''; } catch { return ''; }
+}
+/* Called once at page start (before page scripts read qs()). Returns true when a saved query was applied. */
+function restoreQuery() {
+  if (location.search) { rememberQuery(); return false; }
+  const saved = savedQuery(location.pathname);
+  if (!saved || (location.hash && !saved.includes('?'))) return false;
+  const [q, hash] = saved.split('#');
+  history.replaceState(null, '', location.pathname + q + (location.hash || (hash ? `#${hash}` : '')));
+  return true;
 }
 function toQuery(obj) {
   const p = new URLSearchParams();

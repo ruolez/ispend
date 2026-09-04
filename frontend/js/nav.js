@@ -42,11 +42,12 @@ function setSidebarMode(mode) {
 applySidebarMode();
 
 function navItemHtml(i, activePage) {
-  return `<a href="${i.href}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''} ${i.adminOnly ? 'data-admin-only' : ''}>
+  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''} ${i.adminOnly ? 'data-admin-only' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
 async function initNav(activePage) {
+  restoreQuery();
   const active = NAV_ITEMS.find((i) => i.page === activePage);
   document.body.dataset.page = activePage;
   document.title = `${active ? active.label : 'iSpend'} · iSpend`;
@@ -89,7 +90,7 @@ async function initNav(activePage) {
 
   // Mobile bottom nav
   const bn = document.createElement('nav'); bn.className = 'bottomnav'; bn.setAttribute('aria-label', 'Primary');
-  bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`).join('')
+  bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`).join('')
     + `<button type="button" class="bn-item" id="bn-more">${icon('menu')}<span>More</span></button>`;
   document.body.appendChild(bn);
   ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; document.body.appendChild(d); } });
