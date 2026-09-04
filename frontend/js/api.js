@@ -80,8 +80,10 @@ function _qsKey(path) { return `ispend.q:${path}`; }
 function rememberQuery() {
   try {
     const p = new URLSearchParams(location.search);
+    const hadParams = Array.from(p.keys()).length > 0;
     (TRANSIENT_QS[location.pathname] || []).forEach((k) => p.delete(k));
     const q = p.toString();
+    if (hadParams && !q) return; // a deep link with only transient keys must not erase remembered filters
     sessionStorage.setItem(_qsKey(location.pathname), (q ? `?${q}` : '') + (location.hash || ''));
   } catch { /* storage unavailable */ }
 }
@@ -90,11 +92,17 @@ function savedQuery(path) {
 }
 /* Called once at page start (before page scripts read qs()). Returns true when a saved query was applied. */
 function restoreQuery() {
-  if (location.search) { rememberQuery(); return false; }
+  const cur = new URLSearchParams(location.search);
+  const transient = TRANSIENT_QS[location.pathname] || [];
+  if (Array.from(cur.keys()).some((k) => !transient.includes(k))) { rememberQuery(); return false; }
   const saved = savedQuery(location.pathname);
   if (!saved || (location.hash && !saved.includes('?'))) return false;
   const [q, hash] = saved.split('#');
-  history.replaceState(null, '', location.pathname + q + (location.hash || (hash ? `#${hash}` : '')));
+  // keep transient keys from the deep link (e.g. ?open=<id>) on top of the remembered filters
+  const merged = new URLSearchParams(q.replace(/^\?/, ''));
+  cur.forEach((v, k) => merged.set(k, v));
+  const qs2 = merged.toString();
+  history.replaceState(null, '', location.pathname + (qs2 ? `?${qs2}` : '') + (location.hash || (hash ? `#${hash}` : '')));
   return true;
 }
 function toQuery(obj) {
