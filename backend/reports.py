@@ -119,7 +119,9 @@ def resolve_range(range_name=None, date_from=None, date_to=None, now=None):
 
 
 def range_json(r):
-    return {"name": r["name"], "label": r["label"], "start": r["start"].isoformat(), "end": r["end"].isoformat()}
+    return {"name": r["name"], "label": r["label"], "start": r["start"].isoformat(), "end": r["end"].isoformat(),
+            "prev_start": r["prev_start"].isoformat() if r.get("prev_start") else None,
+            "prev_end": r["prev_end"].isoformat() if r.get("prev_end") else None}
 
 
 def _acct(account_ids):

@@ -104,6 +104,7 @@ async function load() {
   }
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
+  loadBreakdown(data.range);
   renderMonthly(data);
   renderDonut(data);
   renderRecent(data);
@@ -277,4 +278,20 @@ function renderAttention(data) {
         <span class="row gap-2">${a.last_txn_date ? `<span class="sub">${esc(fmtDate(a.last_txn_date, { year: true }))}</span>` : ''}${a.balance != null ? `<b class="num">${fmtMoney(a.balance, a.currency)}</b>` : '<span class="sub">—</span>'}</span></div>`).join('')}</div>`);
   }
   $('#attention').innerHTML = `<div class="attn">${parts.join('')}</div>`;
+}
+
+
+/* ---------- category → subcategory breakdown for the selected period ---------- */
+async function loadBreakdown(range) {
+  const host = $('#breakdown'); if (!host) return;
+  $('#bd-label').textContent = range.label;
+  host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div>`;
+  try {
+    const [cur, prev, categories] = await Promise.all([
+      api(`/api/reports/by-category${toQuery({ from: range.start, to: range.end, level: 'sub' })}`),
+      range.prev_start ? api(`/api/reports/by-category${toQuery({ from: range.prev_start, to: range.prev_end, level: 'sub' })}`) : Promise.resolve({ categories: [] }),
+      store.categoriesFlat(),
+    ]);
+    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency: state.currency, range, categories, storageKey: 'ispend.breakdown.dashboard' });
+  } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

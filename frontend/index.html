@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/app.css">
   <link rel="stylesheet" href="/css/pages/dashboard.css">
+  <link rel="stylesheet" href="/css/breakdown.css">
 </head>
 <body>
   <main id="main" class="main">
@@ -54,6 +55,11 @@
         </section>
       </div>
 
+      <section class="card mt-4">
+        <header class="card-head"><h2>Category breakdown · <span id="bd-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/reports.html?tab=category">Full report</a></div></header>
+        <div id="breakdown"></div>
+      </section>
+
       <div class="grid grid-1-1 mt-4">
         <section class="card">
           <header class="card-head"><h2>Recent transactions</h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/transactions.html">View all</a></div></header>
@@ -76,6 +82,7 @@
   <script src="/vendor/chart.umd.js"></script>
   <script src="/js/charts.js"></script>
   <script src="/js/nav.js"></script>
+  <script src="/js/breakdown.js"></script>
   <script src="/js/pages/dashboard.js"></script>
 </body>
 </html>

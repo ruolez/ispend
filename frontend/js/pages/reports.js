@@ -90,14 +90,14 @@ async function loadCategory(force) {
   if (!host.querySelector('#ch-stack')) {
     host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2>Spending by month</h2><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-act="pct" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-act="pct" data-mode="pct">%</button></div></div></header>
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
-      <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div class="tbl-wrap" style="border:0;box-shadow:none;border-radius:0 0 var(--r-lg) var(--r-lg)"><table class="tbl report-tbl"><thead><tr><th>Category</th><th>Share</th><th class="right col-count">Transactions</th><th class="right">Total</th></tr></thead><tbody id="cat-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
+      <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
   $$('#panel-category [data-act="pct"]').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'pct') === state.pct));
   const rq = rangeToQuery(state.range);
   try {
     const [monthly, byCat] = await Promise.all([
       cached(`monthly-${state.months}`, `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery() })}`, force),
-      cached(`bycat-${JSON.stringify(rq)}`, `/api/reports/by-category${toQuery({ ...rq, level: 'top', ...acctQuery() })}`, force),
+      cached(`bycat-${JSON.stringify(rq)}`, `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery() })}`, force),
     ]);
     renderStack(monthly);
     renderCatTable(byCat);
@@ -124,16 +124,15 @@ function renderStack(data) {
   legend.innerHTML = data.series.map((s, i) => `<button type="button" class="legend-item ${isolated != null && isolated !== i ? 'is-off' : ''}" data-i="${i}"><span class="legend-name"><i class="dot" style="--c:${seriesColor(s)}"></i>${esc(s.name)}</span><span class="legend-val">${fmtMoney(s.total, cur)}</span></button>`).join('');
   legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const i = Number(b.dataset.i); isolated = isolated === i ? null : i; chart.data.datasets.forEach((d, j) => { chart.setDatasetVisibility(j, isolated == null || isolated === j); }); chart.update(); $$('.legend-item', legend).forEach((l, j) => l.classList.toggle('is-off', isolated != null && isolated !== j)); };
 }
-function renderCatTable(res) {
+async function renderCatTable(res) {
   $('#cat-range-label').textContent = rangeLabel(state.range);
-  const tb = $('#cat-table'); const cur = state.currency; const rq = rangeToQuery(state.range);
-  if (!res.categories.length) { tb.innerHTML = `<tr><td colspan="4">${ui.emptyState({ icon: 'pie-chart', title: 'Nothing in this period' })}</td></tr>`; return; }
-  const max = Math.max(...res.categories.map((c) => c.total));
-  tb.innerHTML = res.categories.map((c) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, ...rq })}" tabindex="0">
-    <td><span class="cat-cell"><span class="cat-icon" style="--c:${c.color === 'muted' ? charts.theme().muted : catColor(c.color)}">${icon(c.icon || 'tag')}</span><span class="name">${esc(c.name)}</span></span></td>
-    <td><span class="share-cell"><span class="share-bar" style="--c:${c.color === 'muted' ? charts.theme().muted : catColor(c.color)}"><span style="width:${max ? (c.total / max * 100).toFixed(1) : 0}%"></span></span><span class="pct">${fmtPct(c.pct / 100)}</span></span></td>
-    <td class="right num col-count">${fmtNumber(c.count)}</td><td class="right num fw-500">${fmtMoney(c.total, cur)}</td></tr>`).join('') + `<tr class="totals-row"><td>Total</td><td></td><td class="right num col-count">${fmtNumber(res.categories.reduce((s, c) => s + c.count, 0))}</td><td class="right num">${fmtMoney(res.total, cur)}</td></tr>`;
-  wireRowLinks(tb);
+  const host = $('#cat-table');
+  let prev = { categories: [] };
+  if (res.range && res.range.prev_start) {
+    try { prev = await cached(`bycat-prev-${res.range.prev_start}-${res.range.prev_end}-${JSON.stringify(acctQuery())}`, `/api/reports/by-category${toQuery({ from: res.range.prev_start, to: res.range.prev_end, level: 'sub', ...acctQuery() })}`); } catch { prev = { categories: [] }; }
+  }
+  const categories = await store.categoriesFlat();
+  renderBreakdown(host, { rows: res.categories, prevRows: prev.categories, total: res.total, currency: state.currency, range: { start: res.range.start, end: res.range.end }, categories, storageKey: 'ispend.breakdown.reports' });
 }
 function wireRowLinks(tb) {
   tb.onclick = (e) => { const tr = e.target.closest('tr[data-href]'); if (tr && !e.target.closest('a,button')) location.href = tr.dataset.href; };
