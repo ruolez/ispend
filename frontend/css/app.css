@@ -276,6 +276,8 @@ html[data-sidebar="rail"] .sb-collapse-row { display: none; }
 .card-foot { padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border); }
 .card-flat { box-shadow: none; }
 .card + .card { margin-top: var(--sp-4); }
+.grid > .card + .card, .grid > .card { margin-top: 0; } /* grid gap spaces cards; no stacked margin */
+.card-head { min-height: 60px; } /* equal header height whether it holds text or a small button */
 .divider { height: 1px; background: var(--border); margin: var(--sp-4) 0; }
 
 /* ---------- Badges, chips, dots ---------- */

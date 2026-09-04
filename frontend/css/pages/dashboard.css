@@ -59,3 +59,4 @@
 
 .legend-drill { margin-left: 4px; color: var(--text-4); vertical-align: middle; }
 #donut-head h2 { margin: 0; }
+.donut-legend .legend-item .legend-val { display: inline-flex; align-items: center; white-space: nowrap; flex: 0 0 auto; }
