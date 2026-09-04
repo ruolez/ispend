@@ -159,6 +159,9 @@ def put_mapping(statement_id):
         return api_error("mapping object is required")
     profile_key = data.get("bank_profile") if "bank_profile" in data else st.get("bank_profile")
     try:
+        if st["file_kind"] == "pdf":
+            st = importer.reparse_async(statement_id, mapping, profile_key=profile_key or None)
+            return jsonify({"id": statement_id, "status": st["status"]}), 202
         importer.reparse_with_mapping(statement_id, mapping, profile_key=profile_key or None)
     except importer.ImportError_ as e:
         return api_error(str(e), e.status)

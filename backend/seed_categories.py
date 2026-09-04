@@ -81,22 +81,25 @@ DEFAULT_TAXONOMY = [
 
 
 def seed_for_user(conn, user_id):
-    """Insert the default taxonomy for a user. Idempotent per slug."""
+    """Add any default category the user does not have yet. Existing categories are never
+    renamed or recolored, and a user's own category with the same name under the same parent
+    counts as present (so this can never violate the unique name index)."""
     with conn.cursor() as cur:
         for order, (slug, name, kind, color, icon, children) in enumerate(DEFAULT_TAXONOMY):
-            cur.execute(
-                """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
-                   VALUES (%s, NULL, %s, %s, %s, %s, %s, TRUE, %s)
-                   ON CONFLICT (user_id, slug) DO UPDATE SET slug = EXCLUDED.slug
-                   RETURNING id""",
-                (user_id, name, slug, kind, color, icon, order),
-            )
-            parent_id = cur.fetchone()[0]
-            for corder, (cslug, cname, cicon) in enumerate(children):
+            parent_id = _find(cur, user_id, None, slug, name)
+            if parent_id is None:
                 cur.execute(
                     """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
-                       ON CONFLICT (user_id, slug) DO NOTHING""",
+                       VALUES (%s, NULL, %s, %s, %s, %s, %s, TRUE, %s) RETURNING id""",
+                    (user_id, name, slug, kind, color, icon, order),
+                )
+                parent_id = cur.fetchone()[0]
+            for corder, (cslug, cname, cicon) in enumerate(children):
+                if _find(cur, user_id, parent_id, cslug, cname) is not None:
+                    continue
+                cur.execute(
+                    """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)""",
                     (user_id, parent_id, cname, cslug, kind, color, cicon, corder),
                 )
         cur.execute(
@@ -105,6 +108,20 @@ def seed_for_user(conn, user_id):
             (user_id,),
         )
     conn.commit()
+
+
+def _find(cur, user_id, parent_id, slug, name):
+    """Existing category id by slug, else by (parent, name) so user-made twins are respected."""
+    cur.execute("SELECT id FROM categories WHERE user_id = %s AND slug = %s", (user_id, slug))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    cur.execute(
+        "SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
+        (user_id, parent_id or 0, name),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
 
 
 def default_icons():

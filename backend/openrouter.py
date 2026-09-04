@@ -19,22 +19,45 @@ _models_lock = threading.Lock()
 MODELS_TTL = 600
 
 
-def api_key():
-    return (db.get_setting("openrouter_api_key") or "").strip()
+def _user_or_global(user_id, key):
+    """A user's own value first, then the shared value an admin may have saved for everyone."""
+    if user_id is not None:
+        v = (db.get_setting(f"u{user_id}:{key}") or "").strip()
+        if v:
+            return v
+    return (db.get_setting(key) or "").strip()
 
 
-def model():
-    return (db.get_setting("openrouter_model") or "").strip()
+def api_key(user_id=None):
+    return _user_or_global(user_id, "openrouter_api_key")
 
 
-def enabled(purpose):
+def model(user_id=None):
+    return _user_or_global(user_id, "openrouter_model")
+
+
+def configured(user_id=None):
+    return bool(api_key(user_id)) and bool(model(user_id))
+
+
+def enabled(purpose, user_id=None):
     key = "ai_categorize_enabled" if purpose == "categorize" else "ai_insights_enabled"
-    return bool(api_key()) and bool(model()) and (db.get_setting(key) or "") == "1"
+    flag = _user_or_global(user_id, key)
+    return configured(user_id) and flag == "1"
 
 
-def _headers(key=None):
+STATUS_MESSAGES = {
+    401: "Invalid API key: OpenRouter rejected the credentials",
+    402: "Insufficient credits on your OpenRouter account",
+    403: "OpenRouter refused the request (key lacks access to this model)",
+    404: "Model not found on OpenRouter; pick another model",
+    429: "Rate limited by OpenRouter; try again in a moment",
+}
+
+
+def _headers(key=None, user_id=None):
     return {
-        "Authorization": f"Bearer {key or api_key()}",
+        "Authorization": f"Bearer {key or api_key(user_id)}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com/ruolez/ispend",
         "X-OpenRouter-Title": "iSpend",
@@ -79,10 +102,10 @@ def list_models(force=False):
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.S)
 
 
-def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, timeout=None, key=None):
+def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, timeout=None, key=None, user_id=None):
     """Chat completion that must return a JSON object. Returns (parsed, usage)."""
-    model_id = model_id or model()
-    if not (key or api_key()) or not model_id:
+    model_id = model_id or model(user_id)
+    if not (key or api_key(user_id)) or not model_id:
         raise OpenRouterError("OpenRouter API key and model are not configured")
     body = {
         "model": model_id,
@@ -94,7 +117,7 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
     try:
         resp = requests.post(
             f"{config.OPENROUTER_BASE_URL}/chat/completions",
-            headers=_headers(key), json=body, timeout=timeout or config.OPENROUTER_TIMEOUT,
+            headers=_headers(key, user_id), json=body, timeout=timeout or config.OPENROUTER_TIMEOUT,
         )
     except requests.RequestException as e:
         raise OpenRouterError(f"OpenRouter request failed: {e}")
@@ -102,10 +125,15 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
         data = resp.json()
     except ValueError:
         raise OpenRouterError(f"OpenRouter returned non-JSON ({resp.status_code})")
-    if resp.status_code != 200 or "error" in data:
+    if resp.status_code != 200 or (isinstance(data, dict) and "error" in data):
         err = data.get("error") if isinstance(data, dict) else None
+        code = resp.status_code
+        if isinstance(err, dict) and isinstance(err.get("code"), int):
+            code = err["code"]
+        if code in STATUS_MESSAGES:
+            raise OpenRouterError(STATUS_MESSAGES[code])
         msg = err.get("message") if isinstance(err, dict) else str(err or resp.text[:200])
-        raise OpenRouterError(f"OpenRouter error {resp.status_code}: {msg}")
+        raise OpenRouterError(f"OpenRouter error {code}: {msg}")
     try:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
@@ -124,12 +152,13 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
     return parsed, data.get("usage") or {}
 
 
-def test_connection(key=None, model_id=None):
+def test_connection(key=None, model_id=None, user_id=None):
     started = time.time()
     parsed, usage = chat_json(
-        "Reply with a JSON object {\"ok\": true}.", "ping", model_id=model_id, max_tokens=20, key=key, timeout=30
+        "Reply with a JSON object {\"ok\": true}.", "ping", model_id=model_id, max_tokens=20, key=key, timeout=30,
+        user_id=user_id,
     )
-    return {"ok": True, "model": model_id or model(), "latency_ms": int((time.time() - started) * 1000),
+    return {"ok": True, "model": model_id or model(user_id), "latency_ms": int((time.time() - started) * 1000),
             "usage": usage, "reply": parsed}
 
 

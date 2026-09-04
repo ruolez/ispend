@@ -16,7 +16,7 @@
     <div class="settings-layout">
       <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
         <a class="nav-item" href="#accounts" data-tab="accounts"></a>
-        <a class="nav-item" href="#ai" data-tab="ai" data-admin></a>
+        <a class="nav-item" href="#ai" data-tab="ai"></a>
         <a class="nav-item" href="#appearance" data-tab="appearance"></a>
         <a class="nav-item" href="#users" data-tab="users" data-admin></a>
         <a class="nav-item" href="#account" data-tab="account"></a>
@@ -40,14 +40,15 @@
         <section class="tab-panel" data-panel="ai">
           <div class="settings-section">
             <h2>AI assistance</h2>
-            <div class="sub">Optional. When configured, iSpend can suggest categories for unknown charges and write monthly insights through OpenRouter. Suggestions are never applied without your confirmation.</div>
+            <div class="sub">Optional. With an OpenRouter key, iSpend can suggest categories for unknown charges and write monthly insights. Suggestions are never applied without your confirmation. Settings are per user.</div>
+            <div id="ai-status" class="mb-4"></div>
             <div class="card"><div class="card-body" id="ai-panel"></div></div>
           </div>
         </section>
         <section class="tab-panel" data-panel="appearance">
           <div class="settings-section">
             <h2>Appearance</h2>
-            <div class="sub">Theme and density are saved to this browser and to your profile.</div>
+            <div class="sub">Theme, density and display currency are saved to this browser and to your profile.</div>
             <div class="card"><div class="card-body" id="appearance-panel"></div></div>
           </div>
         </section>

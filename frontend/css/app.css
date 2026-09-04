@@ -401,6 +401,7 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
 .menu-label { padding: 8px 10px 4px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-4); }
 .menu-search { padding: 4px 4px 6px; }
+.menu-opts { max-height: calc(70vh - 96px); overflow-y: auto; overscroll-behavior: contain; }
 .menu-item input.check { pointer-events: none; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 600; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: var(--sp-4); animation: fade-in var(--dur-2); }
@@ -500,7 +501,6 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 .floatbar .btn-primary { background: var(--bg); color: var(--text-1); }
 .floatbar .btn-primary:hover { filter: brightness(0.95); }
 .floatbar .sep { width: 1px; height: 20px; background: rgba(128,128,128,0.4); }
-.savebar { }
 
 /* ---------- Misc ---------- */
 .list { display: flex; flex-direction: column; }
@@ -563,3 +563,8 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
   .stat-grid { grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .page-actions .btn span.label { display: none; }
 }
+
+.notice-info { background: var(--info-soft); border-color: transparent; color: var(--text-1); }
+.notice-info .ico { color: var(--accent); }
+
+.avatar-xs { width: 20px; height: 20px; font-size: 9px; }

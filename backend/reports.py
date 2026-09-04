@@ -354,8 +354,11 @@ def _spend_rows(uid, since=None):
     )
 
 
+RECURRING_LOOKBACK_DAYS = 730
+
+
 def recurring(uid, include_dismissed=False):
-    rows = _spend_rows(uid)
+    rows = _spend_rows(uid, today() - timedelta(days=RECURRING_LOOKBACK_DAYS))
     dismissed = {r["merchant_key"] for r in db.query(
         "SELECT merchant_key FROM recurring_dismissals WHERE user_id = %s", (uid,))}
     series = recurring_lib.detect(rows, today())

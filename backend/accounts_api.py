@@ -120,6 +120,11 @@ def delete_account(account_id):
     count = db.query("SELECT COUNT(*) AS n FROM transactions WHERE account_id = %s", (account_id,), one=True)["n"]
     if count and request.args.get("force") != "true":
         return api_error(f"This account has {count} transactions. Archive it instead, or delete with force.", 409)
+    import importer
+    statements = db.query("SELECT * FROM statements WHERE account_id = %s AND user_id = %s",
+                          (account_id, session["user_id"])) or []
+    for st in statements:
+        importer.discard_statement(st, delete_transactions=True)
     db.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
-    audit("account.delete", {"id": account_id, "transactions": count})
-    return jsonify({"ok": True, "deleted_transactions": count})
+    audit("account.delete", {"id": account_id, "transactions": count, "statements": len(statements)})
+    return jsonify({"ok": True, "deleted_transactions": count, "deleted_statements": len(statements)})

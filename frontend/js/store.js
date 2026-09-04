@@ -67,5 +67,20 @@ const store = (() => {
   const accountById = async (id) => (await accounts()).find((a) => a.id === Number(id)) || null;
   const settings = (opts) => get('settings', '/api/settings/client', { ttl: 300000, ...(opts || {}) });
 
-  return { get, invalidate, on, emit, flatten, categories, categoriesFlat, categoryById, accounts, accountById, settings };
+  /* Currency used for aggregate views: the user's preference, else the one currency all
+     active accounts share, else the currency carrying the most transactions. */
+  async function displayCurrency() {
+    const me = window.currentUser || {};
+    const pref = me.preferences && me.preferences.currency;
+    if (pref) return pref;
+    let accts = [];
+    try { accts = await accounts(); } catch { return 'USD'; }
+    const list = accts.filter((a) => a.is_active).length ? accts.filter((a) => a.is_active) : accts;
+    if (!list.length) return 'USD';
+    const weight = {};
+    list.forEach((a) => { weight[a.currency] = (weight[a.currency] || 0) + 1 + (Number(a.txn_count) || 0); });
+    return Object.keys(weight).sort((a, b) => weight[b] - weight[a])[0] || 'USD';
+  }
+
+  return { get, invalidate, on, emit, flatten, categories, categoriesFlat, categoryById, accounts, accountById, settings, displayCurrency };
 })();

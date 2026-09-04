@@ -24,7 +24,7 @@ def _uid():
 @login_required
 def categorize():
     data = request.get_json(silent=True) or {}
-    if not openrouter.enabled("categorize"):
+    if not openrouter.enabled("categorize", _uid()):
         return api_error("AI categorization is not enabled. Add an OpenRouter key and model in Settings.", 502)
     ids = parse_int_list(data.get("ids"))
     if not ids and data.get("scope") == "uncategorized":
@@ -65,9 +65,10 @@ def status():
         (uid,), one=True,
     )
     return jsonify({
-        "enabled": openrouter.enabled("categorize"),
-        "insights_enabled": openrouter.enabled("insights"),
-        "model": openrouter.model(),
+        "enabled": openrouter.enabled("categorize", uid),
+        "insights_enabled": openrouter.enabled("insights", uid),
+        "configured": openrouter.configured(uid),
+        "model": openrouter.model(uid),
         "pending_suggestions": pending,
         "last_call": row_json(last) if last else None,
         "calls_today": today["calls"],
@@ -87,9 +88,9 @@ def _ai_block(uid, start, end):
     hit = insights.cached(uid, start, end)
     if hit:
         return {"status": "ready", **hit}
-    if not openrouter.enabled("insights"):
+    if not openrouter.enabled("insights", uid):
         return {"status": "disabled", "content": None, "model": None, "created_at": None}
-    return {"status": "none", "content": None, "model": openrouter.model(), "created_at": None}
+    return {"status": "none", "content": None, "model": openrouter.model(uid), "created_at": None}
 
 
 @bp.get("/insights")

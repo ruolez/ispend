@@ -19,7 +19,7 @@ initNav('statements').then(async () => {
 
 async function loadStatements({ quiet } = {}) {
   const host = $('#statements-host');
-  if (!quiet) host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>File</th><th>Bank</th><th>Account</th><th>Period</th><th>Status</th><th class="right">Rows</th><th>Uploaded</th><th></th></tr></thead><tbody>${ui.skeletonRows(4, 8)}</tbody></table></div>`;
+  if (!quiet) host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>File</th><th>Bank</th><th>Account</th><th>Period</th><th>Status</th><th class="right">Rows</th><th>Uploaded</th><th>By</th><th></th></tr></thead><tbody>${ui.skeletonRows(4, 9)}</tbody></table></div>`;
   try {
     const [rows, profiles] = await Promise.all([api('/api/statements'), store.get('institutions', '/api/accounts/institutions', { ttl: 600000 }).catch(() => [])]);
     stState.rows = rows; stState.profiles = profiles;
@@ -44,7 +44,7 @@ function renderStatements() {
     return;
   }
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements"><thead><tr>
-      <th>File</th><th class="hide-mobile">Bank</th><th>Account</th><th class="hide-mobile">Period</th><th>Status</th><th class="right hide-mobile">Rows</th><th class="hide-mobile">Uploaded</th><th class="col-actions"></th>
+      <th>File</th><th class="hide-mobile">Bank</th><th>Account</th><th class="hide-mobile">Period</th><th>Status</th><th class="right hide-mobile">Rows</th><th class="hide-mobile">Uploaded</th><th class="hide-mobile">By</th><th class="col-actions"></th>
     </tr></thead><tbody>${stState.rows.map(statementRow).join('')}</tbody></table></div>`;
 }
 
@@ -67,6 +67,7 @@ function statementRow(s) {
     <td><span class="st-status"><span class="badge ${st.cls}">${st.spin ? '<span class="spinner"></span>' : ''}${esc(st.label)}</span>${s.status === 'error' && s.error_message ? `<span class="text-3 fs-xs truncate" style="max-width:220px" title="${esc(s.error_message)}">${esc(s.error_message)}</span>` : ''}</span></td>
     <td class="right hide-mobile">${rows}</td>
     <td class="hide-mobile text-3" title="${esc(fmtDateTime(s.created_at))}">${fmtRelative(s.created_at)}</td>
+    <td class="hide-mobile text-3">${s.username ? `<span class="row gap-2"><span class="avatar avatar-xs">${esc(initials(s.username))}</span>${esc(s.username)}</span>` : '—'}</td>
     <td class="col-actions"><div class="row-actions">${s.status === 'previewed' ? `<a class="btn btn-xs btn-secondary" href="/import.html?statement=${s.id}" data-stop>Continue</a>` : ''}<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${s.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }
@@ -140,6 +141,6 @@ async function flipStatement(s) {
     const r = await api(`/api/statements/${s.id}/flip-signs`, { method: 'POST', body: {} });
     toast(`Flipped ${r.flipped} transactions`, { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
-    load();
+    loadStatements({ quiet: true });
   } catch (err) { toast(err.message, { type: 'error' }); }
 }

@@ -128,18 +128,18 @@ function schedulePoll() {
   imp.pollTimer = setTimeout(pollStatements, 1500);
 }
 async function pollStatements() {
-  const pending = imp.files.filter((f) => f.statementId && !f.error && !(f.statement && ['previewed', 'error', 'committed'].includes(f.statement.status)));
+  const pending = imp.files.filter((f) => f.statementId && !f.error && !(f.statement && ['previewed', 'error', 'committed', 'discarded'].includes(f.statement.status)));
   if (!pending.length) return;
   await Promise.all(pending.map(async (f) => {
     try {
       const s = await api(`/api/statements/${f.statementId}?limit=2000`);
-      if (['previewed', 'error', 'committed'].includes(s.status)) f.statement = s;
+      if (['previewed', 'error', 'committed', 'discarded'].includes(s.status)) f.statement = s;
       else f.statement = { ...(f.statement || {}), ...s, rows: undefined };
     } catch (err) { f.error = err.message; }
   }));
   if (imp.step === 'upload') renderFileList();
   else if (imp.step === 'review') renderReview();
-  if (imp.files.some((f) => f.statementId && !f.error && !(f.statement && ['previewed', 'error', 'committed'].includes(f.statement.status)))) schedulePoll();
+  if (imp.files.some((f) => f.statementId && !f.error && !(f.statement && ['previewed', 'error', 'committed', 'discarded'].includes(f.statement.status)))) schedulePoll();
 }
 
 async function reloadStatement(f, { silent } = {}) {
@@ -154,13 +154,13 @@ async function reopenStatement(id) {
     const s = await api(`/api/statements/${id}?limit=2000`);
     entry.statement = s; entry.name = s.original_filename; entry.size = s.file_size; entry.kind = s.file_kind;
     if (s.status === 'committed') { toast('This statement was already imported', { type: 'info' }); location.replace(`/transactions.html?statement=${id}&range=all`); return; }
-    if (s.status === 'previewed' || s.status === 'error') { imp.active = entry.lid; setStep('review'); renderReview(); }
+    if (['previewed', 'error', 'discarded'].includes(s.status)) { imp.active = entry.lid; setStep('review'); renderReview(); }
     else { renderFileList(); schedulePoll(); }
   } catch (err) { entry.error = err.message; renderFileList(); }
 }
 
 /* ---------- Step 2: review ---------- */
-function reviewable() { return imp.files.filter((f) => f.statement && ['previewed', 'error', 'parsing', 'uploaded', 'committing'].includes(f.statement.status) && !f.done); }
+function reviewable() { return imp.files.filter((f) => f.statement && ['previewed', 'error', 'parsing', 'uploaded', 'committing', 'discarded'].includes(f.statement.status) && !f.done); }
 
 function renderReview() {
   const host = $('#step-review');
@@ -176,6 +176,10 @@ function renderReview() {
   if (!s || ['parsing', 'uploaded', 'committing'].includes(s.status)) {
     host.innerHTML = `${tabs}<div class="card parsing-card"><span class="spinner spinner-lg"></span><div><div class="fw-600">${s && s.status === 'committing' ? 'Importing' : 'Parsing'} ${esc(f.name)}…</div><div class="text-3 fs-base">${f.kind === 'pdf' ? 'Extracting text; scanned pages go through OCR, which can take a minute.' : 'Detecting the bank format and checking for duplicates.'}</div></div></div>`;
     schedulePoll();
+    return;
+  }
+  if (s.status === 'discarded') {
+    host.innerHTML = `${tabs}<div class="card">${ui.emptyState({ icon: 'trash', title: 'This import was discarded', body: `“${f.name}” was discarded before anything was imported. Upload it again if you still need it.`, action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
   if (s.status === 'error') {
@@ -333,7 +337,14 @@ async function applyMapping(f, mapping, { bank_profile } = {}) {
   try {
     const body = { mapping };
     if (bank_profile !== undefined) body.bank_profile = bank_profile || null;
-    f.statement = await api(`/api/statements/${f.statementId}/mapping`, { method: 'PUT', body });
+    const res = await api(`/api/statements/${f.statementId}/mapping`, { method: 'PUT', body });
+    if (res && res.status === 'parsing' && !res.rows) {
+      // PDFs re-parse in the background (202): show the parsing card and poll until previewed.
+      f.statement = { ...(f.statement || {}), status: 'parsing', rows: undefined };
+      renderReview();
+      return;
+    }
+    f.statement = res;
     if (!f.statement.rows) await reloadStatement(f, { silent: true });
     renderReview();
   } catch (err) { toast(err.message, { type: 'error' }); }

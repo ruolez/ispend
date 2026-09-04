@@ -4,7 +4,7 @@ const state = { tab: 'category', range: { preset: 'this-month' }, accounts: new 
 const acctQuery = () => (state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {});
 
 initNav('reports').then(async (me) => {
-  state.currency = (me.preferences && me.preferences.currency) || 'USD';
+  state.currency = await store.displayCurrency();
   const q = qs();
   state.tab = TABS.includes(q.tab) ? q.tab : 'category';
   state.range = rangeFromQuery(q, { preset: 'this-month' });
@@ -14,7 +14,8 @@ initNav('reports').then(async (me) => {
   state.accountsList = await store.accounts().catch(() => []);
   $('[data-act="export"]').innerHTML = `${icon('download')}<span>Export CSV</span>`;
   $('#report-tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) switchTab(t.dataset.tab); });
-  $('#months-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-months]'); if (!b) return; state.months = Number(b.dataset.months); sync(); loadTab(true); });
+  paintMonths();
+  $('#months-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-months]'); if (!b) return; state.months = Number(b.dataset.months); paintMonths(); sync(); loadTab(true); });
   document.body.addEventListener('click', onAction);
   mountRangeButton($('#range-btn'), state.range, (v) => { state.range = v; sync(); loadTab(true); });
   renderAcctBtn();
@@ -22,10 +23,11 @@ initNav('reports').then(async (me) => {
     title: 'Accounts', options: state.accountsList.map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: state.accounts,
     onChange: () => { renderAcctBtn(); sync(); state.cache = {}; loadTab(true); },
   }));
-  window.addEventListener('popstate', () => { const q2 = qs(); state.tab = TABS.includes(q2.tab) ? q2.tab : 'category'; switchTab(state.tab, true); });
+  window.addEventListener('popstate', () => { const q2 = qs(); state.tab = TABS.includes(q2.tab) ? q2.tab : 'category'; state.months = [6, 12, 24].includes(Number(q2.months)) ? Number(q2.months) : 12; paintMonths(); switchTab(state.tab, true); });
   switchTab(state.tab, true);
 });
 
+function paintMonths() { $$('#months-seg .seg-btn').forEach((b) => { const on = Number(b.dataset.months) === state.months; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function renderAcctBtn() {
   const n = state.accounts.size;
@@ -67,7 +69,7 @@ function onAction(e) {
 function exportCsv() {
   const rq = rangeToQuery(state.range);
   const urls = {
-    category: `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery(), format: 'csv' })}`,
+    category: `/api/reports/by-category${toQuery({ ...rq, level: 'top', ...acctQuery(), format: 'csv' })}`,
     trend: `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery(), format: 'csv' })}`,
     merchants: `/api/reports/top-merchants${toQuery({ ...rq, limit: 200, ...acctQuery(), format: 'csv' })}`,
     compare: `/api/reports/month-over-month${toQuery({ month: state.month, ...acctQuery(), format: 'csv' })}`,

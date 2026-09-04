@@ -1,4 +1,4 @@
-/* Settings page: Accounts, AI (admin), Appearance, Users (admin), My account. */
+/* Settings page: Accounts, AI (per user), Appearance, Users (admin), My account. */
 const TAB_META = {
   accounts: { label: 'Accounts', icon: 'landmark' },
   ai: { label: 'AI', icon: 'sparkles' },
@@ -7,8 +7,7 @@ const TAB_META = {
   account: { label: 'My account', icon: 'user' },
 };
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
-const MASK = '••••••••';
-const state = { me: null, accounts: [], institutions: [], settings: null, models: null, users: [], dirty: false };
+const state = { me: null, accounts: [], institutions: [], settings: null, models: null, users: [], dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
 
 initNav('settings').then(async (me) => {
   state.me = me;
@@ -30,7 +29,7 @@ initNav('settings').then(async (me) => {
 function showTab() {
   if (modelPop) modelPop.close();
   let tab = (location.hash || '#accounts').slice(1);
-  if (!TAB_META[tab] || (['ai', 'users'].includes(tab) && state.me.role !== 'admin')) tab = 'accounts';
+  if (!TAB_META[tab] || (tab === 'users' && state.me.role !== 'admin')) tab = 'accounts';
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   ({ accounts: loadAccounts, ai: loadAI, appearance: renderAppearance, users: loadUsers, account: renderAccount })[tab]();
@@ -51,11 +50,11 @@ async function loadAccounts() {
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"></th></tr></thead><tbody>
     ${state.accounts.map((a) => `<tr data-id="${a.id}" class="${a.is_active ? '' : 'text-3'}">
       <td><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1 fw-500">${esc(a.name)}</span>${a.last4 ? `<span class="text-4 mono">•${esc(a.last4)}</span>` : ''}${a.is_active ? '' : '<span class="badge badge-neutral">Archived</span>'}</span></td>
-      <td>${esc(instLabel(a.institution))}</td>
-      <td>${esc((ACCOUNT_TYPES.find((t) => t[0] === a.account_type) || [])[1] || a.account_type)}</td>
-      <td>${esc(a.currency)}</td>
-      <td class="right num">${fmtNumber(a.txn_count)}</td>
-      <td class="text-3">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
+      <td data-label="Institution">${esc(instLabel(a.institution))}</td>
+      <td data-label="Type">${esc((ACCOUNT_TYPES.find((t) => t[0] === a.account_type) || [])[1] || a.account_type)}</td>
+      <td data-label="Currency">${esc(a.currency)}</td>
+      <td class="right num" data-label="Transactions">${fmtNumber(a.txn_count)}</td>
+      <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
       <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" title="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" title="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -109,6 +108,7 @@ function openAccountModal(a) {
 async function loadAI() {
   const host = $('#ai-panel');
   host.innerHTML = `<div class="col gap-3">${ui.skeleton('40%', 14)}${ui.skeleton('100%', 36)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 36)}</div>`;
+  loadAIStatus();
   try { state.settings = await api('/api/settings'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-ai' }); return; }
   const s = state.settings;
   host.innerHTML = `
@@ -117,18 +117,98 @@ async function loadAI() {
         <button type="button" class="btn btn-icon btn-ghost btn-sm trailing" data-act="toggle-key" aria-label="Show key">${icon('eye')}</button></div>
       <div class="hint">Get a key at openrouter.ai/keys. Stored on the server, masked in responses.</div></div>
     <div class="field"><label for="or-model">Model</label>
-      <div class="model-combo"><div class="input-group">${icon('sparkles')}<input id="or-model" class="input has-trailing mono" value="${esc(s.openrouter_model || '')}" placeholder="Choose a model…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false">
+      <div class="model-combo"><div class="input-group">${icon('sparkles')}<input id="or-model" class="input has-trailing mono" value="${esc(s.openrouter_model || '')}" placeholder="Choose a model…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="or-model-list" aria-haspopup="listbox">
         <button type="button" class="btn btn-icon btn-ghost btn-sm trailing" data-act="open-models" aria-label="Browse models">${icon('chevron-down')}</button></div></div>
-      <div class="hint">Type to search the OpenRouter catalog. Models that support structured JSON output work best (e.g. anthropic/claude-sonnet-5, google/gemini-3.8-flash).</div></div>
-    <div class="row gap-2 mb-4"><button type="button" class="btn btn-secondary" data-act="test-ai">${icon('play')}Test connection</button><span id="ai-test-result"></span></div>
+      <div class="hint">Type to search the OpenRouter catalog; use ↑ ↓ and Enter to pick. Models that support structured JSON output work best (e.g. anthropic/claude-sonnet-5, google/gemini-3.8-flash).</div></div>
+    <div class="row gap-2 mb-4" style="flex-wrap:wrap"><button type="button" class="btn btn-secondary" data-act="test-ai">${icon('play')}Test connection</button><span id="ai-test-result"></span><span class="hint">Tests the key and model typed above, even before saving.</span></div>
     <div class="divider"></div>
     <div class="setting-row"><div><div class="title">Suggest categories after import</div><div class="desc">Unknown charges get an AI-suggested category you confirm in Review.</div></div>
       <label class="switch"><input type="checkbox" id="or-cat" ${s.ai_categorize_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>
     <div class="setting-row"><div><div class="title">Monthly insights</div><div class="desc">Generate written observations and recommendations on the Insights page.</div></div>
-      <label class="switch"><input type="checkbox" id="or-ins" ${s.ai_insights_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>`;
+      <label class="switch"><input type="checkbox" id="or-ins" ${s.ai_insights_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>
+    ${s.is_admin ? `<div class="setting-row"><div><div class="title">Share this key with all users</div><div class="desc">Publishes your saved key and model as the fallback for every user who has not entered their own. ${s.shared_available ? `Currently shared${s.shared_model ? ` · <span class="mono">${esc(s.shared_model)}</span>` : ''}.` : 'Not shared yet.'}</div></div>
+      <label class="switch"><input type="checkbox" id="or-shared" ${s.shared_available ? 'checked' : ''}><span class="switch-track"></span></label></div>` : ''}`;
+  if (!s.is_admin && s.shared_available && !s.openrouter_api_key) {
+    host.insertAdjacentHTML('afterbegin', `<div class="notice notice-info mb-4">${icon('info')}<div>Using the key shared by your administrator${s.shared_model ? ` (model: <span class="mono">${esc(s.shared_model)}</span>)` : ''}. Enter your own key below to override it.</div></div>`);
+  }
+  const sharedSw = $('#or-shared');
+  if (sharedSw) sharedSw.addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    if (on && state.dirty) { e.target.checked = false; toast('Save your key and model first, then share them', { type: 'error' }); return; }
+    if (on && !(s.openrouter_api_key && s.openrouter_model)) { e.target.checked = false; toast('Enter and save a key and a model before sharing', { type: 'error' }); return; }
+    try {
+      await api('/api/settings', { method: 'PUT', body: on ? { shared: true } : { clear_shared: true } });
+      toast(on ? 'Key shared with all users' : 'Shared key revoked', { type: 'success' });
+      store.invalidate('settings'); loadAI();
+    } catch (err) { e.target.checked = !on; toast(err.message, { type: 'error' }); }
+  });
   ['#or-key', '#or-model', '#or-cat', '#or-ins'].forEach((id) => $(id).addEventListener('input', () => setDirty(true)));
   $('#or-model').addEventListener('focus', () => openModelList());
   $('#or-model').addEventListener('input', debounce(() => openModelList(), 120));
+  $('#or-model').addEventListener('keydown', onModelKey);
+}
+
+/* ---- AI status card ---- */
+async function loadAIStatus() {
+  const host = $('#ai-status');
+  if (!host) return;
+  host.innerHTML = `<div class="card"><div class="card-body">${ui.skeleton('60%', 14)}</div></div>`;
+  try { state.aiStatus = await api('/api/ai/status'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'ai-refresh' }); return; }
+  renderAIStatus();
+}
+function renderAIStatus() {
+  const st = state.aiStatus; const host = $('#ai-status');
+  if (!st || !host) return;
+  const on = st.enabled || st.insights_enabled;
+  const last = st.last_call;
+  host.innerHTML = `<div class="card ai-status ${on ? 'is-on' : ''}"><div class="card-body">
+    <div class="row-between" style="gap:12px;flex-wrap:wrap">
+      <div class="row gap-3"><span class="ai-status-mark">${icon('sparkles')}</span><div>
+        <div class="fw-600">${on ? `AI is on · <span class="mono fs-sm">${esc(st.model || '')}</span>` : (st.configured || st.model ? 'AI is configured but switched off' : 'AI is off — add an OpenRouter key below')}</div>
+        <div class="text-3 fs-sm">${st.enabled ? 'Category suggestions on import' : 'Suggestions off'} · ${st.insights_enabled ? 'insights on' : 'insights off'}${last ? ` · last call ${fmtRelative(last.created_at)}${last.status === 'error' ? ` <span class="text-danger">(${esc(last.error_message || 'failed')})</span>` : ''}` : ''}</div>
+      </div></div>
+      <div class="row gap-2"><button type="button" class="btn btn-ghost btn-sm" data-act="ai-refresh" title="Refresh">${icon('refresh', 'ico-sm')}</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-act="ai-suggest" ${st.enabled ? '' : 'disabled title="Turn on suggestions and save first"'}>${icon('sparkles', 'ico-sm')}Suggest categories for uncategorized</button></div>
+    </div>
+    <div class="ai-stats mt-3"><div><div class="l">Suggestions waiting</div><div class="v num">${fmtNumber(st.pending_suggestions || 0)}</div></div><div><div class="l">Calls today</div><div class="v num">${fmtNumber(st.calls_today || 0)}</div></div><div><div class="l">Tokens today</div><div class="v num">${fmtNumber(st.tokens_today || 0, { compact: true })}</div></div></div>
+  </div></div>`;
+}
+async function suggestUncategorized(btn) {
+  btn.classList.add('is-loading');
+  try {
+    const r = await api('/api/ai/categorize', { method: 'POST', body: { scope: 'uncategorized' } });
+    if (r && r.queued != null) toast(`Queued ${fmtNumber(r.queued)} charges for AI suggestions. They appear in Review as they arrive.`, { type: 'success', duration: 7000 });
+    else if (r && r.suggested != null) toast(r.suggested ? `${fmtNumber(r.suggested)} suggestion${r.suggested === 1 ? '' : 's'} added — review them in the Review queue.` : 'Nothing to suggest: every charge already has a category.', { type: 'success', duration: 7000, action: r.suggested ? { label: 'Open Review', fn: () => { location.href = '/review.html'; } } : undefined });
+    else toast('Suggestions requested', { type: 'success' });
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    loadAIStatus();
+  } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
+  finally { btn.classList.remove('is-loading'); }
+}
+
+/* ---- model combobox keyboard ---- */
+function setModelActive(i, { scroll = true } = {}) {
+  const input = $('#or-model');
+  state.modelIdx = i;
+  if (!modelPop) return;
+  $$('.model-item', modelPop.el).forEach((el, j) => { el.classList.toggle('is-active', j === i); el.setAttribute('aria-selected', String(j === i)); });
+  const active = i >= 0 ? modelPop.el.querySelector(`#mi-${i}`) : null;
+  if (active) { input.setAttribute('aria-activedescendant', active.id); if (scroll) active.scrollIntoView({ block: 'nearest' }); }
+  else input.removeAttribute('aria-activedescendant');
+}
+function pickModel(id) {
+  const input = $('#or-model');
+  input.value = id; setDirty(true);
+  if (modelPop) modelPop.close();
+  input.focus();
+}
+function onModelKey(e) {
+  const n = state.modelRows.length;
+  if (e.key === 'ArrowDown') { e.preventDefault(); if (!modelPop) return openModelList(); setModelActive(n ? (state.modelIdx + 1) % n : -1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (!modelPop) return openModelList(); setModelActive(n ? (state.modelIdx - 1 + n) % n : -1); }
+  else if (e.key === 'Enter') { if (modelPop && state.modelIdx >= 0 && state.modelRows[state.modelIdx]) { e.preventDefault(); pickModel(state.modelRows[state.modelIdx].id); } else if (modelPop) { modelPop.close(); } }
+  else if (e.key === 'Escape') { if (modelPop) { e.preventDefault(); e.stopPropagation(); modelPop.close(); } }
+  else if (e.key === 'Tab') { if (modelPop) modelPop.close(); }
 }
 let modelPop = null;
 async function openModelList() {
@@ -140,21 +220,26 @@ async function openModelList() {
   }
   const q = input.value.trim().toLowerCase();
   const rows = state.models.filter((m) => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)).slice(0, 60);
-  const html = `<div class="menu model-list" role="listbox">${rows.length ? rows.map((m) => `<div class="model-item" role="option" data-id="${esc(m.id)}">
+  state.modelRows = rows;
+  const exact = rows.findIndex((m) => m.id.toLowerCase() === q);
+  state.modelIdx = exact >= 0 ? exact : (rows.length ? 0 : -1);
+  const html = `<div class="menu model-list" role="listbox" id="or-model-list">${rows.length ? rows.map((m, i) => `<div class="model-item ${i === state.modelIdx ? 'is-active' : ''}" role="option" id="mi-${i}" aria-selected="${i === state.modelIdx}" data-id="${esc(m.id)}">
       <div class="name">${esc(m.name)}${m.structured ? '<span class="badge badge-info" title="Supports structured JSON output">JSON</span>' : ''}</div>
       <div class="meta"><span>${esc(m.id)}</span><span>${m.context_length ? fmtNumber(m.context_length, { compact: true }) + ' ctx' : ''}</span><span>${m.prompt_price != null ? `$${m.prompt_price.toFixed(2)} / $${(m.completion_price || 0).toFixed(2)} per 1M` : ''}</span></div>
     </div>`).join('') : '<div class="palette-empty">No models match</div>'}
     <div class="menu-divider"></div><div class="row" style="padding:2px 4px 4px"><span class="hint">${fmtNumber(state.models.length)} models</span><button type="button" class="btn btn-ghost btn-xs ml-auto" data-act="refresh-models">${icon('refresh', 'ico-sm')}Refresh</button></div></div>`;
-  if (modelPop) { modelPop.el.innerHTML = html; modelPop.position(); }
+  if (modelPop) { modelPop.el.innerHTML = html; modelPop.position(); setModelActive(state.modelIdx, { scroll: false }); }
   else {
     const el = document.createElement('div'); el.innerHTML = html; el.style.width = `${input.getBoundingClientRect().width}px`;
-    modelPop = ui.popover(input.parentElement, el, { onClose: () => { modelPop = null; input.setAttribute('aria-expanded', 'false'); } });
+    modelPop = ui.popover(input.parentElement, el, { onClose: () => { modelPop = null; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); } });
     modelPop.onEsc = true;
     input.setAttribute('aria-expanded', 'true');
+    setModelActive(state.modelIdx, { scroll: false });
     el.addEventListener('mousedown', (e) => e.preventDefault());
+    el.addEventListener('mousemove', (e) => { const it = e.target.closest('.model-item'); if (it) { const i = $$('.model-item', el).indexOf(it); if (i !== state.modelIdx) setModelActive(i, { scroll: false }); } });
     el.addEventListener('click', async (e) => {
       const it = e.target.closest('.model-item');
-      if (it) { input.value = it.dataset.id; setDirty(true); modelPop.close(); return; }
+      if (it) { pickModel(it.dataset.id); return; }
       if (e.target.closest('[data-act="refresh-models"]')) { state.models = null; try { state.models = await api('/api/settings/openrouter/models?refresh=1'); } catch (err) { toast(err.message, { type: 'error' }); } openModelList(); }
     });
   }
@@ -165,7 +250,7 @@ async function testAI() {
   try {
     const r = await api('/api/settings/openrouter/test', { method: 'POST', body: { api_key: $('#or-key').value, model: $('#or-model').value.trim() } });
     out.innerHTML = `<span class="chip chip-ok">${icon('check')}Connected · ${fmtNumber(r.latency_ms)} ms</span>`;
-  } catch (err) { out.innerHTML = `<span class="chip chip-err">${icon('alert-circle')}${esc(err.message)}</span>`; }
+  } catch (err) { out.innerHTML = `<span class="chip chip-err" title="${esc(err.message)}">${icon('alert-circle')}${esc(err.message)}</span>`; }
 }
 async function saveAI() {
   const body = { openrouter_api_key: $('#or-key').value.trim(), openrouter_model: $('#or-model').value.trim(), ai_categorize_enabled: $('#or-cat').checked, ai_insights_enabled: $('#or-ins').checked };
@@ -173,6 +258,7 @@ async function saveAI() {
   store.invalidate('settings');
   setDirty(false);
   toast('AI settings saved', { type: 'success' });
+  loadAIStatus();
 }
 let savebar = null;
 function setDirty(v) {
@@ -188,14 +274,24 @@ function setDirty(v) {
 function renderAppearance() {
   const host = $('#appearance-panel');
   const mode = Theme.get(), density = Theme.density();
+  const prefCur = (state.me.preferences && state.me.preferences.currency) || '';
   const opt = (name, value, title, desc, checked) => `<label class="radio-item ${checked ? 'is-checked' : ''}"><input type="radio" name="${name}" value="${value}" ${checked ? 'checked' : ''}><div><div class="radio-title">${title}</div><div class="radio-desc">${desc}</div></div></label>`;
   host.innerHTML = `
     <div class="label mb-2">Theme</div>
     <div class="radio-list mb-6" id="theme-radios">${opt('theme', 'system', 'System', 'Follow your device setting', mode === 'system')}${opt('theme', 'light', 'Light', 'Bright surfaces, dark text', mode === 'light')}${opt('theme', 'dark', 'Dark', 'Easy on the eyes at night', mode === 'dark')}</div>
     <div class="label mb-2">Density</div>
-    <div class="radio-list" id="density-radios">${opt('density', 'comfortable', 'Comfortable', 'Roomier rows in tables', density !== 'compact')}${opt('density', 'compact', 'Compact', 'More rows on screen', density === 'compact')}</div>`;
+    <div class="radio-list mb-6" id="density-radios">${opt('density', 'comfortable', 'Comfortable', 'Roomier rows in tables', density !== 'compact')}${opt('density', 'compact', 'Compact', 'More rows on screen', density === 'compact')}</div>
+    <div class="label mb-2">Display currency</div>
+    <div class="field" style="max-width:320px"><select id="pref-currency" class="select"><option value="" ${!prefCur ? 'selected' : ''}>Auto (from your accounts)</option><option value="USD" ${prefCur === 'USD' ? 'selected' : ''}>USD · US dollar</option><option value="CAD" ${prefCur === 'CAD' ? 'selected' : ''}>CAD · Canadian dollar</option></select><div class="hint">Used for dashboard, report and insight totals. Each transaction always shows its account's currency.</div></div>`;
   host.querySelector('#theme-radios').addEventListener('change', (e) => { setThemePref(e.target.value); paintRadios(host.querySelector('#theme-radios')); });
   host.querySelector('#density-radios').addEventListener('change', (e) => { Theme.setDensity(e.target.value); api('/api/auth/me/preferences', { method: 'PUT', body: { density: e.target.value } }).catch(() => {}); paintRadios(host.querySelector('#density-radios')); });
+  host.querySelector('#pref-currency').addEventListener('change', async (e) => {
+    try {
+      const prefs = await api('/api/auth/me/preferences', { method: 'PUT', body: { currency: e.target.value } });
+      state.me.preferences = prefs; if (window.currentUser) window.currentUser.preferences = prefs;
+      toast(e.target.value ? `Totals now shown in ${e.target.value}` : 'Display currency follows your accounts', { type: 'success' });
+    } catch (err) { toast(err.message, { type: 'error' }); }
+  });
 }
 function paintRadios(group) { $$('.radio-item', group).forEach((l) => l.classList.toggle('is-checked', l.querySelector('input').checked)); }
 
@@ -207,10 +303,10 @@ async function loadUsers() {
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"></th></tr></thead><tbody>
     ${state.users.map((u) => `<tr data-id="${u.id}">
       <td><span class="row gap-2"><span class="avatar">${esc(initials(u.username))}</span><span class="fw-500">${esc(u.username)}</span>${u.id === state.me.id ? '<span class="badge badge-accent">You</span>' : ''}</span></td>
-      <td><span class="badge ${u.role === 'admin' ? 'badge-info' : 'badge-neutral'}">${esc(u.role)}</span></td>
-      <td><span class="user-status"><i class="dot" style="--c:var(--${u.is_active ? 'success' : 'text-4'})"></i>${u.is_active ? 'Active' : 'Deactivated'}</span></td>
-      <td class="right num">${fmtNumber(u.account_count)}</td><td class="right num">${fmtNumber(u.txn_count)}</td>
-      <td class="text-3">${fmtDate(u.created_at, { year: true })}</td>
+      <td data-label="Role"><span class="badge ${u.role === 'admin' ? 'badge-info' : 'badge-neutral'}">${esc(u.role)}</span></td>
+      <td data-label="Status"><span class="user-status"><i class="dot" style="--c:var(--${u.is_active ? 'success' : 'text-4'})"></i>${u.is_active ? 'Active' : 'Deactivated'}</span></td>
+      <td class="right num" data-label="Accounts">${fmtNumber(u.account_count)}</td><td class="right num" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
+      <td class="text-3" data-label="Created">${fmtDate(u.created_at, { year: true })}</td>
       <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" title="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -299,6 +395,8 @@ async function onAction(e) {
       return;
     }
     case 'reload-ai': return loadAI();
+    case 'ai-refresh': return loadAIStatus();
+    case 'ai-suggest': return suggestUncategorized(el);
     case 'reload-users': return loadUsers();
     case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); return; }
     case 'open-models': return $('#or-model').focus();

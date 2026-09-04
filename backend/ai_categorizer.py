@@ -58,10 +58,11 @@ def _load_rows(uid, txn_ids):
 def _call(uid, rows, cats):
     """One OpenRouter call for <= AI_BATCH_SIZE rows -> list of (row, category_id, confidence, reason)."""
     valid = {c["id"] for c in cats}
-    model_id = openrouter.model()
+    model_id = openrouter.model(uid)
     started = time.time()
     try:
-        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, build_prompt(rows, cats), max_tokens=120 * len(rows) + 200)
+        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, build_prompt(rows, cats), max_tokens=120 * len(rows) + 200,
+                                             user_id=uid)
     except OpenRouterError as e:
         openrouter.log_call(uid, "categorize", model_id, len(rows), None, "error", str(e),
                             int((time.time() - started) * 1000))
@@ -99,14 +100,14 @@ def _apply(uid, suggestions):
         )
         if n:
             applied.append({"id": row["id"], "category_id": cid, "confidence": round(conf, 3), "reason": reason})
-            events.append((row["id"], "ai", {"category_id": cid, "confidence": round(conf, 3), "reason": reason}, None))
+            events.append((row["id"], "ai", {"category_id": cid, "confidence": round(conf, 3), "reason": reason}, uid))
     record_events(events)
     return applied
 
 
 def suggest_for_ids(uid, txn_ids):
     """Background job: categorize in batches; per-batch failures are logged and skipped."""
-    if not openrouter.enabled("categorize"):
+    if not openrouter.enabled("categorize", uid):
         return {"suggested": 0, "skipped": "disabled"}
     rows = _load_rows(uid, txn_ids)
     if not rows:
@@ -128,7 +129,7 @@ def suggest_for_ids(uid, txn_ids):
 
 def suggest_sync(uid, txn_ids):
     """Synchronous variant for the UI (<= AI_BATCH_SIZE rows). Raises OpenRouterError."""
-    if not openrouter.enabled("categorize"):
+    if not openrouter.enabled("categorize", uid):
         raise OpenRouterError("AI categorization is not enabled. Add an OpenRouter key and model in Settings.")
     rows = _load_rows(uid, txn_ids[: max(1, int(config.AI_BATCH_SIZE))])
     if not rows:

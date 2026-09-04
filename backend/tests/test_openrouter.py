@@ -49,7 +49,7 @@ class ChatJsonTest(unittest.TestCase):
         with mock.patch("requests.post", return_value=FakeResponse(401, payload)):
             with self.assertRaises(openrouter.OpenRouterError) as ctx:
                 openrouter.chat_json("s", "u", model_id="m", key="k")
-        self.assertIn("Invalid key", str(ctx.exception))
+        self.assertIn("Invalid API key", str(ctx.exception))
 
     def test_non_json_content_raises(self):
         with mock.patch("requests.post", return_value=FakeResponse(200, completion("no json here"))):

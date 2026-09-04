@@ -45,7 +45,7 @@ def load_context(user_id):
     cat_rows = db.query("SELECT id, slug FROM categories WHERE user_id = %s", (user_id,)) or []
     try:
         import openrouter
-        ai_enabled = bool(openrouter.enabled("categorize"))
+        ai_enabled = bool(openrouter.enabled("categorize", user_id))
     except Exception:
         ai_enabled = False
     memory = {r["merchant_key"]: dict(r) for r in mem_rows}

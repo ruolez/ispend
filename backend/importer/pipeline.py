@@ -166,9 +166,20 @@ def _categorize_rows(user_id, account_id, staged):
             log.debug("categorize failed at preview", exc_info=True)
 
 
-def _build_staged(rows, account_id):
+def _phrases_for(st, descriptions):
+    """Cardholder-name phrases detected when the statement was staged; recomputed when absent so
+    preview, duplicate detection and commit always normalize the same way."""
+    stats = (st or {}).get("stats") or {}
+    saved = stats.get("stripped_phrases")
+    if isinstance(saved, list):
+        return [p for p in saved if isinstance(p, str)]
+    return merchant.frequent_phrases(list(descriptions))
+
+
+def _build_staged(rows, account_id, phrases=None):
     staged = []
-    phrases = merchant.frequent_phrases([r.description for r in rows])
+    if phrases is None:
+        phrases = merchant.frequent_phrases([r.description for r in rows])
     for r in rows:
         m = merchant.normalize(r.description, phrases)
         fp = dedupe.fingerprint(account_id or 0, r.txn_date, r.amount, m.clean) if r.is_valid else None
@@ -179,7 +190,8 @@ def _build_staged(rows, account_id):
 
 def _stage(st, result, ocr_rel):
     uid, account_id, sid = st["user_id"], st["account_id"], st["id"]
-    staged = _build_staged(result.rows, account_id)
+    phrases = merchant.frequent_phrases([r.description for r in result.rows])
+    staged = _build_staged(result.rows, account_id, phrases)
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
     if account_id:
@@ -194,7 +206,7 @@ def _stage(st, result, ocr_rel):
             r.is_valid and dup is None, s["category_id"], r.problems,
         ))
     stats = _preview_stats(staged, existing)
-    stats["stripped_phrases"] = merchant.frequent_phrases([r.description for r in result.rows])
+    stats["stripped_phrases"] = phrases
     stats["header"] = result.header
     stats["sample"] = result.sample
     with db.transaction():
@@ -239,15 +251,52 @@ def reparse_with_mapping(statement_id, mapping, profile_key=None):
     return _load(statement_id)
 
 
+def _should_auto_flip(st, account_id, amounts):
+    """Preview-time twin of _auto_flip: the account was chosen after parsing."""
+    from importer import generic
+
+    if not account_id:
+        return False
+    mapping = st.get("mapping") or {}
+    if mapping.get("flip_sign"):
+        return False
+    if st.get("bank_profile") and st.get("profile_confidence") is not None and float(st["profile_confidence"]) >= 0.6:
+        return False
+    acct = db.query("SELECT account_type FROM accounts WHERE id = %s", (account_id,), one=True)
+    return bool(acct) and generic.looks_inverted(amounts, acct["account_type"])
+
+
+def reparse_async(statement_id, mapping, profile_key=None):
+    """PDF re-parse can take minutes (OCR): mark parsing now and do the work in the background."""
+    import jobs
+
+    st = _load(statement_id)
+    if not st:
+        raise ImportError_("Statement not found", 404)
+    if st["status"] not in ("previewed", "error", "uploaded"):
+        raise ImportError_("Statement is not editable in its current state", 409)
+    db.execute("UPDATE statements SET status = 'parsing', error_message = NULL, updated_at = now() WHERE id = %s",
+               (statement_id,))
+    jobs.spawn(parse_statement, statement_id, mapping, profile_key or st.get("bank_profile"))
+    return _load(statement_id)
+
+
 def recompute_dupes(statement_id, account_id):
     st = _load(statement_id)
     if not st or st["status"] != "previewed":
         return
     rows = db.query("SELECT id, txn_date, description, amount, is_valid FROM import_rows WHERE statement_id = %s ORDER BY row_index",
                     (statement_id,))
+    rows = [dict(r) for r in rows]
+    flipped = _should_auto_flip(st, account_id, [r["amount"] for r in rows if r["is_valid"]])
+    if flipped:
+        for r in rows:
+            if r["amount"] is not None:
+                r["amount"] = -r["amount"]
+    phrases = _phrases_for(st, (r["description"] or "" for r in rows))
     staged = []
     for r in rows:
-        m = merchant.normalize(r["description"] or "")
+        m = merchant.normalize(r["description"] or "", phrases)
         fp = dedupe.fingerprint(account_id or 0, r["txn_date"], r["amount"], m.clean) if r["is_valid"] else None
         staged.append({"id": r["id"], "fingerprint": fp, "occurrence": 1, "merchant": m, "category_id": None,
                        "row": _RowShim(r)})
@@ -261,14 +310,25 @@ def recompute_dupes(statement_id, account_id):
             dup = existing.get((s["fingerprint"], s["occurrence"]))
             db.execute(
                 """UPDATE import_rows SET fingerprint = %s, occurrence = %s, duplicate_of = %s, in_file_duplicate = %s,
-                       include = %s, category_id = %s WHERE id = %s""",
+                       include = %s, category_id = %s, amount = %s WHERE id = %s""",
                 (s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1, s["row"].is_valid and dup is None,
-                 s["category_id"], s["id"]), commit=False,
+                 s["category_id"], s["row"].amount, s["id"]), commit=False,
             )
         stats = dict(st["stats"] or {})
         stats.update(_preview_stats(staged, existing))
-        db.execute("UPDATE statements SET account_id = %s, stats = %s, updated_at = now() WHERE id = %s",
-                   (account_id, json.dumps(stats, default=str), statement_id), commit=False)
+        stats["stripped_phrases"] = phrases
+        mapping = dict(st.get("mapping") or {})
+        warnings = list(st.get("warnings") or [])
+        if flipped:
+            mapping["flip_sign"] = True
+            warnings = [w for w in warnings if "Most amounts are positive" not in w and w != AUTO_FLIP_WARNING]
+            warnings.append(AUTO_FLIP_WARNING)
+        db.execute(
+            """UPDATE statements SET account_id = %s, stats = %s, mapping = %s, warnings = %s, updated_at = now()
+               WHERE id = %s""",
+            (account_id, json.dumps(stats, default=str), json.dumps(mapping) if mapping else None,
+             json.dumps(warnings), statement_id), commit=False,
+        )
 
 
 class _RowShim:
@@ -308,9 +368,10 @@ def _commit_locked(st, account):
     excluded_by_user = sum(1 for r in all_rows if r["is_valid"] and r["duplicate_of"] is None and not r["include"])
     skipped_invalid = sum(1 for r in all_rows if not r["is_valid"])
     candidates = [r for r in all_rows if r["is_valid"] and r["include"]]
+    phrases = _phrases_for(st, (r["description"] or "" for r in all_rows))
     staged = []
     for r in candidates:
-        m = merchant.normalize(r["description"] or "")
+        m = merchant.normalize(r["description"] or "", phrases)
         staged.append({"row": r, "merchant": m,
                        "fingerprint": dedupe.fingerprint(account_id, r["txn_date"], r["amount"], m.clean), "occurrence": 1})
     dedupe.assign_occurrences(staged)
@@ -326,59 +387,67 @@ def _commit_locked(st, account):
     rule_hits = {}
     events, inserted_ids, uncategorized_ids = [], [], []
     skipped_dupes = 0
+    values, meta = [], {}
+    for s in staged:
+        r, m = s["row"], s["merchant"]
+        if (s["fingerprint"], s["occurrence"]) in existing:
+            skipped_dupes += 1
+            continue
+        d = None
+        if ctx is not None:
+            try:
+                d = categorizer.categorize({
+                    "description_clean": m.clean, "description_raw": r["description"] or "",
+                    "merchant_key": m.key, "amount": r["amount"], "account_id": account_id,
+                }, ctx)
+            except Exception:
+                log.debug("categorize failed at commit", exc_info=True)
+        category_id = getattr(d, "category_id", None)
+        status = getattr(d, "status", "none") if category_id else "none"
+        source = getattr(d, "source", None) if category_id else None
+        rule_id = getattr(d, "rule_id", None)
+        confidence = getattr(d, "confidence", None) if category_id else None
+        is_transfer = bool(getattr(d, "is_transfer", False))
+        is_excluded = bool(getattr(d, "is_excluded", False)) or is_transfer
+        values.append((
+            uid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
+            r["description"] or "", m.clean, m.key, m.name, category_id, status, source, rule_id, confidence,
+            is_transfer, is_excluded, s["fingerprint"], s["occurrence"], json.dumps(r["raw"], default=str),
+        ))
+        meta[(s["fingerprint"], s["occurrence"])] = {
+            "category_id": category_id, "status": status, "source": source, "rule_id": rule_id,
+            "confidence": confidence, "is_transfer": is_transfer,
+        }
     with db.transaction():
-        for s in staged:
-            r, m = s["row"], s["merchant"]
-            if (s["fingerprint"], s["occurrence"]) in existing:
-                skipped_dupes += 1
-                continue
-            d = None
-            if ctx is not None:
-                try:
-                    d = categorizer.categorize({
-                        "description_clean": m.clean, "description_raw": r["description"] or "",
-                        "merchant_key": m.key, "amount": r["amount"], "account_id": account_id,
-                    }, ctx)
-                except Exception:
-                    log.debug("categorize failed at commit", exc_info=True)
-            category_id = getattr(d, "category_id", None)
-            status = getattr(d, "status", "none") if category_id else "none"
-            source = getattr(d, "source", None) if category_id else None
-            rule_id = getattr(d, "rule_id", None)
-            confidence = getattr(d, "confidence", None) if category_id else None
-            is_transfer = bool(getattr(d, "is_transfer", False))
-            is_excluded = bool(getattr(d, "is_excluded", False)) or is_transfer
-            row = db.execute(
-                """INSERT INTO transactions (user_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance,
-                       description_raw, description_clean, merchant_key, merchant_name, category_id, category_status,
-                       category_source, category_rule_id, category_confidence, is_transfer, is_excluded, fingerprint,
-                       occurrence, raw)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (account_id, fingerprint, occurrence) DO NOTHING RETURNING id""",
-                (uid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
-                 r["description"] or "", m.clean, m.key, m.name, category_id, status, source, rule_id, confidence,
-                 is_transfer, is_excluded, s["fingerprint"], s["occurrence"], json.dumps(r["raw"], default=str)),
-                returning=True, commit=False,
-            )
-            if not row:
-                skipped_dupes += 1
-                continue
+        returned = db.execute_values(
+            """INSERT INTO transactions (user_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance,
+                   description_raw, description_clean, merchant_key, merchant_name, category_id, category_status,
+                   category_source, category_rule_id, category_confidence, is_transfer, is_excluded, fingerprint,
+                   occurrence, raw)
+               VALUES %s
+               ON CONFLICT (account_id, fingerprint, occurrence) DO NOTHING RETURNING id, fingerprint, occurrence""",
+            values, commit=False, fetch=True,
+        ) or []
+        skipped_dupes += len(values) - len(returned)
+        for row in returned:
             tid = row["id"]
+            info = meta.get((row["fingerprint"], row["occurrence"]), {})
+            category_id, source, status = info.get("category_id"), info.get("source"), info.get("status")
             inserted_ids.append(tid)
             events.append((tid, "imported", {"statement_id": sid, "filename": st["original_filename"]}, uid))
             if category_id and source in ("rule", "merchant", "builtin"):
-                events.append((tid, source, {"category_id": category_id, "rule_id": rule_id, "confidence": confidence,
-                                             "status": status}, uid))
+                events.append((tid, source, {"category_id": category_id, "rule_id": info.get("rule_id"),
+                                             "confidence": info.get("confidence"), "status": status}, uid))
                 if status == "confirmed":
                     counts[source] += 1
                 else:
                     counts["suggested"] += 1
-                if source == "rule" and rule_id:
-                    rule_hits[rule_id] = rule_hits.get(rule_id, 0) + 1
+                if source == "rule" and info.get("rule_id"):
+                    rule_hits[info["rule_id"]] = rule_hits.get(info["rule_id"], 0) + 1
             else:
                 counts["uncategorized"] += 1
                 uncategorized_ids.append(tid)
-            if is_transfer:
+            if info.get("is_transfer"):
                 events.append((tid, "transfer", {"by": source or "import"}, uid))
         record_events(events, commit=False)
         for rid, n in rule_hits.items():
@@ -406,6 +475,8 @@ def _commit_locked(st, account):
         except Exception:
             log.warning("could not queue AI suggestions", exc_info=True)
             result["ai_queued"] = False
+            stats["ai_queued"] = False
+            db.execute("UPDATE statements SET stats = %s WHERE id = %s", (json.dumps(stats, default=str), sid))
     return result
 
 

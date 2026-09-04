@@ -128,3 +128,16 @@ class RecoverTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhrasesForTest(unittest.TestCase):
+    """Cardholder phrases saved at staging are what commit and dupe recomputation use."""
+    DESCS = [f"Shop {i} Eugene Braverman RAW{i}" for i in range(20)]
+
+    def test_saved_phrases_are_reused(self):
+        st = {"stats": {"stripped_phrases": ["SOMEONE ELSE"]}}
+        self.assertEqual(pipeline._phrases_for(st, self.DESCS), ["SOMEONE ELSE"])
+
+    def test_recomputed_when_absent(self):
+        self.assertEqual(pipeline._phrases_for({"stats": {}}, self.DESCS), ["EUGENE BRAVERMAN"])
+        self.assertEqual(pipeline._phrases_for(None, self.DESCS), ["EUGENE BRAVERMAN"])

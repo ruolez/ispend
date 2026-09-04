@@ -87,14 +87,14 @@ def generate(uid, start, end, force=False, account_ids=None):
         hit = cached(uid, start, end)
         if hit:
             return hit
-    if not openrouter.enabled("insights"):
+    if not openrouter.enabled("insights", uid):
         raise OpenRouterError("AI insights are not enabled. Add an OpenRouter key and model in Settings.")
     context = build_context(uid, start, end, account_ids)
-    model_id = openrouter.model()
+    model_id = openrouter.model(uid)
     started = time.time()
     try:
         parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, json.dumps(context, default=str), max_tokens=2500,
-                                             temperature=0.4)
+                                             temperature=0.4, user_id=uid)
         clean = _validate(parsed)
     except OpenRouterError as e:
         openrouter.log_call(uid, "insights", model_id, 1, None, "error", str(e), int((time.time() - started) * 1000))

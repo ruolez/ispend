@@ -6,7 +6,7 @@ initNav('dashboard').then(async (me) => {
   state.me = me;
   const q = qs();
   state.range = RANGES.includes(q.range) ? q.range : 'this-month';
-  state.currency = (me.preferences && me.preferences.currency) || 'USD';
+  state.currency = await store.displayCurrency();
   $('#range-seg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-range]'); if (!b) return;
     state.range = b.dataset.range;
@@ -87,7 +87,7 @@ function renderKpis(data) {
     } else {
       const good = d.delta.dir === d.goodWhen;
       deltaEl.className = `stat-delta ${good ? 'stat-delta--good' : 'stat-delta--bad'}`;
-      deltaEl.innerHTML = `${icon(d.delta.dir === 'up' ? 'arrow-up' : 'arrow-down')} ${esc(d.delta.text || fmtPct(Math.abs(d.delta.pct) / 100))} <span class="stat-delta-vs">vs previous</span>`;
+      deltaEl.innerHTML = `${icon(d.delta.dir === 'up' ? 'arrow-up' : 'arrow-down')} ${esc(d.delta.text || fmtPct(Math.abs(d.delta.pct)))} <span class="stat-delta-vs">vs previous</span>`;
     }
     const canvas = el.querySelector('.stat-spark');
     if (canvas && spark[d.key]) {
@@ -192,7 +192,7 @@ function renderRecent(data) {
       <div><div class="rt-amt amt ${cls}">${fmtMoney(t.amount, t.currency || state.currency, { sign: 'always' })}</div><div class="rt-date">${fmtDate(t.txn_date)}</div></div>
     </div>`;
   }).join('')}</div>`;
-  const go = (el) => { location.href = `/transactions.html${toQuery({ open: el.dataset.open })}`; };
+  const go = (el) => { location.href = `/transactions.html${toQuery({ open: el.dataset.open, range: 'all' })}`; };
   host.onclick = (e) => { const el = e.target.closest('[data-open]'); if (el) go(el); };
   host.onkeydown = (e) => { const el = e.target.closest('[data-open]'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(el); } };
 }

@@ -1,17 +1,17 @@
 /* Insights: recurring charges, anomalies and optional AI-written monthly insights. */
-const state = { month: null, data: null, currency: 'USD', settings: null, me: null, cats: new Map(), generating: false };
+const state = { month: null, data: null, currency: 'USD', me: null, cats: new Map(), generating: false };
 const KIND = { unusual_amount: { label: 'Unusual amount', icon: 'trending-up' }, new_merchant: { label: 'New merchant', icon: 'sparkles' }, duplicate_charge: { label: 'Possible duplicate', icon: 'copy' } };
 
 initNav('insights').then(async (me) => {
   state.me = me;
-  state.currency = (me.preferences && me.preferences.currency) || 'USD';
+  state.currency = await store.displayCurrency();
   state.month = qs().month || currentMonth();
   $('#month').value = state.month;
   $('[data-act="prev-month"]').innerHTML = icon('chevron-left'); $('[data-act="next-month"]').innerHTML = icon('chevron-right');
   $('.ai-mark').innerHTML = icon('sparkles');
   $('#month').addEventListener('change', (e) => { state.month = e.target.value || currentMonth(); sync(); load(); });
   document.body.addEventListener('click', onAction);
-  [state.settings] = await Promise.all([store.settings().catch(() => ({})), store.categoriesFlat().then((f) => { state.cats = new Map(f.map((c) => [c.id, c])); }).catch(() => {})]);
+  await store.categoriesFlat().then((f) => { state.cats = new Map(f.map((c) => [c.id, c])); }).catch(() => {});
   load();
 });
 

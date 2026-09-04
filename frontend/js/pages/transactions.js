@@ -26,6 +26,7 @@ const tx = {
 
 initNav('transactions').then(async () => {
   await loadRefs();
+  tx.displayCurrency = await store.displayCurrency();
   readUrl();
   $('#btn-export').innerHTML = `${icon('download', 'ico-sm')}<span class="label">Export CSV</span>`;
   paintDensity();
@@ -46,14 +47,25 @@ initNav('transactions').then(async () => {
   document.body.addEventListener('click', (e) => { const b = e.target.closest('[data-act="reload"]'); if (b) reload(); });
   window.addEventListener('popstate', () => { readUrl(); reload(); });
   store.on('categories-changed', async () => { await loadRefs(); rerenderAll(); });
-  tx.observer = new IntersectionObserver((entries) => { if (entries.some((x) => x.isIntersecting)) loadMore(); }, { root: $('#tx-wrap'), rootMargin: '400px' });
-  tx.observer.observe($('#tx-sentinel'));
+  setupObserver();
+  window.addEventListener('resize', debounce(setupObserver, 200));
   registerShortcuts();
   paintToolbar();
   await reload();
   const q = qs();
   if (q.open) openDrawer(Number(q.open));
 });
+
+function setupObserver() {
+  const wrap = $('#tx-wrap');
+  const scrollsInside = window.innerWidth > 768 && getComputedStyle(wrap).overflowY !== 'visible';
+  const root = scrollsInside ? wrap : null;
+  if (tx.observer && tx.observerRoot === root) return;
+  if (tx.observer) tx.observer.disconnect();
+  tx.observerRoot = root;
+  tx.observer = new IntersectionObserver((entries) => { if (entries.some((x) => x.isIntersecting)) loadMore(); }, { root, rootMargin: '400px' });
+  tx.observer.observe($('#tx-sentinel'));
+}
 
 /* ---------- refs ---------- */
 async function loadRefs() {
@@ -171,7 +183,7 @@ async function loadMore(first = false) {
   try {
     const r = await api('/api/transactions' + toQuery(params));
     if (seq !== tx.seq) return;
-    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.facets = r.facets;
+    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.facets = r.facets; tx.currencies = r.currencies || [];
     tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
     const startIdx = tx.items.length;
     r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
@@ -189,8 +201,10 @@ async function loadMore(first = false) {
   } finally { tx.loading = false; }
 }
 function paintSummary() {
-  const cur = tx.items.length ? currencyOf(tx.items[0]) : 'USD';
-  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span><span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span><span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span><span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>`;
+  const curs = tx.currencies && tx.currencies.length ? tx.currencies : (tx.items.length ? [currencyOf(tx.items[0])] : []);
+  const cur = curs[0] || tx.displayCurrency || 'USD';
+  const mixed = curs.length > 1;
+  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span><span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span><span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span><span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
 $('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); });
 
@@ -420,7 +434,8 @@ function onBulkClick(e) {
 /* ---------- drawer ---------- */
 async function openDrawer(id, { focusNotes } = {}) {
   const local = tx.byId.get(id);
-  const d = ui.drawer({ title: local ? local.merchant_name : 'Transaction', width: 500, html: `<div class="col gap-3">${ui.skeleton('40%', 28)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 80)}</div>` });
+  let flushNotes = null;
+  const d = ui.drawer({ title: local ? local.merchant_name : 'Transaction', width: 500, html: `<div class="col gap-3">${ui.skeleton('40%', 28)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 80)}</div>`, onClose: () => { if (flushNotes) flushNotes(); } });
   tx.drawer = d;
   let it;
   try { it = await api(`/api/transactions/${id}`); } catch (err) { d.setBody(ui.errorBox(err.message)); return; }
@@ -429,13 +444,31 @@ async function openDrawer(id, { focusNotes } = {}) {
   d.setBody(drawerHtml(it));
   d.el.addEventListener('click', (e) => onDrawerClick(e, it, d));
   d.el.addEventListener('change', (e) => onDrawerChange(e, it, d));
-  const notes = d.el.querySelector('#txd-notes');
-  notes.addEventListener('blur', async () => {
-    const v = notes.value.trim();
-    if (v === (it.notes || '')) return;
-    try { const u = await updateItem(it.id, { notes: v }, 'Note saved'); it.notes = u.notes; } catch { /* toast shown */ }
-  });
-  if (focusNotes) notes.focus();
+  // Notes autosave: delegated so it survives setBody() re-renders; the draft lives outside
+  // the DOM and is flushed on blur, after a typing pause, and when the drawer closes.
+  let draft = null, saving = null;
+  const saveNotes = async () => {
+    const ta = d.el.querySelector('#txd-notes');
+    const v = (draft != null ? draft : (ta ? ta.value : (it.notes || ''))).trim();
+    if (v === (it.notes || '').trim()) { draft = null; return; }
+    if (saving) return saving;
+    saving = (async () => {
+      try {
+        const u = await updateItem(it.id, { notes: v }, 'Note saved');
+        it.notes = u.notes || '';
+        if (draft != null && draft.trim() === (it.notes || '').trim()) draft = null;
+        const ta2 = d.el.querySelector('#txd-notes');
+        if (ta2 && document.activeElement !== ta2 && ta2.value !== (it.notes || '')) ta2.value = it.notes || '';
+      } catch { /* toast shown */ }
+      finally { saving = null; }
+    })();
+    return saving;
+  };
+  const debouncedSave = debounce(saveNotes, 800);
+  flushNotes = () => { if (draft != null) saveNotes(); };
+  d.el.addEventListener('input', (e) => { if (e.target && e.target.id === 'txd-notes') { draft = e.target.value; debouncedSave(); } });
+  d.el.addEventListener('focusout', (e) => { if (e.target && e.target.id === 'txd-notes') { draft = e.target.value; saveNotes(); } });
+  if (focusNotes) { const ta = d.el.querySelector('#txd-notes'); if (ta) ta.focus(); }
   if (qs().open) setQs({ open: null });
 }
 function drawerHtml(it) {

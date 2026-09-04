@@ -48,14 +48,16 @@ def execute(sql, params=None, returning=False, commit=True):
     return row if returning else count
 
 
-def execute_values(sql, rows, template=None, commit=True, page_size=500):
-    """Bulk insert via psycopg2.extras.execute_values; sql must contain VALUES %s."""
+def execute_values(sql, rows, template=None, commit=True, page_size=500, fetch=False):
+    """Bulk insert via psycopg2.extras.execute_values; sql must contain VALUES %s.
+    With fetch=True the RETURNING rows come back as dicts."""
     if not rows:
-        return
-    with get_db().cursor() as cur:
-        psycopg2.extras.execute_values(cur, sql, rows, template=template, page_size=page_size)
+        return [] if fetch else None
+    with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        out = psycopg2.extras.execute_values(cur, sql, rows, template=template, page_size=page_size, fetch=fetch)
     if commit:
         get_db().commit()
+    return [dict(r) for r in out] if fetch else None
 
 
 @contextmanager
@@ -81,6 +83,15 @@ def set_setting(key, value):
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
         (key, value),
     )
+
+
+def user_setting(user_id, key, default=None):
+    """Per-user setting stored in the global settings table under a 'u<id>:' prefix."""
+    return get_setting(f"u{user_id}:{key}", default)
+
+
+def set_user_setting(user_id, key, value):
+    set_setting(f"u{user_id}:{key}", value)
 
 
 def run_migrations():

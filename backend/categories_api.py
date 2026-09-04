@@ -183,16 +183,9 @@ def merge(cat_id):
     child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,))]
     ids = [cat_id] + child_ids
     with db.transaction():
-        moved = db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s",
-                           (dst["id"], ids, uid), commit=False)
-        db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst["id"], ids, uid), commit=False)
-        db.execute("UPDATE import_rows SET category_id = %s WHERE category_id = ANY(%s)", (dst["id"], ids), commit=False)
-        db.execute("""DELETE FROM merchant_memory m WHERE m.user_id = %s AND m.category_id = ANY(%s)
-                      AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.user_id = m.user_id
-                                  AND o.merchant_key = m.merchant_key AND o.category_id = %s)""",
-                   (uid, ids, dst["id"]), commit=False)
-        db.execute("UPDATE merchant_memory SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s",
-                   (dst["id"], ids, uid), commit=False)
+        moved = db.query("SELECT COUNT(*) AS n FROM transactions WHERE category_id = ANY(%s) AND user_id = %s",
+                         (ids, uid), one=True, commit=False)["n"]
+        _move_references(uid, ids, dst["id"])
         db.execute("DELETE FROM categories WHERE id = ANY(%s)", (ids,), commit=False)
     audit("category.merge", {"from": cat_id, "into": dst["id"], "moved": moved})
     return jsonify({"ok": True, "moved": moved})
@@ -201,26 +194,56 @@ def merge(cat_id):
 @bp.delete("/<int:cat_id>")
 @login_required
 def delete_category(cat_id):
+    """Refuses while anything references the category unless ?reassign_to= names the new home."""
     uid = session["user_id"]
     cat = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
     if not cat:
         return api_error("Category not found", 404)
     child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,))]
     ids = [cat_id] + child_ids
-    n = db.query("SELECT COUNT(*) AS n FROM transactions WHERE category_id = ANY(%s)", (ids,), one=True)["n"]
+    refs = db.query(
+        """SELECT (SELECT COUNT(*) FROM transactions WHERE user_id = %s AND category_id = ANY(%s)) AS transactions,
+                  (SELECT COUNT(*) FROM rules WHERE user_id = %s AND category_id = ANY(%s)) AS rules,
+                  (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %s AND category_id = ANY(%s)) AS merchants""",
+        (uid, ids, uid, ids, uid, ids), one=True,
+    )
     reassign = request.args.get("reassign_to")
-    if n and not reassign:
-        return api_error(f"{n} transactions use this category. Merge it into another category instead.", 409)
+    in_use = refs["transactions"] or refs["rules"] or refs["merchants"]
+    if in_use and not reassign:
+        parts = [f"{refs['transactions']} transactions" if refs["transactions"] else None,
+                 f"{refs['rules']} rules" if refs["rules"] else None,
+                 f"{refs['merchants']} remembered merchants" if refs["merchants"] else None]
+        msg = ", ".join(p for p in parts if p) + " still use this category. Merge it into another category instead."
+        return jsonify({"error": msg, "references": dict(refs)}), 409
+    target = None
+    if reassign:
+        target = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (reassign, uid), one=True)
+        if not target or target["id"] in ids:
+            return api_error("Target category not found", 404)
     with db.transaction():
-        if reassign:
-            target = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (reassign, uid), one=True)
-            if not target:
-                return api_error("Target category not found", 404)
-            db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s)", (target["id"], ids), commit=False)
-            db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s)", (target["id"], ids), commit=False)
+        if target:
+            _move_references(uid, ids, target["id"])
         db.execute("DELETE FROM categories WHERE id = ANY(%s)", (ids,), commit=False)
-    audit("category.delete", {"id": cat_id, "reassigned": n})
-    return jsonify({"ok": True})
+    audit("category.delete", {"id": cat_id, "reassigned_to": target["id"] if target else None, "references": dict(refs)})
+    return jsonify({"ok": True, "references": dict(refs)})
+
+
+def _move_references(uid, ids, dst_id):
+    """Point transactions, rules, preview rows and merchant memory at dst_id (memory duplicates merge)."""
+    db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
+    db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
+    db.execute("UPDATE import_rows SET category_id = %s WHERE category_id = ANY(%s)", (dst_id, ids), commit=False)
+    db.execute("""DELETE FROM merchant_memory m WHERE m.user_id = %s AND m.category_id = ANY(%s)
+                  AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.user_id = m.user_id
+                              AND o.merchant_key = m.merchant_key AND o.category_id = %s
+                              AND (o.times_used > m.times_used OR (o.times_used = m.times_used AND o.id < m.id)))""",
+               (uid, ids, dst_id), commit=False)
+    db.execute("""DELETE FROM merchant_memory o WHERE o.user_id = %s AND o.category_id = %s
+                  AND EXISTS (SELECT 1 FROM merchant_memory m WHERE m.user_id = o.user_id
+                              AND m.merchant_key = o.merchant_key AND m.category_id = ANY(%s))""",
+               (uid, dst_id, ids), commit=False)
+    db.execute("UPDATE merchant_memory SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s",
+               (dst_id, ids, uid), commit=False)
 
 
 @bp.post("/reset-defaults")

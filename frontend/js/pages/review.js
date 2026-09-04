@@ -12,6 +12,7 @@ initNav('review').then(async () => {
   const q = qs();
   if (q.mode === 'single') rv.mode = 'single';
   await loadRefs();
+  rv.currency = await store.displayCurrency();
   rv.settings = await store.settings().catch(() => ({}));
   const aiBtn = $('#btn-ai');
   if (rv.settings && rv.settings.ai_categorize_enabled) { aiBtn.hidden = false; aiBtn.innerHTML = `${icon('sparkles', 'ico-sm')}<span class="label">Ask AI</span>`; aiBtn.addEventListener('click', askAI); }
@@ -54,8 +55,8 @@ async function load() {
   const first = visibleGroups()[0];
   if (first) setFocus(0, { scroll: false });
 }
-function visibleGroups() { return rv.groups.filter((g) => !rv.skipped.has(g.key) || rv.mode === 'single' && !rv.skipped.has(`t${g.ids[0]}`)); }
 function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.key; }
+function visibleGroups() { return rv.groups.filter((g) => !rv.skipped.has(groupKey(g))); }
 
 /* ---------- render ---------- */
 function render() {
@@ -73,7 +74,7 @@ function render() {
   host.classList.toggle('has-focus', rv.focus >= 0);
 }
 function cardHtml(g, idx) {
-  const cur = g.currency || 'USD';
+  const cur = g.currency || rv.currency || 'USD';
   const sug = g.suggestion && catOf(g.suggestion.category_id) ? { ...g.suggestion, cat: catOf(g.suggestion.category_id) } : null;
   const n = g.count - g.excluded.size;
   const single = rv.mode === 'single';
@@ -117,7 +118,7 @@ function setFocus(idx, { scroll = true } = {}) {
     if (scroll) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (document.activeElement && !card.contains(document.activeElement)) card.focus({ preventScroll: true });
     const g = focusedGroup();
-    if (g) announce(`${g.display}, ${plural(g.count, 'charge')}, ${fmtMoney(g.total, g.currency || 'USD')}${g.suggestion && catOf(g.suggestion.category_id) ? `, suggested ${catOf(g.suggestion.category_id).name}` : ''}`);
+    if (g) announce(`${g.display}, ${plural(g.count, 'charge')}, ${fmtMoney(g.total, g.currency || rv.currency || 'USD')}${g.suggestion && catOf(g.suggestion.category_id) ? `, suggested ${catOf(g.suggestion.category_id).name}` : ''}`);
   }
 }
 function focusedGroup() {

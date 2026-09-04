@@ -4,7 +4,7 @@ const KIND_LABEL = { expense: 'Expense', income: 'Income', transfer: 'Transfer' 
 const state = { tree: [], flat: [], totals: {}, counts: {}, selected: null, currency: 'USD', dragId: null };
 
 initNav('categories').then(async (me) => {
-  state.currency = (me.preferences && me.preferences.currency) || 'USD';
+  state.currency = await store.displayCurrency();
   $('[data-act="add-category"]').innerHTML = `${icon('plus')}<span>Add category</span>`;
   document.body.addEventListener('click', onAction);
   $('#cat-tree').addEventListener('dblclick', (e) => { const row = e.target.closest('.cat-row'); if (row && !e.target.closest('input')) startRename(Number(row.dataset.id)); });
@@ -128,7 +128,7 @@ async function renderSide() {
     <div class="side-chart is-loading chart-body" style="--h:140px;padding:0"><canvas id="side-chart"></canvas></div>
     <div class="side-actions">
       <a class="btn btn-secondary btn-sm" href="/transactions.html${toQuery({ cat: cat.id, range: 'all' })}">${icon('list')}View transactions</a>
-      <a class="btn btn-ghost btn-sm" href="/rules.html${toQuery({ cat: cat.id })}">${icon('sliders')}Rules for this category</a>
+      <a class="btn btn-ghost btn-sm" href="/rules.html${toQuery({ filter_cat: cat.id })}">${icon('sliders')}Rules for this category</a>
       <button type="button" class="btn btn-ghost btn-sm" data-act="side-color" data-id="${cat.id}">${icon('circle')}Change color</button>
       <button type="button" class="btn btn-ghost btn-sm" data-act="side-merge" data-id="${cat.id}">${icon('split')}Merge into another category</button>
       <button type="button" class="btn btn-ghost btn-sm text-danger" data-act="side-delete" data-id="${cat.id}">${icon('trash')}Delete</button>
@@ -146,21 +146,29 @@ function monthRange(ym) { const [y, m] = ym.split('-').map(Number); return { fro
 async function loadSideTrend(cat) {
   const months = lastMonths(6);
   const level = cat.depth === 0 ? 'top' : 'sub';
-  let values;
-  try {
-    const res = await Promise.all(months.map((ym) => { const r = monthRange(ym); return api(`/api/reports/by-category${toQuery({ from: r.from, to: r.to, level })}`); }));
-    values = res.map((r) => { const row = r.categories.find((c) => c.id === cat.id); return row ? row.total : 0; });
-  } catch { values = months.map(() => 0); }
+  let values = null;
+  if (level === 'top') {
+    // One call: the monthly report already carries the top-level series (top 7 + Other).
+    try {
+      const data = await api('/api/reports/monthly?months=6');
+      const s = (data.series || []).find((x) => x.category_id === cat.id);
+      if (s) values = months.map((ym) => { const j = data.months.indexOf(ym); return j >= 0 ? (s.values[j] || 0) : 0; });
+    } catch { values = null; }
+  }
+  if (!values) {
+    try {
+      const res = await Promise.all(months.map((ym) => { const r = monthRange(ym); return api(`/api/reports/by-category${toQuery({ from: r.from, to: r.to, level })}`); }));
+      values = res.map((r) => { const row = r.categories.find((c) => c.id === cat.id); return row ? row.total : 0; });
+    } catch { values = months.map(() => 0); }
+  }
   if (state.selected !== cat.id) return;
   const canvas = $('#side-chart'); if (!canvas) return;
   canvas.closest('.chart-body').classList.remove('is-loading');
-  const hex = catColor(cat.color);
   charts.makeChart(canvas, (t) => ({
     type: 'bar',
     data: { labels: months.map((m) => fmtMonth(m)), datasets: [{ data: values, backgroundColor: catColor(cat.color), borderRadius: 3, maxBarThickness: 26 }] },
     options: { ...charts.barOptions(t, { currency: state.currency }), scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, font: { size: 10 } } }, y: { display: false, beginAtZero: true } }, plugins: { tooltip: { callbacks: charts.currencyTooltip(state.currency) } } },
   }));
-  void hex;
 }
 
 /* ---------- Rename ---------- */

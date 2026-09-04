@@ -75,7 +75,7 @@ class SuggestTest(unittest.TestCase):
             result = ai_categorizer.suggest_for_ids(1, [11, 12])
         self.assertEqual(result, {"suggested": 1, "batches": 1, "errors": 0})
         self.assertEqual(self.executed, [(3, 0.93, "coffee shop", 11, 1)])
-        self.assertEqual(self.events, [(11, "ai", {"category_id": 3, "confidence": 0.93, "reason": "coffee shop"}, None)])
+        self.assertEqual(self.events, [(11, "ai", {"category_id": 3, "confidence": 0.93, "reason": "coffee shop"}, 1)])
         prompt = chat.call_args.args[1]
         self.assertIn("3: Dining > Coffee", prompt)
         self.assertIn('"merchant": "Starbucks"', prompt)

@@ -35,7 +35,7 @@ const ui = (() => {
     }
   });
   function setInert(on) {
-    ['sidebar', 'shell'].forEach((cls) => { const el = document.querySelector(`.${cls}`); if (el) el.inert = on; });
+    ['sidebar', 'shell', 'bottomnav'].forEach((cls) => { const el = document.querySelector(`.${cls}`); if (el) el.inert = on; });
   }
 
   /* ---------- Modal ---------- */
@@ -44,9 +44,10 @@ const ui = (() => {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     const sizeCls = size === 'lg' ? ' modal-lg' : size === 'xl' ? ' modal-xl' : '';
+    const titleId = `modal-title-${uid()}`;
     backdrop.innerHTML = `
-      <div class="modal${sizeCls}" role="dialog" aria-modal="true" aria-labelledby="modal-title-${uid()}" ${width ? `style="max-width:${width}px"` : ''}>
-        <header class="modal-head"><h2>${esc(title)}</h2>${dismissible ? `<button class="btn btn-icon btn-ghost btn-sm modal-close" aria-label="Close">${icon('x')}</button>` : ''}</header>
+      <div class="modal${sizeCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" ${width ? `style="max-width:${width}px"` : ''}>
+        <header class="modal-head"><h2 id="${titleId}">${esc(title)}</h2>${dismissible ? `<button class="btn btn-icon btn-ghost btn-sm modal-close" aria-label="Close">${icon('x')}</button>` : ''}</header>
         <div class="modal-body"></div>
         ${actions.length ? '<footer class="modal-foot"></footer>' : ''}
       </div>`;
@@ -324,9 +325,14 @@ const ui = (() => {
       const a = document.activeElement;
       return a && (a.matches('input,textarea,select,[contenteditable="true"]'));
     }
+    function activating(e) {
+      // Enter/Space on a focused control is the control's own activation, not a page shortcut.
+      const a = document.activeElement;
+      return (e.key === 'Enter' || e.key === ' ') && a && a.matches('button,a[href],summary,[role="button"],[role="link"],[role="tab"],[role="option"],[role="menuitem"]');
+    }
     document.addEventListener('keydown', (e) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (typing()) return;
+      if (typing() || activating(e)) return;
       if (layers.length && !layers[0].allowShortcuts) return;
       const key = e.key;
       if (pending) {
@@ -350,7 +356,7 @@ const ui = (() => {
 
   function shortcutsSheet(extra = []) {
     const groups = [
-      { title: 'Global', items: [['⌘K', 'Search'], ['g d', 'Dashboard'], ['g t', 'Transactions'], ['g r', 'Review'], ['g i', 'Import'], ['g s', 'Settings'], ['[', 'Toggle sidebar'], ['?', 'This sheet']] },
+      { title: 'Global', items: [['⌘K', 'Search'], ['g d', 'Dashboard'], ['g t', 'Transactions'], ['g r', 'Review'], ['g i', 'Import'], ['g c', 'Categories'], ['g p', 'Reports'], ['g s', 'Settings'], ['[', 'Toggle sidebar'], ['?', 'This sheet']] },
       ...extra,
     ];
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });

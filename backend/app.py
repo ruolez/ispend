@@ -1,6 +1,7 @@
 import logging
 
 from flask import Flask, jsonify
+from werkzeug.exceptions import HTTPException
 
 import config
 import db
@@ -61,8 +62,10 @@ def create_app():
 
     @app.errorhandler(Exception)
     def unhandled(e):
+        if isinstance(e, HTTPException):
+            return jsonify({"error": e.description or e.name}), e.code
         app.logger.exception("Unhandled error")
-        return jsonify({"error": "Internal error: %s" % e}), 500
+        return jsonify({"error": "Something went wrong on the server. The details were logged."}), 500
 
     @app.get("/api/health")
     def health():

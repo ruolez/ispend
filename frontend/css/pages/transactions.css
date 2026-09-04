@@ -63,7 +63,7 @@
   .tbl-tx { min-width: 0; table-layout: auto; display: block; }
   .tbl-tx thead { display: none; }
   .tbl-tx tbody { display: block; }
-  .tbl-tx tr { display: grid; grid-template-columns: 28px 1fr auto; grid-template-areas: "check merchant amt" "check cat cat" "check acct acct"; gap: 3px 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .tbl-tx tr { display: grid; grid-template-columns: 28px 1fr auto 28px; grid-template-areas: "check merchant amt actions" "check cat cat cat" "check acct acct acct"; gap: 3px 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
   .tbl-tx td { display: block; padding: 0; border: 0; height: auto; width: auto; }
   .tbl-tx td.col-check { grid-area: check; align-self: center; }
   .tbl-tx td.col-date { display: none; }
@@ -72,7 +72,9 @@
   .tbl-tx td.col-cat { grid-area: cat; }
   .tbl-tx td.col-acct { grid-area: acct; }
   .tbl-tx td.col-amt { grid-area: amt; text-align: right; font-weight: 600; }
-  .tbl-tx td.col-actions { display: none; }
+  .tbl-tx td.col-actions { grid-area: actions; align-self: start; width: 28px; min-width: 0; margin-top: -2px; }
+  .tbl-tx td.col-actions .row-actions { opacity: 1; justify-content: flex-start; width: 28px; }
+  .tbl-tx td.col-actions [data-open] { display: none; }
   .tx-search { max-width: none; flex-basis: 100%; }
   .floatbar { bottom: 72px; }
 }

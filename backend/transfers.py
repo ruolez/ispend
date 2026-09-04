@@ -57,7 +57,8 @@ def pair(user_id, a_id, b_id):
     ) or []
     if len(rows) != 2:
         raise LookupError("Transaction not found")
-    a, b = rows
+    by_id = {r["id"]: r for r in rows}
+    a, b = by_id[a_id], by_id[b_id]
     if a["account_id"] == b["account_id"]:
         raise ValueError("Both transactions are in the same account")
     if a["amount"] != -b["amount"]:

@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, Response, jsonify, request, session
 
 import categorizer
+import dedupe
+import merchant
 import config
 import db
 import transfers
@@ -212,9 +214,12 @@ def list_transactions():
         f"SELECT t.category_id AS id, COUNT(*) AS n FROM transactions t WHERE{where} GROUP BY t.category_id ORDER BY n DESC",
         params,
     ) or []
+    currencies = [r["currency"] for r in (db.query(
+        f"SELECT DISTINCT t.currency FROM transactions t WHERE{where} ORDER BY t.currency", params) or [])]
     return jsonify({
         "items": rows_json(items),
         "next_cursor": next_cursor,
+        "currencies": currencies,
         "total": totals.get("total", 0),
         "sum_in": float(totals.get("sum_in") or 0),
         "sum_out": float(totals.get("sum_out") or 0),
@@ -371,20 +376,9 @@ def create_transaction():
     if not txn_date or amount is None or not description:
         return api_error("Date, amount and description are required")
     amount = amount.quantize(Decimal("0.01"))
-    try:
-        import merchant as merchant_mod
-        m = merchant_mod.normalize(description)
-        key, name, clean = m.key, m.name, m.clean
-    except Exception:
-        clean = " ".join(description.upper().split())
-        key = " ".join(clean.split()[:3])
-        name = key.title()
-    try:
-        import dedupe
-        fp = dedupe.fingerprint(account["id"], txn_date, amount, clean)
-    except Exception:
-        import hashlib
-        fp = hashlib.sha1(f"{account['id']}|{txn_date.isoformat()}|{amount:.2f}|{clean}".encode()).hexdigest()
+    m = merchant.normalize(description)
+    key, name, clean = m.key, m.name, m.clean
+    fp = dedupe.fingerprint(account["id"], txn_date, amount, clean)
     occurrence = 1 + (db.query(
         "SELECT COUNT(*) AS n FROM transactions WHERE account_id = %s AND fingerprint = %s",
         (account["id"], fp), one=True,
@@ -468,11 +462,25 @@ def delete_transaction(txn_id):
     row = _get_own(txn_id, uid)
     if not row:
         return api_error("Transaction not found", 404)
-    if row["transfer_pair_id"]:
-        db.execute("UPDATE transactions SET transfer_pair_id = NULL WHERE id = %s", (row["transfer_pair_id"],))
+    _release_partners([txn_id])
     db.execute("DELETE FROM transactions WHERE id = %s", (txn_id,))
     audit("transaction.delete", {"id": txn_id})
     return jsonify({"ok": True})
+
+
+def _release_partners(deleted_ids):
+    """The other half of a transfer pair stops being a transfer unless its category says otherwise."""
+    db.execute(
+        """UPDATE transactions t SET transfer_pair_id = NULL,
+               is_transfer = CASE WHEN c.kind = 'transfer' THEN t.is_transfer ELSE FALSE END,
+               is_excluded = CASE WHEN c.kind = 'transfer' THEN t.is_excluded ELSE FALSE END,
+               updated_at = now()
+           FROM (SELECT p.id, COALESCE(k.kind, '') AS kind FROM transactions p
+                 LEFT JOIN categories k ON k.id = p.category_id
+                 WHERE p.transfer_pair_id = ANY(%s)) c
+           WHERE t.id = c.id""",
+        (list(deleted_ids),),
+    )
 
 
 @bp.post("/<int:txn_id>/rule-draft")
@@ -550,13 +558,16 @@ def bulk():
                     categorizer.learn(uid, key, cid, display_name=name)
             updated = len(sids)
     elif action == "reject_suggestion":
+        touched = [r["id"] for r in (db.query(
+            "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s) AND category_status = 'suggested'",
+            (uid, own)) or [])]
         updated = db.execute(
             """UPDATE transactions SET category_id = NULL, category_status = 'none', category_source = NULL,
                    category_confidence = NULL, ai_rationale = NULL, updated_at = now()
-               WHERE user_id = %s AND id = ANY(%s) AND category_status = 'suggested'""",
-            (uid, own),
-        )
-        record_events([(i, "manual", {"rejected": True}, uid) for i in own])
+               WHERE user_id = %s AND id = ANY(%s)""",
+            (uid, touched),
+        ) if touched else 0
+        record_events([(i, "manual", {"rejected": True}, uid) for i in touched])
     elif action == "set_transfer":
         transfers_cat = transfers._transfer_category_id(uid, set())
         updated = db.execute(
@@ -585,7 +596,7 @@ def bulk():
         updated = db.execute("UPDATE transactions SET is_excluded = %s, updated_at = now() WHERE id = ANY(%s)", (flag, own))
         record_events([(i, "excluded", {"is_excluded": flag}, uid) for i in own])
     elif action == "delete":
-        db.execute("UPDATE transactions SET transfer_pair_id = NULL WHERE transfer_pair_id = ANY(%s)", (own,))
+        _release_partners(own)
         updated = db.execute("DELETE FROM transactions WHERE id = ANY(%s)", (own,))
     else:
         return api_error("Unknown action")

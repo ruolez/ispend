@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, jsonify, request, session
 
 import categorizer
@@ -5,6 +7,8 @@ import db
 import rules as rules_mod
 from auth import login_required
 from util import api_error, audit, parse_int_list, record_events, rows_json
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("review", __name__, url_prefix="/api/review")
 
@@ -60,7 +64,8 @@ def queue():
                         THEN MIN(t.category_id) END AS suggestion_id,
                    MAX(t.category_confidence) AS suggestion_confidence,
                    MIN(t.category_source) AS suggestion_source,
-                   MIN(t.description_raw) AS sample_description
+                   MIN(t.description_raw) AS sample_description,
+                   MODE() WITHIN GROUP (ORDER BY t.currency) AS currency
             FROM transactions t WHERE {QUEUE_WHERE}{extra}
             GROUP BY t.merchant_key
             ORDER BY COUNT(*) DESC, SUM(abs(t.amount)) DESC, t.merchant_key
@@ -75,7 +80,8 @@ def queue():
                           "source": g.get("suggestion_source")}
         out.append({"key": g["key"], "display": g["display"], "count": g["count"], "total": g["total"],
                     "first": g["first"], "last": g["last"], "ids": list(g["ids"] or []),
-                    "suggestion": suggestion, "sample_description": g.get("sample_description")})
+                    "suggestion": suggestion, "sample_description": g.get("sample_description"),
+                    "currency": (g.get("currency") or "USD").strip()})
     totals = db.query(
         f"SELECT COUNT(DISTINCT t.merchant_key) AS groups, COUNT(*) AS items FROM transactions t WHERE {QUEUE_WHERE}{extra}",
         params, one=True,
@@ -166,7 +172,7 @@ def suggest():
     ids = parse_int_list(data.get("ids"))
     try:
         import openrouter
-        if not openrouter.enabled("categorize"):
+        if not openrouter.enabled("categorize", uid):
             return api_error("AI categorization is not enabled. Configure OpenRouter in Settings.", 502)
         import ai_categorizer
     except ImportError:
@@ -181,7 +187,10 @@ def suggest():
         return jsonify({"suggested": [], "count": 0})
     try:
         result = ai_categorizer.suggest_sync(uid, ids)
-    except Exception as e:
-        return api_error(f"AI suggestion failed: {e}", 502)
+    except openrouter.OpenRouterError as e:
+        return api_error(str(e), 502)
+    except Exception:
+        log.exception("AI suggestion failed")
+        return api_error("AI suggestion failed; check the server log", 502)
     audit("review.suggest", {"count": len(ids)})
     return jsonify(result)

@@ -2,10 +2,10 @@
 const MATCH_TYPES = [['contains', 'contains'], ['starts_with', 'starts with'], ['equals', 'equals'], ['regex', 'matches regex']];
 const MATCH_FIELDS = [['description_clean', 'Description'], ['description_raw', 'Raw description'], ['merchant_key', 'Merchant']];
 const word = (n, one, many) => (Number(n) === 1 ? one : (many || one + 's'));
-const state = { rules: [], cats: new Map(), accounts: [], q: '', dragId: null, currency: 'USD' };
+const state = { rules: [], cats: new Map(), accounts: [], q: '', dragId: null, currency: 'USD', filterCat: null };
 
 initNav('rules').then(async (me) => {
-  state.currency = (me.preferences && me.preferences.currency) || 'USD';
+  state.currency = await store.displayCurrency();
   $('.rules-search .ico-wrap').innerHTML = icon('search');
   $('[data-act="new-rule"]').innerHTML = `${icon('plus')}<span>New rule</span>`;
   $('[data-act="run-all"]').innerHTML = `${icon('play')}<span>Run all rules</span>`;
@@ -17,6 +17,8 @@ initNav('rules').then(async (me) => {
   $('#rule-search').addEventListener('input', debounce((e) => { state.q = e.target.value.trim().toLowerCase(); render(); }, 120));
   wireDrag();
   const q = qs();
+  if (q.filter_cat) state.filterCat = Number(q.filter_cat) || null;
+  document.body.addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-cat-filter"]')) { state.filterCat = null; setQs({ filter_cat: null }, { replace: true }); render(); } });
   await load();
   if (q.cat) openRuleModal({ category_id: Number(q.cat) });
   if (q.new === '1') openRuleModal({});
@@ -81,8 +83,12 @@ function render() {
     return;
   }
   const q = state.q;
-  const rows = state.rules.map((r, i) => ({ r, i })).filter(({ r }) => !q || `${r.pattern} ${r.name || ''} ${(state.cats.get(r.category_id) || {}).path || ''}`.toLowerCase().includes(q));
-  host.innerHTML = rows.length ? rows.map(({ r, i }) => ruleHtml(r, i)).join('') : `<div class="rules-empty hint">No rules match “${esc(state.q)}”.</div>`;
+  const fc = state.filterCat;
+  const inCat = (r) => !fc || r.category_id === fc || (state.cats.get(r.category_id) || {}).parent_id === fc;
+  const rows = state.rules.map((r, i) => ({ r, i })).filter(({ r }) => inCat(r) && (!q || `${r.pattern} ${r.name || ''} ${(state.cats.get(r.category_id) || {}).path || ''}`.toLowerCase().includes(q)));
+  const fcat = fc ? state.cats.get(fc) : null;
+  const banner = fc ? `<div class="notice notice-info mb-3" role="status">${icon('filter')}<div class="grow">Showing rules for <b>${esc(fcat ? (fcat.path || fcat.name) : 'this category')}</b> (${fmtNumber(rows.length)})</div><button type="button" class="btn btn-ghost btn-xs" data-act="clear-cat-filter">Show all rules</button></div>` : '';
+  host.innerHTML = banner + (rows.length ? rows.map(({ r, i }) => ruleHtml(r, i)).join('') : `<div class="rules-empty hint">${fc ? 'No rules target this category yet.' : `No rules match “${esc(state.q)}”.`}</div>`);
 }
 function ruleById(id) { return state.rules.find((r) => r.id === Number(id)); }
 

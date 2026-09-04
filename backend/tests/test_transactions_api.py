@@ -119,6 +119,8 @@ class ListEndpointTest(unittest.TestCase):
                 return [{"id": 1, "n": 3}]
             if "t.category_id AS id" in sql:
                 return [{"id": None, "n": 1}, {"id": 5, "n": 2}]
+            if "DISTINCT t.currency" in sql:
+                return [{"currency": "USD"}]
             self.assertIn("LIMIT %s", sql)
             self.assertEqual(params[-1], 3)
             return items

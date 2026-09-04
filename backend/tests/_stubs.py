@@ -46,6 +46,12 @@ class FakeDB:
     def set_setting(self, key, value):
         self.settings[key] = value
 
+    def user_setting(self, user_id, key, default=None):
+        return self.settings.get(f"u{user_id}:{key}", default)
+
+    def set_user_setting(self, user_id, key, value):
+        self.settings[f"u{user_id}:{key}"] = value
+
     def get_db(self):
         return self
 
