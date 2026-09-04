@@ -81,3 +81,6 @@
 @media (max-width: 768px) {
   .tbl-toolbar .seg { max-width: 100%; overflow-x: auto; }
 }
+
+/* inline "new account" block inside the Add transaction modal */
+.card-sunken { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-3); }

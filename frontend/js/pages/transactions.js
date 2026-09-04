@@ -591,15 +591,24 @@ function readRuleForm(el, categoryId) {
 /* ---------- manual entry ---------- */
 function openAddModal() {
   const accounts = Array.from(tx.accounts.values()).filter((a) => a.is_active);
-  if (!accounts.length) { toast('Create an account in Settings first', { type: 'info', action: { label: 'Settings', fn: () => { location.href = '/settings.html'; } } }); return; }
   const preferred = tx.filters.acct.length === 1 ? tx.filters.acct[0] : (accounts[0] || {}).id;
+  const startNew = !accounts.length;
   let categoryId = null; let kind = 'charge';
+  const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
   const m = ui.modal({
     title: 'Add transaction',
     html: `<form id="add-form" class="col gap-3">
       <div class="field-row">
-        <div class="field"><label for="ad-acct">Account</label><select id="ad-acct" class="select">${accounts.map((a) => `<option value="${a.id}" ${a.id === preferred ? 'selected' : ''}>${esc(a.name)} · ${esc(a.currency)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ad-acct">Account</label><select id="ad-acct" class="select">${accounts.map((a) => `<option value="${a.id}" ${a.id === preferred ? 'selected' : ''}>${esc(a.name)} · ${esc(a.currency)}</option>`).join('')}<option value="__new__" ${startNew ? 'selected' : ''}>+ New account…</option></select></div>
         <div class="field"><label for="ad-date">Date</label><input id="ad-date" class="input" type="date" value="${toISODate(new Date())}" required></div>
+      </div>
+      <div id="ad-newacct" class="col gap-3 card-sunken" ${startNew ? '' : 'hidden'}>
+        <div class="field"><label for="na-name">Account name</label><input id="na-name" class="input" placeholder="e.g. Cash wallet, BILT Card" autocomplete="off"></div>
+        <div class="field-row">
+          <div class="field"><label for="na-type">Type</label><select id="na-type" class="select">${ACCOUNT_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+          <div class="field"><label for="na-cur">Currency</label><select id="na-cur" class="select"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
+        </div>
+        <div class="field"><label for="na-inst">Institution</label><select id="na-inst" class="select"><option value="">— Not set —</option></select></div>
       </div>
       <div class="field"><label for="ad-amount">Amount</label>
         <div class="row gap-2"><div class="seg" id="ad-kind" role="group" aria-label="Kind"><button type="button" class="seg-btn active" data-kind="charge" aria-pressed="true">Charge</button><button type="button" class="seg-btn" data-kind="income" aria-pressed="false">Income</button></div><input id="ad-amount" class="input num grow" type="number" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal" required></div>
@@ -616,7 +625,17 @@ function openAddModal() {
       if (!txn_date) throw new Error('Pick a date');
       if (!(amount > 0)) throw new Error('Enter an amount greater than zero');
       if (!description) throw new Error('Enter a description');
-      const body = { account_id: Number(el.querySelector('#ad-acct').value), txn_date, amount: kind === 'charge' ? -amount : amount, description, category_id: categoryId, notes: el.querySelector('#ad-notes').value.trim() || null };
+      let accountId = el.querySelector('#ad-acct').value;
+      if (accountId === '__new__') {
+        const name = el.querySelector('#na-name').value.trim();
+        if (!name) throw new Error('Enter a name for the new account');
+        const a = await api('/api/accounts', { method: 'POST', body: { name, account_type: el.querySelector('#na-type').value, currency: el.querySelector('#na-cur').value, institution: el.querySelector('#na-inst').value || null } });
+        store.invalidate('accounts');
+        tx.accounts.set(a.id, { ...a, is_active: true });
+        accountId = a.id;
+        toast(`Account “${name}” created`, { type: 'success' });
+      }
+      const body = { account_id: Number(accountId), txn_date, amount: kind === 'charge' ? -amount : amount, description, category_id: categoryId, notes: el.querySelector('#ad-notes').value.trim() || null };
       const created = await api('/api/transactions', { method: 'POST', body });
       toast(`Added ${fmtMoney(created.amount, created.currency || currencyOf(created), { sign: 'always' })} · ${created.merchant_name}`, { type: 'success' });
       window.dispatchEvent(new Event('ispend:transactions-changed'));
@@ -631,5 +650,13 @@ function openAddModal() {
   const setCatLabel = () => { const c = categoryId ? catOf(categoryId) : null; el.querySelector('#ad-cat-label').innerHTML = c ? `<i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="text-1">${esc(c.path)}</span>` : '<span class="text-3">Choose a category (optional)…</span>'; };
   el.querySelector('#ad-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowNone: !!categoryId, onPick: (c) => { categoryId = c ? c.id : null; if (c && !tx.cats.has(c.id)) tx.cats.set(c.id, c); setCatLabel(); } }));
   el.querySelector('#add-form').addEventListener('submit', (e) => { e.preventDefault(); el.querySelector('.modal-foot .btn-primary').click(); });
-  setTimeout(() => el.querySelector('#ad-amount').focus(), 30);
+  const acctSel = el.querySelector('#ad-acct'); const newBox = el.querySelector('#ad-newacct');
+  const syncNew = () => { const on = acctSel.value === '__new__'; newBox.hidden = !on; if (on) setTimeout(() => el.querySelector('#na-name').focus(), 20); };
+  acctSel.addEventListener('change', syncNew);
+  store.get('institutions', '/api/accounts/institutions', { ttl: 600000 }).then((inst) => {
+    const sel = el.querySelector('#na-inst'); if (!sel) return;
+    sel.innerHTML = `<option value="">— Not set —</option>${(inst || []).map((i) => `<option value="${esc(i.key)}">${esc(i.label)}</option>`).join('')}`;
+    sel.addEventListener('change', () => { if (['rbc', 'td', 'bmo', 'scotiabank'].includes(sel.value)) el.querySelector('#na-cur').value = 'CAD'; });
+  }).catch(() => {});
+  setTimeout(() => (startNew ? el.querySelector('#na-name') : el.querySelector('#ad-amount')).focus(), 30);
 }
