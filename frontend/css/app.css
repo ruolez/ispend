@@ -570,3 +570,10 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 .notice-info .ico { color: var(--accent); }
 
 .avatar-xs { width: 20px; height: 20px; font-size: 9px; }
+
+/* multiFilter header with All / None */
+.menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 2px 10px; }
+.menu-head .menu-label { padding: 0; }
+.menu-head-actions { display: inline-flex; align-items: center; gap: 2px; }
+.menu-head-actions .menu-count { font-size: var(--fs-xs); color: var(--text-4); margin-right: 4px; }
+.menu-item--child .grow { color: var(--text-2); }

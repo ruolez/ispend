@@ -162,7 +162,7 @@ function openCategoryFilter() {
   tx.catsFlat.forEach((c) => {
     let n = counts.get(String(c.id)) || 0;
     if (c.depth === 0) tx.catsFlat.filter((x) => x.parent_id === c.id).forEach((x) => { n += counts.get(String(x.id)) || 0; });
-    opts.push({ value: String(c.id), label: c.depth ? `  ${c.name}` : c.name, count: n, color: c.color || c.parent_color });
+    opts.push({ value: String(c.id), label: c.name, indent: c.depth || 0, count: n, color: c.color || c.parent_color });
   });
   ui.multiFilter($('#f-categories'), { title: 'Categories', options: opts, selected, searchable: true, onChange: (set) => { tx.filters.cat = Array.from(set); applyFilters(); } });
 }
@@ -267,10 +267,16 @@ function paintSelection() {
   const all = $('#tx-check-all');
   all.checked = n > 0 && n === tx.items.length;
   all.indeterminate = n > 0 && n < tx.items.length;
+  $$('#tx-body tr[data-id]').forEach((tr) => {
+    const on = tx.selection.has(Number(tr.dataset.id));
+    if ((tr.getAttribute('aria-selected') === 'true') !== on) tr.setAttribute('aria-selected', String(on));
+    const cb = tr.querySelector('input[data-select]'); if (cb && cb.checked !== on) cb.checked = on;
+  });
   let bar = $('#tx-bulk');
   if (!n) { if (bar) bar.remove(); return; }
+  const partial = tx.total > tx.items.length && n === tx.items.length ? ` <span class="text-3">· all ${fmtNumber(tx.items.length)} loaded of ${fmtNumber(tx.total)}</span>` : '';
   if (!bar) { bar = document.createElement('div'); bar.id = 'tx-bulk'; bar.className = 'floatbar'; bar.setAttribute('role', 'status'); document.body.appendChild(bar); bar.addEventListener('click', onBulkClick); }
-  bar.innerHTML = `<span><span class="n">${fmtNumber(n)}</span> selected</span><span class="sep"></span>
+  bar.innerHTML = `<span><span class="n">${fmtNumber(n)}</span> selected${partial}</span><span class="sep"></span>
     <button type="button" class="btn btn-primary btn-sm" data-bulk="categorize">${icon('tag', 'ico-sm')}Categorize</button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="set_transfer">${icon('arrow-left-right', 'ico-sm')}Transfer</button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="exclude">${icon('eye-off', 'ico-sm')}Exclude</button>

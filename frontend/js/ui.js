@@ -264,16 +264,18 @@ const ui = (() => {
     el.style.minWidth = '220px';
     const render = (q = '') => {
       const rows = options.filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()));
-      return `${title ? `<div class="menu-label">${esc(title)}</div>` : ''}
+      const nSel = options.filter((o) => selected.has(o.value)).length;
+      return `<div class="menu-head"><span class="menu-label">${esc(title || 'Filter')}</span><span class="menu-head-actions"><span class="menu-count">${nSel ? `${nSel} selected` : ''}</span><button type="button" class="btn btn-ghost btn-xs" data-act="all">All</button><button type="button" class="btn btn-ghost btn-xs" data-act="clear">None</button></span></div>
         ${searchable || options.length > 8 ? `<div class="menu-search"><input class="input input-sm" placeholder="Filter…" value="${esc(q)}"></div>` : ''}
         <div class="menu-opts">${rows.map((o) => `
-          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="${selected.has(o.value)}" data-v="${esc(o.value)}">
+          <button type="button" class="menu-item ${o.indent ? 'menu-item--child' : ''}" role="menuitemcheckbox" aria-checked="${selected.has(o.value)}" data-v="${esc(o.value)}" ${o.indent ? `style="padding-left:${10 + 18 * o.indent}px"` : ''}>
             <input type="checkbox" class="check" tabindex="-1" ${selected.has(o.value) ? 'checked' : ''}>
             ${o.color ? `<i class="dot" style="--c:var(--${esc(o.color)})"></i>` : ''}
             <span class="grow truncate">${esc(o.label)}</span>${o.count != null ? `<span class="menu-count">${fmtNumber(o.count)}</span>` : ''}
           </button>`).join('') || '<div class="palette-empty">No matches</div>'}</div>
         <div class="menu-divider"></div>
         <div class="row" style="padding:2px 4px 4px"><button type="button" class="btn btn-ghost btn-xs" data-act="clear">Clear</button><button type="button" class="btn btn-ghost btn-xs ml-auto" data-act="all">Select all</button></div>`;
+      // "All" selects the rows currently shown (search-filtered), so "type Din, All" selects the Dining group.
     };
     el.innerHTML = render();
     el.setAttribute('role', 'menu');
@@ -300,8 +302,12 @@ const ui = (() => {
         b.setAttribute('aria-checked', selected.has(v)); b.querySelector('input').checked = selected.has(v);
         onChange && onChange(selected);
       } else if (act) {
-        if (act.dataset.act === 'clear') selected.clear(); else options.forEach((o) => selected.add(o.value));
-        el.innerHTML = render(); onChange && onChange(selected);
+        const q = (el.querySelector('input.input') || {}).value || '';
+        const shown = options.filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()));
+        if (act.dataset.act === 'clear') { if (q) shown.forEach((o) => selected.delete(o.value)); else selected.clear(); }
+        else shown.forEach((o) => selected.add(o.value));
+        el.innerHTML = render(q); onChange && onChange(selected);
+        const inp = el.querySelector('input.input'); if (inp && q) { inp.focus(); inp.setSelectionRange(q.length, q.length); }
       }
     });
     return pop;
