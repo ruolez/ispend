@@ -179,3 +179,31 @@ class ListEndpointTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SuggestTest(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "t"
+        self.app.register_blueprint(tapi.bp)
+
+    def _call(self, q, handler):
+        fake = FakeDB(handler)
+        with patch_db(fake), self.app.test_request_context(f"/api/transactions/suggest?q={q}"):
+            from flask import session
+            session["user_id"] = 1
+            resp = tapi.suggest()
+            body = resp[0] if isinstance(resp, tuple) else resp
+            return json.loads(body.get_data()), fake
+
+    def test_short_query_returns_nothing_without_touching_db(self):
+        out, fake = self._call("s", lambda sql, params, one: self.fail("db must not be queried"))
+        self.assertEqual((out, fake.calls), ([], []))
+
+    def test_query_scopes_by_user_and_prefers_memory_category(self):
+        rows = [{"merchant_key": "STARBUCKS", "merchant_name": "Starbucks", "category_id": 12, "n": 3}]
+        out, fake = self._call("star", lambda sql, params, one: rows)
+        sql, params = fake.calls[0][1], fake.calls[0][2]
+        self.assertIn("COALESCE(m.category_id, h.recent_category_id)", sql)
+        self.assertEqual((params[0], params[-2:]), (1, ("star%", 8)))
+        self.assertEqual(out, rows)

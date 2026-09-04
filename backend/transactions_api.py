@@ -304,6 +304,38 @@ def auto_pair():
     return jsonify({"paired": paired})
 
 
+@bp.get("/suggest")
+@login_required
+def suggest():
+    """Autocomplete for manual entry: merchants the user already has, with the category they
+    usually land in (remembered merchant first, else the most recent categorized row)."""
+    uid = session["user_id"]
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    limit = min(int(request.args.get("limit") or 8), 20)
+    like = f"%{q}%"
+    rows = db.query(
+        """WITH hits AS (
+             SELECT t.merchant_key,
+                    (array_agg(t.merchant_name ORDER BY t.txn_date DESC, t.id DESC))[1] AS merchant_name,
+                    (array_agg(t.description_raw ORDER BY t.txn_date DESC, t.id DESC))[1] AS last_description,
+                    (array_agg(t.amount ORDER BY t.txn_date DESC, t.id DESC))[1] AS last_amount,
+                    (array_agg(t.currency ORDER BY t.txn_date DESC, t.id DESC))[1] AS currency,
+                    (array_agg(t.category_id ORDER BY (t.category_id IS NULL), t.txn_date DESC, t.id DESC))[1] AS recent_category_id,
+                    MAX(t.txn_date) AS last_date, COUNT(*) AS n
+             FROM transactions t
+             WHERE t.user_id = %s AND (t.merchant_name ILIKE %s OR t.description_clean ILIKE %s OR t.description_raw ILIKE %s)
+             GROUP BY t.merchant_key)
+           SELECT h.*, COALESCE(m.category_id, h.recent_category_id) AS category_id, m.is_transfer
+           FROM hits h LEFT JOIN merchant_memory m ON m.user_id = %s AND m.merchant_key = h.merchant_key
+           ORDER BY (lower(h.merchant_name) LIKE lower(%s)) DESC, h.n DESC, h.last_date DESC
+           LIMIT %s""",
+        (uid, like, like, like, uid, f"{q}%", limit),
+    ) or []
+    return jsonify(rows_json(rows))
+
+
 @bp.get("/merchant/<path:merchant_key>")
 @login_required
 def by_merchant(merchant_key):

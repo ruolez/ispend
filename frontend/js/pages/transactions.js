@@ -650,6 +650,17 @@ function openAddModal() {
   const setCatLabel = () => { const c = categoryId ? catOf(categoryId) : null; el.querySelector('#ad-cat-label').innerHTML = c ? `<i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="text-1">${esc(c.path)}</span>` : '<span class="text-3">Choose a category (optional)…</span>'; };
   el.querySelector('#ad-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowNone: !!categoryId, onPick: (c) => { categoryId = c ? c.id : null; if (c && !tx.cats.has(c.id)) tx.cats.set(c.id, c); setCatLabel(); } }));
   el.querySelector('#add-form').addEventListener('submit', (e) => { e.preventDefault(); el.querySelector('.modal-foot .btn-primary').click(); });
+  attachDescriptionSuggest(el, {
+    onPick: (sug) => {
+      if (sug.category_id != null) { categoryId = sug.category_id; if (!tx.cats.has(categoryId)) { const c = catOf(categoryId); if (c) tx.cats.set(categoryId, c); } setCatLabel(); }
+      const amt = el.querySelector('#ad-amount');
+      if (!amt.value && sug.last_amount != null) {
+        amt.value = Math.abs(Number(sug.last_amount)).toFixed(2);
+        kind = Number(sug.last_amount) < 0 ? 'charge' : 'income';
+        $$('#ad-kind .seg-btn', el).forEach((x) => { const on = x.dataset.kind === kind; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); });
+      }
+    },
+  });
   const acctSel = el.querySelector('#ad-acct'); const newBox = el.querySelector('#ad-newacct');
   const syncNew = () => { const on = acctSel.value === '__new__'; newBox.hidden = !on; if (on) setTimeout(() => el.querySelector('#na-name').focus(), 20); };
   acctSel.addEventListener('change', syncNew);
@@ -659,4 +670,55 @@ function openAddModal() {
     sel.addEventListener('change', () => { if (['rbc', 'td', 'bmo', 'scotiabank'].includes(sel.value)) el.querySelector('#na-cur').value = 'CAD'; });
   }).catch(() => {});
   setTimeout(() => (startNew ? el.querySelector('#na-name') : el.querySelector('#ad-amount')).focus(), 30);
+}
+
+/* ---------- description autocomplete (manual entry) ---------- */
+function attachDescriptionSuggest(root, { onPick }) {
+  const input = root.querySelector('#ad-desc');
+  if (!input) return;
+  input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false');
+  let pop = null, list = null, items = [], active = -1, seq = 0;
+  const close = () => { if (pop) { const p = pop; pop = null; p.close(); } input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); active = -1; };
+  const paint = () => {
+    list.innerHTML = items.map((s, i) => {
+      const c = s.category_id ? catOf(s.category_id) : null;
+      return `<div class="sug-opt${i === active ? ' active' : ''}" id="sug-opt-${i}" role="option" aria-selected="${i === active}" data-i="${i}">
+        <div class="sug-main"><span class="sug-name">${esc(s.merchant_name)}</span><span class="sug-meta">${esc(s.last_description || '')}</span></div>
+        <div class="sug-side">${c ? `<span class="catchip catchip--static"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i>${esc(c.name)}</span>` : '<span class="text-4 fs-sm">no category</span>'}<span class="sug-amt num">${s.last_amount != null ? fmtMoney(s.last_amount, s.currency || 'USD', { sign: 'always' }) : ''}</span><span class="text-4 fs-xs">×${s.n}</span></div>
+      </div>`;
+    }).join('');
+    if (active >= 0) input.setAttribute('aria-activedescendant', `sug-opt-${active}`); else input.removeAttribute('aria-activedescendant');
+  };
+  const open = () => {
+    if (pop) { paint(); pop.position(); return; }
+    list = document.createElement('div'); list.className = 'popover sug-list'; list.setAttribute('role', 'listbox'); list.id = 'sug-list';
+    input.setAttribute('aria-controls', 'sug-list');
+    list.addEventListener('mousedown', (e) => e.preventDefault());
+    list.addEventListener('click', (e) => { const o = e.target.closest('.sug-opt'); if (o) pick(Number(o.dataset.i)); });
+    pop = ui.popover(input, list, { placement: 'bottom-start', matchWidth: true, closeOnOutside: true, onClose: () => { pop = null; } });
+    pop.allowShortcuts = true;
+    input.setAttribute('aria-expanded', 'true');
+    paint();
+  };
+  const pick = (i) => { const s = items[i]; if (!s) return; input.value = s.merchant_name; close(); onPick(s); input.dispatchEvent(new Event('change')); };
+  const search = debounce(async () => {
+    const q = input.value.trim(); const my = ++seq;
+    if (q.length < 2) { close(); return; }
+    let res = [];
+    try { res = await api(`/api/transactions/suggest?q=${encodeURIComponent(q)}`); } catch { res = []; }
+    if (my !== seq || document.activeElement !== input) return;
+    items = res; active = -1;
+    if (!items.length) { close(); return; }
+    open();
+  }, 180);
+  input.addEventListener('input', search);
+  input.addEventListener('keydown', (e) => {
+    if (!pop) { if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); open(); } return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(items.length - 1, active + 1); paint(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(0, active - 1); paint(); }
+    else if (e.key === 'Enter') { if (active >= 0) { e.preventDefault(); e.stopPropagation(); pick(active); } else close(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Tab') close();
+  });
+  input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input) close(); }, 120));
 }
