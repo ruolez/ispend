@@ -14,7 +14,7 @@
   <main id="main" class="main">
     <div class="page-head">
       <div><h1>Insights</h1><div class="page-sub">Subscriptions, unusual charges and a monthly read on your spending</div></div>
-      <div class="page-actions"><div class="row"><button type="button" class="btn btn-icon btn-secondary" data-act="prev-month" aria-label="Previous month"></button><input type="month" id="month" class="input" aria-label="Month"><button type="button" class="btn btn-icon btn-secondary" data-act="next-month" aria-label="Next month"></button></div></div>
+      <div class="page-actions"><div class="row"><button type="button" class="btn btn-icon btn-secondary" data-act="prev-month" aria-label="Previous month"></button><label for="month" class="sr-only">Month</label><input type="month" id="month" class="input" aria-describedby="month-hint"><span id="month-hint" class="sr-only">Choose the month to analyse</span><button type="button" class="btn btn-icon btn-secondary" data-act="next-month" aria-label="Next month"></button></div></div>
     </div>
     <div id="ins-error"></div>
     <div class="stat-grid" id="ins-stats">

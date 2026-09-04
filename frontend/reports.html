@@ -26,7 +26,8 @@
       <button type="button" class="btn btn-secondary" id="range-btn"></button>
       <button type="button" class="btn btn-secondary" id="acct-btn"></button>
       <div class="seg" id="months-seg"><button type="button" class="seg-btn" data-months="6">6m</button><button type="button" class="seg-btn active" data-months="12">12m</button><button type="button" class="seg-btn" data-months="24">24m</button></div>
-      <span class="hint grow" id="filter-hint">Transfers and excluded transactions are never counted.</span>
+      <label class="switch switch-sm filter-switch" title="Count transfers between your own accounts and excluded transactions as spending or income"><input type="checkbox" id="incl-transfers"><span class="switch-track"></span>Include transfers</label>
+      <span class="hint grow" id="filter-hint">Transfers and excluded transactions are left out.</span>
     </div>
     <div id="report-error"></div>
     <section class="tab-panel" data-panel="category" id="panel-category"></section>

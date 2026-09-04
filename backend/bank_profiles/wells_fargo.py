@@ -33,5 +33,6 @@ PROFILE = BankProfile(
         (re.compile(r"^(Withdrawals|Checks paid|Fees|Monthly service fee)", re.I), "charge"),
         (re.compile(r"^Transaction history", re.I), "as_is"),
     ),
+    pdf_stop=re.compile(r"^(Totals|Ending balance|Monthly service fee summary|Important account information)", re.I),
     default_account_type="checking",
 )

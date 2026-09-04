@@ -13,19 +13,26 @@
 <body>
   <main id="main" class="main--wide main">
     <div class="page-head">
-      <div><h1>Rules</h1><div class="page-sub">Rules run top to bottom on every import; the first match wins.</div></div>
+      <div><h1>Rules</h1><div class="page-sub" id="page-sub">Rules run top to bottom on every import; the first match wins.</div></div>
       <div class="page-actions">
-        <div class="input-group rules-search"><span class="ico-wrap"></span><input id="rule-search" class="input" placeholder="Filter rules…" aria-label="Filter rules"></div>
+        <div class="seg" id="view-seg" role="group" aria-label="View"><button type="button" class="seg-btn active" data-view="rules" aria-pressed="true">Rules</button><button type="button" class="seg-btn" data-view="merchants" aria-pressed="false">Remembered merchants</button></div>
+        <div class="input-group rules-search"><span class="ico-wrap"></span><input id="rule-search" class="input" placeholder="Filter rules…" aria-label="Filter"></div>
         <button type="button" class="btn btn-secondary" data-act="run-all" title="Apply all active rules to uncategorized transactions">Run all rules</button>
         <button type="button" class="btn btn-primary" data-act="new-rule">New rule</button>
       </div>
     </div>
     <div id="rules-error"></div>
+    <div id="merchants-view" hidden>
+      <div class="card"><div class="tbl-wrap merch-wrap"><table class="tbl merch-tbl"><thead><tr><th>Merchant</th><th>Category</th><th class="right col-used">Used</th><th class="right">Transactions</th><th class="right">Total</th><th class="col-last">Last used</th><th class="col-actions"></th></tr></thead><tbody id="merch-body"></tbody></table></div></div>
+      <p class="hint mt-3">Merchants are remembered whenever you categorize a charge; the next import applies the same category automatically. Click a name to rename it everywhere.</p>
+    </div>
+    <div id="rules-view">
     <div class="card rules-card">
       <div class="rules-head"><span></span><span class="rh-prio">#</span><span>Condition</span><span></span><span>Then</span><span class="rh-hits">Hits</span><span class="rh-on">On</span><span></span></div>
       <ol class="rule-list" id="rule-list" aria-label="Rules"></ol>
     </div>
     <p class="hint mt-3">Drag the handle or press <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> on a row to reorder. Changes save automatically.</p>
+    </div>
   </main>
   <script src="/js/api.js"></script>
   <script src="/js/format.js"></script>

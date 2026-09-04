@@ -163,33 +163,49 @@ async function reopenStatement(id) {
 function reviewable() { return imp.files.filter((f) => f.statement && ['previewed', 'error', 'parsing', 'uploaded', 'committing', 'discarded'].includes(f.statement.status) && !f.done); }
 
 function renderReview() {
-  const host = $('#step-review');
+  const real = $('#step-review');
   const files = reviewable();
+  let tabs = '';
+  // Every branch below writes `host.innerHTML`; the proxy prepends the file tabs and wraps the
+  // content as the active tab's panel, then wires WAI-ARIA keyboard tabs.
+  const host = {
+    set innerHTML(html) {
+      const f = activeFile();
+      const hadTabFocus = document.activeElement && document.activeElement.matches('.file-tab');
+      real.innerHTML = tabs && f ? `${tabs}<div role="tabpanel" id="file-panel-${esc(f.lid)}" aria-labelledby="file-tab-${esc(f.lid)}" tabindex="0">${html}</div>` : html;
+      if (tabs) {
+        ui.tabs(real.querySelector('.file-tabs'), { onChange: (t) => { imp.active = t.dataset.lid; renderReview(); } });
+        if (hadTabFocus) { const t = real.querySelector('.file-tab[aria-selected="true"]'); if (t) t.focus(); }
+      }
+    },
+    get innerHTML() { return real.innerHTML; },
+    querySelector: (q) => real.querySelector(q),
+    querySelectorAll: (q) => real.querySelectorAll(q),
+  };
   if (!files.length) { host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox', title: 'Nothing to review', body: 'All uploaded statements were imported.', action: { label: 'Import another', act: 'restart' } })}</div>`; return; }
   if (!imp.active || !files.some((f) => f.lid === imp.active)) imp.active = files[0].lid;
   const f = activeFile();
   const s = f.statement;
-  let tabs = '';
   if (files.length > 1) {
-    tabs = `<div class="file-tabs" role="tablist">${files.map((x) => `<button type="button" role="tab" class="file-tab ${x.lid === imp.active ? 'active' : ''}" data-act="pick-file" data-lid="${x.lid}" aria-selected="${x.lid === imp.active}">${icon(KIND_ICON[x.kind] || 'file', 'ico-sm')}<span class="truncate" style="max-width:180px">${esc(x.name)}</span>${x.statement && x.statement.status === 'previewed' ? '' : x.statement && x.statement.status === 'error' ? '<span class="badge badge-danger">Failed</span>' : '<span class="spinner"></span>'}</button>`).join('')}</div>`;
+    tabs = `<div class="file-tabs" role="tablist" aria-label="Uploaded files">${files.map((x) => `<button type="button" role="tab" id="file-tab-${esc(x.lid)}" aria-controls="file-panel-${esc(x.lid)}" class="file-tab ${x.lid === imp.active ? 'active' : ''}" data-lid="${x.lid}" aria-selected="${x.lid === imp.active}">${icon(KIND_ICON[x.kind] || 'file', 'ico-sm')}<span class="truncate" style="max-width:180px">${esc(x.name)}</span>${x.statement && x.statement.status === 'previewed' ? '' : x.statement && x.statement.status === 'error' ? '<span class="badge badge-danger" aria-label="Failed to parse">Failed</span>' : '<span class="spinner" role="img" aria-label="Parsing"></span>'}</button>`).join('')}</div>`;
   }
   if (!s || ['parsing', 'uploaded', 'committing'].includes(s.status)) {
-    host.innerHTML = `${tabs}<div class="card parsing-card"><span class="spinner spinner-lg"></span><div><div class="fw-600">${s && s.status === 'committing' ? 'Importing' : 'Parsing'} ${esc(f.name)}…</div><div class="text-3 fs-base">${f.kind === 'pdf' ? 'Extracting text; scanned pages go through OCR, which can take a minute.' : 'Detecting the bank format and checking for duplicates.'}</div></div></div>`;
+    host.innerHTML = `<div class="card parsing-card"><span class="spinner spinner-lg"></span><div><div class="fw-600">${s && s.status === 'committing' ? 'Importing' : 'Parsing'} ${esc(f.name)}…</div><div class="text-3 fs-base">${f.kind === 'pdf' ? 'Extracting text; scanned pages go through OCR, which can take a minute.' : 'Detecting the bank format and checking for duplicates.'}</div></div></div>`;
     schedulePoll();
     return;
   }
   if (s.status === 'discarded') {
-    host.innerHTML = `${tabs}<div class="card">${ui.emptyState({ icon: 'trash', title: 'This import was discarded', body: `“${f.name}” was discarded before anything was imported. Upload it again if you still need it.`, action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'trash', title: 'This import was discarded', body: `“${f.name}” was discarded before anything was imported. Upload it again if you still need it.`, action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
   if (s.status === 'error') {
-    host.innerHTML = `${tabs}<div class="card"><div class="card-body">
+    host.innerHTML = `<div class="card"><div class="card-body">
       ${ui.errorBox(s.error_message || 'This file could not be parsed.')}
       <div class="row mt-3" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-primary" data-act="reparse">${icon('refresh', 'ico-sm')}Try again</button><button type="button" class="btn btn-secondary" data-act="discard">Discard file</button></div>
     </div></div>`;
     return;
   }
-  host.innerHTML = `${tabs}${detectionBanner(f)}
+  host.innerHTML = `${detectionBanner(f)}
     <div class="review-grid">
       <div class="card"><div class="card-body">
         <div class="section-label mb-2">Import into</div>

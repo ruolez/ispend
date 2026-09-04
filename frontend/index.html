@@ -15,10 +15,10 @@
     <div class="page-head">
       <div><h1>Dashboard</h1><div class="page-sub" id="dash-sub">Your spending at a glance</div></div>
       <div class="page-actions">
-        <div class="seg" id="range-seg" role="tablist" aria-label="Period">
-          <button type="button" class="seg-btn" data-range="this-month">This month</button>
-          <button type="button" class="seg-btn" data-range="last-month">Last month</button>
-          <button type="button" class="seg-btn" data-range="last-90">Last 90 days</button>
+        <div class="seg" id="range-seg" role="radiogroup" aria-label="Period">
+          <button type="button" class="seg-btn" role="radio" aria-checked="false" data-range="this-month">This month</button>
+          <button type="button" class="seg-btn" role="radio" aria-checked="false" data-range="last-month">Last month</button>
+          <button type="button" class="seg-btn" role="radio" aria-checked="false" data-range="last-90">Last 90 days</button>
         </div>
         <a class="btn btn-primary" href="/import.html" id="import-btn">Import statement</a>
       </div>

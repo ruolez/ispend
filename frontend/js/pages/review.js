@@ -3,20 +3,26 @@ const SKIP_KEY = 'ispend.review.skipped';
 const rv = {
   mode: 'merchant', groups: [], remaining: 0, remainingItems: 0, done: 0, focus: -1,
   cats: new Map(), catsFlat: [], settings: null, skipped: new Set(), loading: false,
+  pairs: [], pairCount: 0, paired: 0, accounts: new Map(),
 };
+const MODES = ['merchant', 'single', 'transfers'];
 function loadSkipped() { try { return new Set(JSON.parse(sessionStorage.getItem(SKIP_KEY) || '[]')); } catch { return new Set(); } }
 function saveSkipped() { try { sessionStorage.setItem(SKIP_KEY, JSON.stringify(Array.from(rv.skipped))); } catch { /* ignore */ } }
 
 initNav('review').then(async () => {
   rv.skipped = loadSkipped();
   const q = qs();
-  if (q.mode === 'single') rv.mode = 'single';
+  if (MODES.includes(q.mode)) rv.mode = q.mode;
   await loadRefs();
   rv.currency = await store.displayCurrency();
   rv.settings = await store.settings().catch(() => ({}));
   const aiBtn = $('#btn-ai');
   if (rv.settings && rv.settings.ai_categorize_enabled) { aiBtn.hidden = false; aiBtn.innerHTML = `${icon('sparkles', 'ico-sm')}<span class="label">Ask AI</span>`; aiBtn.addEventListener('click', askAI); }
-  $('#rv-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (!b || b.dataset.mode === rv.mode) return; rv.mode = b.dataset.mode; setQs({ mode: rv.mode === 'single' ? 'single' : null }); paintMode(); load(); });
+  const pairBtn = $('#btn-pair-all');
+  pairBtn.innerHTML = `${icon('arrow-left-right', 'ico-sm')}<span class="label">Pair all confident</span>`;
+  pairBtn.addEventListener('click', pairAllConfident);
+  $('#rv-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (!b || b.dataset.mode === rv.mode) return; rv.mode = b.dataset.mode; setQs({ mode: rv.mode === 'merchant' ? null : rv.mode }); paintMode(); load(); });
+  refreshPairCount();
   $('#rv-list').addEventListener('click', onCardClick);
   $('#rv-list').addEventListener('change', onCardChange);
   $('#rv-list').addEventListener('focusin', (e) => { const card = e.target.closest('.rv-card'); if (card) setFocus(Number(card.dataset.idx), { scroll: false }); });
@@ -28,15 +34,36 @@ initNav('review').then(async () => {
 });
 
 async function loadRefs() {
-  rv.catsFlat = await store.categoriesFlat();
-  rv.cats = new Map(rv.catsFlat.map((c) => [c.id, c]));
+  const [flat, accts] = await Promise.all([store.categoriesFlat(), store.accounts().catch(() => [])]);
+  rv.catsFlat = flat;
+  rv.cats = new Map(flat.map((c) => [c.id, c]));
+  rv.accounts = new Map(accts.map((a) => [a.id, a]));
 }
+function acctOf(id) { return rv.accounts.get(Number(id)) || null; }
 function catOf(id) { return rv.cats.get(Number(id)) || null; }
-function paintMode() { $$('#rv-mode .seg-btn').forEach((b) => { const on = b.dataset.mode === rv.mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
+function paintMode() {
+  $$('#rv-mode .seg-btn').forEach((b) => { const on = b.dataset.mode === rv.mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+  const transfers = rv.mode === 'transfers';
+  $('#btn-pair-all').hidden = !transfers;
+  if (rv.settings && rv.settings.ai_categorize_enabled) $('#btn-ai').hidden = transfers;
+  $('.page-sub').textContent = transfers ? 'Money moved between your own accounts. Pairing hides both sides from spending and income.' : 'Charges that still need a category. One decision covers every charge from the same merchant.';
+}
+function paintPairCount() {
+  const el = $('#rv-pair-count');
+  el.hidden = !rv.pairCount; el.textContent = rv.pairCount ? fmtNumber(rv.pairCount) : '';
+  $('#btn-pair-all').disabled = !rv.pairs.some((p) => p.confidence >= 0.9 && !rv.skipped.has(pairKey(p)));
+}
+async function refreshPairCount() {
+  try { const list = await api('/api/transactions/transfer-candidates'); rv.pairCount = list.filter((p) => !rv.skipped.has(pairKey(p))).length; if (rv.mode !== 'transfers') rv.pairs = list; }
+  catch { rv.pairCount = 0; }
+  paintPairCount();
+}
+function pairKey(p) { return `p${p.a.id}-${p.b.id}`; }
 function announce(t) { const l = $('#rv-live'); l.textContent = ''; setTimeout(() => { l.textContent = t; }, 30); }
 
 /* ---------- data ---------- */
 async function load() {
+  if (rv.mode === 'transfers') return loadTransfers();
   rv.loading = true;
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-2">${ui.skeleton('60%', 12)}</div><div class="mt-3">${ui.skeleton('100%', 32)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-2">${ui.skeleton('55%', 12)}</div></div>`;
   try {
@@ -56,10 +83,105 @@ async function load() {
   if (first) setFocus(0, { scroll: false });
 }
 function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.key; }
+
+/* ---------- transfers mode ---------- */
+async function loadTransfers() {
+  rv.loading = true;
+  $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-3">${ui.skeleton('100%', 44)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-3">${ui.skeleton('100%', 44)}</div></div>`;
+  try { rv.pairs = await api('/api/transactions/transfer-candidates'); }
+  catch (err) { $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
+  rv.loading = false;
+  rv.pairCount = rv.pairs.filter((p) => !rv.skipped.has(pairKey(p))).length;
+  paintPairCount();
+  rv.focus = -1;
+  renderTransfers();
+  if (visiblePairs().length) setFocus(0, { scroll: false });
+}
+function visiblePairs() { return rv.pairs.filter((p) => !rv.skipped.has(pairKey(p))); }
+function renderTransfers() {
+  const pairs = visiblePairs();
+  const skippedN = rv.pairs.length - pairs.length;
+  $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(pairs.length)}</b> possible transfer${pairs.length === 1 ? '' : 's'} to confirm</span><div class="progress"><span style="width:${rv.pairs.length + rv.paired ? Math.round((rv.paired / (rv.pairs.length + rv.paired)) * 100) : 0}%"></span></div><span class="rp-text text-3">${fmtNumber(rv.paired)} paired this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip">${fmtNumber(skippedN)} dismissed</button>` : ''}</span>`;
+  const host = $('#rv-list');
+  if (!pairs.length) {
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'arrow-left-right', title: skippedN ? 'Every candidate is dismissed' : 'No unmatched transfers', body: skippedN ? 'You dismissed the remaining candidates for this session.' : 'iSpend looks for equal and opposite amounts in two different accounts within a few days. Pairs you confirm are excluded from spending and income.', action: skippedN ? { label: 'Show dismissed', act: 'unskip' } : { label: 'Back to categories', href: '/review.html' } })}</div>`;
+    host.classList.remove('has-focus');
+    return;
+  }
+  host.innerHTML = pairs.map((p, i) => pairHtml(p, i)).join('');
+  host.classList.toggle('has-focus', rv.focus >= 0);
+}
+function pairSideHtml(t) {
+  const a = acctOf(t.account_id);
+  const cur = (a && a.currency) || rv.currency || 'USD';
+  return `<div class="rv-pair-side">
+    <div class="rv-pair-top"><span class="acct"><i class="acct-mark" style="--c:var(--${esc((a && a.color) || 'c1')})">${esc(((a && a.name) || '?').slice(0, 1))}</i>${esc(a ? a.name : 'Account')}</span><span class="text-3 fs-sm num">${fmtDateLong(t.txn_date)}</span></div>
+    <div class="rv-pair-desc" title="${esc(t.description)}"><span class="fw-500">${esc(t.merchant_name || t.description)}</span><small>${esc(t.description)}</small></div>
+    <div class="amt ${t.amount > 0 ? 'amt--income' : ''}">${fmtMoney(t.amount, cur, { sign: 'always' })}</div>
+  </div>`;
+}
+function pairHtml(p, idx) {
+  const a = acctOf(p.a.account_id); const cur = (a && a.currency) || rv.currency || 'USD';
+  const days = Math.abs((new Date(p.b.txn_date) - new Date(p.a.txn_date)) / 86400000);
+  const pct = Math.round(Number(p.confidence) * 100);
+  return `<article class="rv-card rv-pair ${idx === rv.focus ? 'is-focused' : ''}" data-idx="${idx}" data-key="${esc(pairKey(p))}" tabindex="0" aria-label="Transfer of ${esc(fmtMoney(Math.abs(p.a.amount), cur))}">
+    <div class="rv-head">
+      <div><div class="rv-name">${fmtMoney(Math.abs(p.a.amount), cur)} transfer</div><div class="rv-meta"><span>${days === 0 ? 'Same day' : `${days} day${days === 1 ? '' : 's'} apart`}</span></div></div>
+      <span class="badge ${p.confidence >= 0.9 ? 'badge-success' : 'badge-warning'}" title="How likely these two rows are the same transfer">${pct}% likely</span>
+    </div>
+    <div class="rv-pair-rows">${pairSideHtml(p.a)}<span class="rv-pair-arrow">${icon('arrow-left-right')}</span>${pairSideHtml(p.b)}</div>
+    <div class="rv-actions">
+      <button type="button" class="btn btn-primary" data-pact="pair">Pair<kbd>↵</kbd></button>
+      <button type="button" class="btn btn-ghost" data-pact="skip">Not a pair<kbd>S</kbd></button>
+    </div>
+  </article>`;
+}
+function focusedPair() {
+  const card = $$('.rv-card')[rv.focus];
+  if (!card) return null;
+  return rv.pairs.find((p) => pairKey(p) === card.dataset.key) || null;
+}
+async function pairOne(p) {
+  try {
+    await api('/api/transactions/pair', { method: 'POST', body: { a_id: p.a.id, b_id: p.b.id } });
+    rv.paired += 1;
+    // both rows are now paired: drop every other candidate that used either of them
+    const used = new Set([p.a.id, p.b.id]);
+    const el = $(`.rv-card[data-key="${CSS.escape(pairKey(p))}"]`);
+    rv.pairs = rv.pairs.filter((x) => !used.has(x.a.id) && !used.has(x.b.id));
+    rv.pairCount = visiblePairs().length; paintPairCount();
+    toast('Paired as a transfer', { type: 'success' });
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    if (el) { el.style.maxHeight = `${el.offsetHeight}px`; requestAnimationFrame(() => el.classList.add('is-leaving')); }
+    setTimeout(() => { renderTransfers(); setFocus(Math.min(rv.focus, $$('.rv-card').length - 1)); }, 260);
+  } catch (err) { toast(err.message, { type: 'error' }); }
+}
+function skipPair(p) {
+  rv.skipped.add(pairKey(p)); saveSkipped();
+  rv.pairCount = visiblePairs().length; paintPairCount();
+  const el = $(`.rv-card[data-key="${CSS.escape(pairKey(p))}"]`);
+  if (el) { el.style.maxHeight = `${el.offsetHeight}px`; requestAnimationFrame(() => el.classList.add('is-leaving')); }
+  setTimeout(() => { renderTransfers(); setFocus(Math.min(rv.focus, $$('.rv-card').length - 1)); }, 260);
+}
+async function pairAllConfident() {
+  const n = visiblePairs().filter((p) => p.confidence >= 0.9).length;
+  if (!n) { toast('No confident candidates to pair', { type: 'info' }); return; }
+  if (!(await ui.confirm({ title: `Pair ${n} confident transfer${n === 1 ? '' : 's'}?`, body: 'Candidates rated 90% or higher will be marked as transfers between your accounts and excluded from spending and income.', confirmText: 'Pair all' }))) return;
+  const btn = $('#btn-pair-all'); btn.classList.add('is-loading');
+  try {
+    const r = await api('/api/transactions/auto-pair', { method: 'POST', body: { min_confidence: 0.9 } });
+    rv.paired += r.paired || 0;
+    toast(`${plural(r.paired || 0, 'transfer')} paired`, { type: 'success' });
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    await loadTransfers();
+  } catch (err) { toast(err.message, { type: 'error' }); }
+  finally { btn.classList.remove('is-loading'); }
+}
 function visibleGroups() { return rv.groups.filter((g) => !rv.skipped.has(groupKey(g))); }
 
 /* ---------- render ---------- */
 function render() {
+  if (rv.mode === 'transfers') return renderTransfers();
   const groups = rv.groups.filter((g) => !rv.skipped.has(groupKey(g)));
   const skippedN = rv.groups.length - groups.length;
   const total = rv.done + rv.remainingItems;
@@ -117,11 +239,13 @@ function setFocus(idx, { scroll = true } = {}) {
   if (card) {
     if (scroll) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (document.activeElement && !card.contains(document.activeElement)) card.focus({ preventScroll: true });
+    if (rv.mode === 'transfers') { const p = focusedPair(); if (p) announce(card.getAttribute('aria-label') + `, ${Math.round(p.confidence * 100)} percent likely`); return; }
     const g = focusedGroup();
     if (g) announce(`${g.display}, ${plural(g.count, 'charge')}, ${fmtMoney(g.total, g.currency || rv.currency || 'USD')}${g.suggestion && catOf(g.suggestion.category_id) ? `, suggested ${catOf(g.suggestion.category_id).name}` : ''}`);
   }
 }
 function focusedGroup() {
+  if (rv.mode === 'transfers') return null;
   const card = $$('.rv-card')[rv.focus];
   if (!card) return null;
   return rv.groups.find((g) => groupKey(g) === card.dataset.key) || null;
@@ -132,17 +256,25 @@ function registerShortcuts() {
   ui.shortcuts.register('k', () => setFocus(Math.max(0, rv.focus - 1)), { when: ok, description: 'Previous merchant' });
   ui.shortcuts.register('ArrowDown', () => setFocus(rv.focus + 1), { when: ok });
   ui.shortcuts.register('ArrowUp', () => setFocus(Math.max(0, rv.focus - 1)), { when: ok });
-  ui.shortcuts.register('Enter', () => { const g = focusedGroup(); if (!g) return; if (g.suggestion) accept(g); else pick(g); }, { when: ok, description: 'Accept suggestion' });
+  ui.shortcuts.register('Enter', () => { if (rv.mode === 'transfers') { const p = focusedPair(); if (p) pairOne(p); return; } const g = focusedGroup(); if (!g) return; if (g.suggestion) accept(g); else pick(g); }, { when: ok, description: 'Accept suggestion' });
   ui.shortcuts.register('c', () => { const g = focusedGroup(); if (g) pick(g); }, { when: ok, description: 'Choose category' });
   ui.shortcuts.register('t', () => { const g = focusedGroup(); if (g) transfer(g); }, { when: ok, description: 'Mark as transfer' });
-  ui.shortcuts.register('s', () => { const g = focusedGroup(); if (g) skip(g); }, { when: ok, description: 'Skip' });
+  ui.shortcuts.register('s', () => { if (rv.mode === 'transfers') { const p = focusedPair(); if (p) skipPair(p); return; } const g = focusedGroup(); if (g) skip(g); }, { when: ok, description: 'Skip' });
   ui.shortcuts.register('e', () => { const g = focusedGroup(); if (g && rv.mode === 'merchant') toggleExpand(g); }, { when: ok, description: 'Show charges' });
-  window.PAGE_SHORTCUTS = [{ title: 'Review', items: [['j / k', 'Move between merchants'], ['↵', 'Accept suggestion'], ['c', 'Choose category'], ['t', 'Mark as transfer'], ['s', 'Skip for now'], ['e', 'Show charges']] }];
+  window.PAGE_SHORTCUTS = [{ title: 'Review', items: [['j / k', 'Move between cards'], ['↵', 'Accept suggestion / pair transfer'], ['c', 'Choose category'], ['t', 'Mark as transfer'], ['s', 'Skip / not a pair'], ['e', 'Show charges']] }];
 }
 
 /* ---------- interactions ---------- */
 function groupFromEvent(e) { const card = e.target.closest('.rv-card'); return card ? rv.groups.find((g) => groupKey(g) === card.dataset.key) : null; }
 function onCardClick(e) {
+  if (rv.mode === 'transfers') {
+    const card = e.target.closest('.rv-card'); const b = e.target.closest('[data-pact]');
+    if (!card || !b) return;
+    const p = rv.pairs.find((x) => pairKey(x) === card.dataset.key); if (!p) return;
+    const idx = $$('.rv-card').indexOf(card); if (idx !== rv.focus) setFocus(idx, { scroll: false });
+    if (b.dataset.pact === 'pair') pairOne(p); else skipPair(p);
+    return;
+  }
   const g = groupFromEvent(e);
   if (!g) return;
   const b = e.target.closest('[data-cact]');
@@ -160,6 +292,7 @@ function onCardClick(e) {
   }
 }
 function onCardChange(e) {
+  if (rv.mode === 'transfers') return;
   const g = groupFromEvent(e);
   if (!g) return;
   const t = e.target;

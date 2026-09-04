@@ -61,3 +61,15 @@
 }
 
 .drawer-foot .btn { flex: 0 0 auto; }
+
+/* remembered merchants */
+.merch-tbl .merchant { min-width: 0; }
+.merch-name { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font: inherit; font-weight: 500; color: var(--text-1); cursor: text; text-align: left; border-radius: var(--r-sm); }
+.merch-name .ico { opacity: 0; color: var(--text-4); transition: opacity var(--dur-1); }
+.merch-name:hover .ico, .merch-name:focus-visible .ico { opacity: 1; }
+.merch-name-input { max-width: 260px; }
+.merch-tbl .row-actions { opacity: 0; transition: opacity var(--dur-1); }
+.merch-tbl tr:hover .row-actions, .merch-tbl tr:focus-within .row-actions { opacity: 1; }
+#view-seg .seg-btn { white-space: nowrap; }
+@media (max-width: 960px) { .merch-tbl .col-used, .merch-tbl .col-last { display: none; } .merch-tbl .row-actions { opacity: 1; } }
+@media (max-width: 640px) { .page-actions #view-seg { width: 100%; } }

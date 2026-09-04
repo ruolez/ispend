@@ -60,3 +60,40 @@ class DetectPdfTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PdfStopTest(unittest.TestCase):
+    """Every profile's pdf_stop ends the table before summary/footer lines get parsed as rows."""
+
+    SAMPLES = {
+        "bofa": ("08/05/24 SHELL OIL -52.10", "Total withdrawals and other subtractions -1,234.00"),
+        "citi": ("08/05 SHELL OIL $52.10", "Fees charged $0.00"),
+        "capital_one": ("Aug 5 Aug 6 SHELL OIL $52.10", "Total Transactions for This Period $852.10"),
+        "discover": ("08/05/24 SHELL OIL $52.10", "Year-to-date totals"),
+        "wells_fargo": ("8/5 SHELL OIL 52.10 1,000.00", "Totals $852.10 $1,000.00"),
+        "rbc": ("5 Aug SHELL OIL 52.10 1,000.00", "Closing Balance 1,000.00"),
+        "td": ("AUG5 SHELL OIL 52.10 1,000.00", "Total withdrawals 852.10"),
+        "bmo": ("Aug 5 SHELL OIL 52.10", "Closing totals 852.10"),
+        "scotiabank": ("Aug 5 SHELL OIL 52.10", "Closing Balance 1,000.00"),
+        "chase": ("08/05 SHELL OIL 52.10", "Year-to-date totals"),
+        "amex": ("08/05/24 SHELL OIL $52.10", "Total Fees in 2024 $0.00"),
+    }
+
+    def test_every_profile_defines_pdf_stop_and_it_ends_the_table(self):
+        from datetime import date
+        from importer import pdf_lines
+
+        period = (date(2024, 7, 21), date(2024, 8, 20))
+        for key, (txn, stop) in self.SAMPLES.items():
+            with self.subTest(profile=key):
+                profile = bank_profiles.get(key)
+                self.assertIsNotNone(profile.pdf_stop, f"{key} has no pdf_stop")
+                self.assertTrue(profile.pdf_stop.match(stop), f"{key} stop regex misses {stop!r}")
+                lines = [pdf_lines.Line(text=t, top=i * 12.0, x0=40.0, x1=500.0, page=1, words=[])
+                         for i, t in enumerate([txn, stop, txn])]
+                rows = pdf_lines.rows_to_transactions(lines, profile, period)
+                self.assertEqual([(r.description, r.problems) for r in rows], [("SHELL OIL", [])])
+
+    def test_pdf_stop_is_case_insensitive(self):
+        self.assertTrue(bank_profiles.get("rbc").pdf_stop.match("CLOSING BALANCE 1,000.00"))
+        self.assertTrue(bank_profiles.get("discover").pdf_stop.match("year to date totals"))

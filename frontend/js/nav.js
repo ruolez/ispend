@@ -205,8 +205,9 @@ function openPalette() {
   const wrap = document.createElement('div');
   wrap.className = 'palette-backdrop';
   wrap.innerHTML = `<div class="palette" role="dialog" aria-label="Search">
-      <div class="palette-input">${icon('search')}<input type="text" placeholder="Search transactions, categories, pages…" aria-label="Search" role="combobox" aria-expanded="true" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
-      <div class="palette-list" role="listbox"></div></div>`;
+      <div class="palette-input">${icon('search')}<input type="text" placeholder="Search transactions, categories, pages…" aria-label="Search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palette-list" aria-haspopup="listbox" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
+      <div class="palette-list" id="palette-list" role="listbox" aria-label="Results"></div>
+      <div class="sr-only" id="palette-live" aria-live="polite"></div></div>`;
   host.appendChild(wrap);
   const input = wrap.querySelector('input');
   const list = wrap.querySelector('.palette-list');
@@ -247,21 +248,30 @@ function openPalette() {
       } catch { /* backend not ready */ }
     }
   }
+  const live = wrap.querySelector('#palette-live');
   function render(all, q) {
     items = all; active = 0;
-    if (!all.length) { list.innerHTML = `<div class="palette-empty">No results for “${esc(q)}”</div>`; return; }
+    if (!all.length) { list.innerHTML = `<div class="palette-empty">No results for “${esc(q)}”</div>`; input.removeAttribute('aria-activedescendant'); live.textContent = q ? `No results for ${q}` : 'No results'; return; }
     let html = '', last = null;
     all.forEach((it, i) => {
-      if (it.group !== last) { html += `<div class="palette-group">${esc(it.group)}</div>`; last = it.group; }
-      html += `<button type="button" class="palette-item${i === 0 ? ' is-active' : ''}" role="option" data-i="${i}">${it.color ? `<i class="dot" style="--c:var(--${esc(it.color)})"></i>` : icon(it.icon || 'arrow-right')}<span class="truncate">${esc(it.label)}</span>${it.sub ? `<span class="sub">${esc(it.sub)}</span>` : ''}</button>`;
+      if (it.group !== last) { html += `<div class="palette-group" role="presentation">${esc(it.group)}</div>`; last = it.group; }
+      html += `<button type="button" class="palette-item${i === 0 ? ' is-active' : ''}" role="option" id="pal-opt-${i}" aria-selected="${i === 0}" data-i="${i}">${it.color ? `<i class="dot" style="--c:var(--${esc(it.color)})"></i>` : icon(it.icon || 'arrow-right')}<span class="truncate">${esc(it.label)}</span>${it.sub ? `<span class="sub">${esc(it.sub)}</span>` : ''}</button>`;
     });
     list.innerHTML = html;
+    input.setAttribute('aria-activedescendant', 'pal-opt-0');
+    live.textContent = `${all.length} result${all.length === 1 ? '' : 's'}`;
   }
-  function highlight() { $$('.palette-item', list).forEach((el, i) => el.classList.toggle('is-active', i === active)); const a = list.querySelector('.is-active'); a && a.scrollIntoView({ block: 'nearest' }); }
+  function highlight() {
+    $$('.palette-item', list).forEach((el, i) => { const on = i === active; el.classList.toggle('is-active', on); el.setAttribute('aria-selected', on); });
+    const a = list.querySelector('.is-active'); if (a) { a.scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', a.id); }
+  }
+  list.addEventListener('mousemove', (e) => { const b = e.target.closest('[data-i]'); if (b && Number(b.dataset.i) !== active) { active = Number(b.dataset.i); highlight(); } });
   input.addEventListener('input', debounce(() => search(input.value), 150));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, items.length - 1); highlight(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); highlight(); }
+    else if (e.key === 'Home') { e.preventDefault(); active = 0; highlight(); }
+    else if (e.key === 'End') { e.preventDefault(); active = Math.max(items.length - 1, 0); highlight(); }
     else if (e.key === 'Enter') { e.preventDefault(); const it = items[active]; if (it) { handle.close(); it.run(); } }
   });
   list.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const it = items[Number(b.dataset.i)]; handle.close(); it.run(); });

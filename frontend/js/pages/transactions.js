@@ -30,7 +30,9 @@ initNav('transactions').then(async () => {
   readUrl();
   $('#btn-export').innerHTML = `${icon('download', 'ico-sm')}<span class="label">Export CSV</span>`;
   paintDensity();
-  $('#btn-density').addEventListener('click', () => { Theme.setDensity(Theme.density() === 'compact' ? 'comfortable' : 'compact'); paintDensity(); });
+  $('#btn-density').addEventListener('click', () => { const d = Theme.density() === 'compact' ? 'comfortable' : 'compact'; Theme.setDensity(d); paintDensity(); api('/api/auth/me/preferences', { method: 'PUT', body: { density: d } }).catch(() => {}); });
+  $('#btn-add').innerHTML = `${icon('plus', 'ico-sm')}<span class="label">Add transaction</span>`;
+  $('#btn-add').addEventListener('click', openAddModal);
   $('.tx-search .ico-wrap').innerHTML = icon('search');
   $('#f-q').value = tx.filters.q;
   $('#f-q').addEventListener('input', debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250));
@@ -583,4 +585,51 @@ function readRuleForm(el, categoryId) {
     category_id: categoryId, account_id: $('#rf-account', el).value ? Number($('#rf-account', el).value) : null,
     apply_existing: $('#rf-apply', el).checked, only_uncategorized: true,
   };
+}
+
+
+/* ---------- manual entry ---------- */
+function openAddModal() {
+  const accounts = Array.from(tx.accounts.values()).filter((a) => a.is_active);
+  if (!accounts.length) { toast('Create an account in Settings first', { type: 'info', action: { label: 'Settings', fn: () => { location.href = '/settings.html'; } } }); return; }
+  const preferred = tx.filters.acct.length === 1 ? tx.filters.acct[0] : (accounts[0] || {}).id;
+  let categoryId = null; let kind = 'charge';
+  const m = ui.modal({
+    title: 'Add transaction',
+    html: `<form id="add-form" class="col gap-3">
+      <div class="field-row">
+        <div class="field"><label for="ad-acct">Account</label><select id="ad-acct" class="select">${accounts.map((a) => `<option value="${a.id}" ${a.id === preferred ? 'selected' : ''}>${esc(a.name)} · ${esc(a.currency)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ad-date">Date</label><input id="ad-date" class="input" type="date" value="${toISODate(new Date())}" required></div>
+      </div>
+      <div class="field"><label for="ad-amount">Amount</label>
+        <div class="row gap-2"><div class="seg" id="ad-kind" role="group" aria-label="Kind"><button type="button" class="seg-btn active" data-kind="charge" aria-pressed="true">Charge</button><button type="button" class="seg-btn" data-kind="income" aria-pressed="false">Income</button></div><input id="ad-amount" class="input num grow" type="number" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal" required></div>
+        <div class="hint">Charges are stored as money out, income as money in.</div></div>
+      <div class="field"><label for="ad-desc">Description</label><input id="ad-desc" class="input" placeholder="e.g. Farmers market" required autocomplete="off"></div>
+      <div class="field"><label>Category</label><button type="button" class="btn btn-secondary btn-block" id="ad-cat" style="justify-content:space-between"><span id="ad-cat-label" class="row gap-2 text-3">Choose a category (optional)…</span>${icon('chevron-down')}</button></div>
+      <div class="field"><label for="ad-notes">Notes</label><textarea id="ad-notes" class="textarea" rows="2" placeholder="Optional"></textarea></div>
+      <button type="submit" hidden></button></form>`,
+    actions: [{ label: 'Cancel' }, { label: 'Add transaction', primary: true, onClick: async () => {
+      const el = m.el;
+      const amount = Number(el.querySelector('#ad-amount').value);
+      const description = el.querySelector('#ad-desc').value.trim();
+      const txn_date = el.querySelector('#ad-date').value;
+      if (!txn_date) throw new Error('Pick a date');
+      if (!(amount > 0)) throw new Error('Enter an amount greater than zero');
+      if (!description) throw new Error('Enter a description');
+      const body = { account_id: Number(el.querySelector('#ad-acct').value), txn_date, amount: kind === 'charge' ? -amount : amount, description, category_id: categoryId, notes: el.querySelector('#ad-notes').value.trim() || null };
+      const created = await api('/api/transactions', { method: 'POST', body });
+      toast(`Added ${fmtMoney(created.amount, created.currency || currencyOf(created), { sign: 'always' })} · ${created.merchant_name}`, { type: 'success' });
+      window.dispatchEvent(new Event('ispend:transactions-changed'));
+      await reload();
+      const row = $(`tr[data-id="${created.id}"]`);
+      if (row) { const idx = tx.items.findIndex((i) => i.id === created.id); if (idx >= 0) setFocus(idx); }
+      else toast('Added outside the current filter · switch the range to see it', { type: 'info' });
+    } }],
+  });
+  const el = m.el;
+  el.querySelector('#ad-kind').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (!b) return; kind = b.dataset.kind; $$('#ad-kind .seg-btn', el).forEach((x) => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); }); });
+  const setCatLabel = () => { const c = categoryId ? catOf(categoryId) : null; el.querySelector('#ad-cat-label').innerHTML = c ? `<i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="text-1">${esc(c.path)}</span>` : '<span class="text-3">Choose a category (optional)…</span>'; };
+  el.querySelector('#ad-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowNone: !!categoryId, onPick: (c) => { categoryId = c ? c.id : null; if (c && !tx.cats.has(c.id)) tx.cats.set(c.id, c); setCatLabel(); } }));
+  el.querySelector('#add-form').addEventListener('submit', (e) => { e.preventDefault(); el.querySelector('.modal-foot .btn-primary').click(); });
+  setTimeout(() => el.querySelector('#ad-amount').focus(), 30);
 }

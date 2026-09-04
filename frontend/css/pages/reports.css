@@ -1,6 +1,7 @@
 /* Reports */
 .filter-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
 .filter-row .hint { text-align: right; }
+.filter-switch { margin-left: 4px; white-space: nowrap; }
 .share-bar { display: inline-block; width: 100%; max-width: 140px; height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; vertical-align: middle; }
 .share-bar > span { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: inherit; }
 .share-cell { display: flex; align-items: center; gap: 8px; }

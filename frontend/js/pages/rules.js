@@ -2,7 +2,7 @@
 const MATCH_TYPES = [['contains', 'contains'], ['starts_with', 'starts with'], ['equals', 'equals'], ['regex', 'matches regex']];
 const MATCH_FIELDS = [['description_clean', 'Description'], ['description_raw', 'Raw description'], ['merchant_key', 'Merchant']];
 const word = (n, one, many) => (Number(n) === 1 ? one : (many || one + 's'));
-const state = { rules: [], cats: new Map(), accounts: [], q: '', dragId: null, currency: 'USD', filterCat: null };
+const state = { rules: [], cats: new Map(), accounts: [], q: '', dragId: null, currency: 'USD', filterCat: null, view: 'rules', merchants: [], mq: '', mloading: false };
 
 initNav('rules').then(async (me) => {
   state.currency = await store.displayCurrency();
@@ -14,12 +14,23 @@ initNav('rules').then(async (me) => {
   list.addEventListener('change', onInlineChange);
   list.addEventListener('keydown', onListKey);
   list.addEventListener('focusout', (e) => { if (e.target.matches('.rule-pattern')) commitPattern(e.target); });
-  $('#rule-search').addEventListener('input', debounce((e) => { state.q = e.target.value.trim().toLowerCase(); render(); }, 120));
+  $('#rule-search').addEventListener('input', debounce((e) => {
+    if (state.view === 'merchants') { state.mq = e.target.value.trim(); loadMerchants(); return; }
+    state.q = e.target.value.trim().toLowerCase(); render();
+  }, 200));
   wireDrag();
   const q = qs();
+  if (q.tab === 'merchants') state.view = 'merchants';
+  $('#view-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (!b || b.dataset.view === state.view) return; state.view = b.dataset.view; setQs({ tab: state.view === 'merchants' ? 'merchants' : null }, { replace: true }); paintView(); if (state.view === 'merchants') loadMerchants(); });
+  const mb = $('#merch-body');
+  mb.addEventListener('click', onMerchantClick);
+  mb.addEventListener('keydown', onMerchantKey);
+  mb.addEventListener('focusout', (e) => { if (e.target.matches('.merch-name-input')) commitMerchantName(e.target); });
+  paintView();
   if (q.filter_cat) state.filterCat = Number(q.filter_cat) || null;
   document.body.addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-cat-filter"]')) { state.filterCat = null; setQs({ filter_cat: null }, { replace: true }); render(); } });
   await load();
+  if (state.view === 'merchants') loadMerchants();
   if (q.cat) openRuleModal({ category_id: Number(q.cat) });
   if (q.new === '1') openRuleModal({});
   window.PAGE_SHORTCUTS = [{ title: 'Rules', items: [['n', 'New rule'], ['Alt ↑ / ↓', 'Move rule'], ['Enter', 'Save pattern']] }];
@@ -309,3 +320,95 @@ async function openTestDrawer(r) {
     });
   }
 }
+
+
+/* ---------- Remembered merchants ---------- */
+function paintView() {
+  const m = state.view === 'merchants';
+  $$('#view-seg .seg-btn').forEach((b) => { const on = b.dataset.view === state.view; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+  $('#rules-view').hidden = m; $('#merchants-view').hidden = !m;
+  $('[data-act="run-all"]').hidden = m; $('[data-act="new-rule"]').hidden = m;
+  const search = $('#rule-search');
+  search.placeholder = m ? 'Search merchants…' : 'Filter rules…';
+  search.value = m ? state.mq : state.q;
+  $('#page-sub').textContent = m ? 'What iSpend learned from your choices. Each merchant gets its remembered category on every future import.' : 'Rules run top to bottom on every import; the first match wins.';
+}
+async function loadMerchants() {
+  $('#rules-error').innerHTML = '';
+  const tb = $('#merch-body');
+  if (!state.merchants.length) tb.innerHTML = ui.skeletonRows(6, 7);
+  state.mloading = true;
+  try { state.merchants = await api(`/api/merchants${toQuery({ q: state.mq })}`); }
+  catch (err) { $('#rules-error').innerHTML = ui.errorBox(err.message, { retry: 'reload-merchants' }); state.mloading = false; return; }
+  state.mloading = false;
+  renderMerchants();
+}
+function merchantRow(m) {
+  const c = state.cats.get(Number(m.category_id));
+  const key = encodeURIComponent(m.merchant_key);
+  return `<tr data-key="${esc(m.merchant_key)}">
+    <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" title="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)}</span></div></td>
+    <td>${m.is_transfer ? `<span class="badge badge-neutral">transfer</span> ` : ''}${c ? `<button type="button" class="catchip" data-mact="pick" title="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>` : `<button type="button" class="catchip catchip--empty" data-mact="pick"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`}</td>
+    <td class="right num col-used">${fmtNumber(m.times_used)}</td>
+    <td class="right num">${fmtNumber(m.txn_count)}</td>
+    <td class="right num ${m.total > 0 ? 'amt--income' : ''}">${fmtMoney(m.total, state.currency)}</td>
+    <td class="col-last text-3">${m.last_used_at ? fmtRelative(m.last_used_at) : '—'}</td>
+    <td class="col-actions"><div class="row-actions"><a class="btn btn-icon btn-ghost btn-xs" href="/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}" title="View transactions">${icon('list')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-mact="menu" title="More">${icon('more-horizontal')}</button></div></td>
+  </tr>`;
+}
+function renderMerchants() {
+  const tb = $('#merch-body');
+  if (!state.merchants.length) {
+    tb.innerHTML = `<tr><td colspan="7">${state.mq ? `<div class="hint" style="padding:16px">No remembered merchants match “${esc(state.mq)}”.</div>` : ui.emptyState({ icon: 'repeat', title: 'Nothing remembered yet', body: 'Categorize a charge in Transactions or Review and iSpend will remember that merchant for the next import.', action: { label: 'Go to Review', href: '/review.html' } })}</td></tr>`;
+    return;
+  }
+  tb.innerHTML = state.merchants.map(merchantRow).join('');
+}
+function merchantFromEvent(e) { const tr = e.target.closest('tr[data-key]'); return tr ? state.merchants.find((m) => m.merchant_key === tr.dataset.key) : null; }
+function onMerchantClick(e) {
+  const m = merchantFromEvent(e); const b = e.target.closest('[data-mact]');
+  if (!m || !b) return;
+  switch (b.dataset.mact) {
+    case 'rename': return startRename(b, m);
+    case 'pick': return categoryPicker({ anchor: b, value: m.category_id, allowCreate: true, onPick: (c) => { if (c) saveMerchant(m, { category_id: c.id }, `${m.display_name || m.merchant_key} → ${c.name}`); } });
+    case 'menu': return ui.menu(b, [
+      { label: 'Apply to existing transactions', icon: 'play', onClick: () => saveMerchant(m, { category_id: m.category_id, apply_existing: true }, null, true) },
+      { label: 'Rename…', icon: 'pencil', onClick: () => { const btn = $(`tr[data-key="${CSS.escape(m.merchant_key)}"] .merch-name`); if (btn) startRename(btn, m); } },
+      { label: 'View transactions', icon: 'list', href: `/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}` },
+      { divider: true },
+      { label: 'Forget', icon: 'trash', danger: true, onClick: () => forgetMerchant(m) },
+    ]);
+    default:
+  }
+}
+function startRename(btn, m) {
+  const input = document.createElement('input');
+  input.className = 'input input-sm merch-name-input'; input.value = m.display_name || m.merchant_key; input.setAttribute('aria-label', 'Merchant name'); input.dataset.orig = input.value;
+  btn.replaceWith(input); input.focus(); input.select();
+}
+function onMerchantKey(e) {
+  if (!e.target.matches('.merch-name-input')) return;
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  if (e.key === 'Escape') { e.target.dataset.cancel = '1'; e.target.blur(); }
+}
+async function commitMerchantName(input) {
+  const tr = input.closest('tr'); const m = state.merchants.find((x) => x.merchant_key === tr.dataset.key);
+  const v = input.value.trim();
+  if (input.dataset.cancel || !v || v === input.dataset.orig) { renderMerchants(); return; }
+  await saveMerchant(m, { category_id: m.category_id, display_name: v, rename_all: true }, `Renamed to ${v}`);
+}
+async function saveMerchant(m, body, label, showApplied) {
+  try {
+    const r = await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'PUT', body: { category_id: m.category_id, is_transfer: m.is_transfer, ...body } });
+    if (showApplied) toast(r.applied ? `${plural(r.applied, 'transaction')} updated` : 'Every transaction already had this category', { type: 'success' });
+    else if (label) toast(label, { type: 'success', duration: 1800 });
+    if (body.apply_existing || body.rename_all) window.dispatchEvent(new Event('ispend:transactions-changed'));
+    await loadMerchants();
+  } catch (err) { toast(err.message, { type: 'error' }); renderMerchants(); }
+}
+async function forgetMerchant(m) {
+  if (!(await ui.confirm({ title: `Forget ${m.display_name || m.merchant_key}?`, body: 'iSpend will stop applying this category automatically. Transactions already categorized keep their category.', confirmText: 'Forget', danger: true }))) return;
+  try { await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'DELETE' }); toast('Merchant forgotten', { type: 'success' }); await loadMerchants(); }
+  catch (err) { toast(err.message, { type: 'error' }); }
+}
+document.body.addEventListener('click', (e) => { if (e.target.closest('[data-act="reload-merchants"]')) loadMerchants(); });

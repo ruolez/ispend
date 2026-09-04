@@ -16,9 +16,11 @@
       <div><h1>Review</h1><div class="page-sub">Charges that still need a category. One decision covers every charge from the same merchant.</div></div>
       <div class="page-actions">
         <button type="button" class="btn btn-secondary" id="btn-ai" hidden></button>
+        <button type="button" class="btn btn-secondary" id="btn-pair-all" hidden></button>
         <div class="seg" id="rv-mode" role="group" aria-label="Mode">
           <button type="button" class="seg-btn active" data-mode="merchant" aria-pressed="true">By merchant</button>
           <button type="button" class="seg-btn" data-mode="single" aria-pressed="false">One by one</button>
+          <button type="button" class="seg-btn" data-mode="transfers" aria-pressed="false">Transfers<span class="seg-count" id="rv-pair-count" hidden></span></button>
         </div>
       </div>
     </div>

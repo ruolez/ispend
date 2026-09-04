@@ -27,5 +27,6 @@ PROFILE = BankProfile(
         (re.compile(r"^(Withdrawals|Debits)", re.I), "charge"),
         (re.compile(r"^Transactions since your last statement", re.I), "as_is"),
     ),
+    pdf_stop=re.compile(r"^(Closing (totals|balance)|Total (debits|credits|purchases|payments)|Interest charged|Important information)", re.I),
     default_account_type="checking",
 )

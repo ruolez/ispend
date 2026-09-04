@@ -1,7 +1,7 @@
 /* Reports: category (stacked monthly + table), trend (lines), merchants (leaderboard), compare (month over month). */
 const TABS = ['category', 'trend', 'merchants', 'compare'];
-const state = { tab: 'category', range: { preset: 'this-month' }, accounts: new Set(), months: 12, pct: false, month: null, sort: { key: 'total', dir: 'desc' }, trendSel: null, currency: 'USD', cache: {}, accountsList: [] };
-const acctQuery = () => (state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {});
+const state = { tab: 'category', range: { preset: 'this-month' }, accounts: new Set(), months: 12, pct: false, month: null, sort: { key: 'total', dir: 'desc' }, trendSel: null, currency: 'USD', cache: {}, accountsList: [], transfers: false };
+const acctQuery = () => ({ ...(state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {}), ...(state.transfers ? { include_transfers: 1 } : {}) });
 
 initNav('reports').then(async (me) => {
   state.currency = await store.displayCurrency();
@@ -11,6 +11,10 @@ initNav('reports').then(async (me) => {
   if (q.acct) q.acct.split(',').forEach((a) => state.accounts.add(a));
   if (q.months && [6, 12, 24].includes(Number(q.months))) state.months = Number(q.months);
   state.month = q.month || currentMonth();
+  state.transfers = q.transfers === '1';
+  $('#incl-transfers').checked = state.transfers;
+  paintTransfersHint();
+  $('#incl-transfers').addEventListener('change', (e) => { state.transfers = e.target.checked; state.cache = {}; paintTransfersHint(); sync(); loadTab(true); });
   state.accountsList = await store.accounts().catch(() => []);
   $('[data-act="export"]').innerHTML = `${icon('download')}<span>Export CSV</span>`;
   $('#report-tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) switchTab(t.dataset.tab); });
@@ -23,10 +27,11 @@ initNav('reports').then(async (me) => {
     title: 'Accounts', options: state.accountsList.map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: state.accounts,
     onChange: () => { renderAcctBtn(); sync(); state.cache = {}; loadTab(true); },
   }));
-  window.addEventListener('popstate', () => { const q2 = qs(); state.tab = TABS.includes(q2.tab) ? q2.tab : 'category'; state.months = [6, 12, 24].includes(Number(q2.months)) ? Number(q2.months) : 12; paintMonths(); switchTab(state.tab, true); });
+  window.addEventListener('popstate', () => { const q2 = qs(); state.tab = TABS.includes(q2.tab) ? q2.tab : 'category'; state.months = [6, 12, 24].includes(Number(q2.months)) ? Number(q2.months) : 12; const t = q2.transfers === '1'; if (t !== state.transfers) { state.transfers = t; state.cache = {}; $('#incl-transfers').checked = t; paintTransfersHint(); } paintMonths(); switchTab(state.tab, true); });
   switchTab(state.tab, true);
 });
 
+function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Transfers and excluded transactions are left out.'; }
 function paintMonths() { $$('#months-seg .seg-btn').forEach((b) => { const on = Number(b.dataset.months) === state.months; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function renderAcctBtn() {
@@ -35,7 +40,7 @@ function renderAcctBtn() {
   $('#acct-btn').innerHTML = `${icon('landmark', 'ico-sm')}<span>${esc(label)}</span>${icon('chevron-down', 'ico-sm')}`;
 }
 function sync() {
-  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null }, { replace: true });
+  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, transfers: state.transfers ? '1' : null }, { replace: true });
 }
 function switchTab(tab, noPush) {
   state.tab = tab;
@@ -52,6 +57,7 @@ function loadTab(force) {
   ({ category: loadCategory, trend: loadTrend, merchants: loadMerchants, compare: loadCompare })[state.tab](force);
 }
 async function cached(key, url, force) {
+  key = `${key}|t${state.transfers ? 1 : 0}`;
   if (!force && state.cache[key]) return state.cache[key];
   const data = await api(url);
   state.cache[key] = data;

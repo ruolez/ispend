@@ -64,10 +64,10 @@ function statementRow(s) {
     <td class="hide-mobile">${esc(bankLabel(s.bank_profile))}</td>
     <td>${s.account_name ? esc(s.account_name) : '<span class="text-4">Not set</span>'}</td>
     <td class="hide-mobile text-2">${period}</td>
-    <td><span class="st-status"><span class="badge ${st.cls}">${st.spin ? '<span class="spinner"></span>' : ''}${esc(st.label)}</span>${s.status === 'error' && s.error_message ? `<span class="text-3 fs-xs truncate" style="max-width:220px" title="${esc(s.error_message)}">${esc(s.error_message)}</span>` : ''}</span></td>
+    <td><span class="st-status"><span class="badge ${st.cls}" aria-label="Status: ${esc(st.label)}${st.spin ? ', in progress' : ''}"${st.spin ? ' aria-busy="true"' : ''}>${st.spin ? '<span class="spinner" aria-hidden="true"></span>' : ''}${esc(st.label)}</span>${s.status === 'error' && s.error_message ? `<span class="text-3 fs-xs truncate" style="max-width:220px" title="${esc(s.error_message)}">${esc(s.error_message)}</span>` : ''}</span></td>
     <td class="right hide-mobile">${rows}</td>
     <td class="hide-mobile text-3" title="${esc(fmtDateTime(s.created_at))}">${fmtRelative(s.created_at)}</td>
-    <td class="hide-mobile text-3">${s.username ? `<span class="row gap-2"><span class="avatar avatar-xs">${esc(initials(s.username))}</span>${esc(s.username)}</span>` : '—'}</td>
+    <td class="hide-mobile text-3">${s.username ? `<span class="row gap-2"><span class="avatar avatar-xs" aria-hidden="true">${esc(initials(s.username))}</span><span>${esc(s.username)}</span></span>` : '—'}</td>
     <td class="col-actions"><div class="row-actions">${s.status === 'previewed' ? `<a class="btn btn-xs btn-secondary" href="/import.html?statement=${s.id}" data-stop>Continue</a>` : ''}<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${s.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }

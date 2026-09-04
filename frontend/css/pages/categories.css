@@ -26,6 +26,11 @@
 .cat-grip { color: var(--text-4); cursor: grab; display: grid; place-items: center; width: 18px; height: 24px; flex: 0 0 auto; margin-left: -6px; }
 .cat-grip:active { cursor: grabbing; }
 .cat-sub-count { font-size: var(--fs-xs); color: var(--text-4); margin-left: 4px; }
+.cat-chevron { width: 20px; height: 24px; display: grid; place-items: center; color: var(--text-4); border-radius: 6px; margin-left: -6px; flex: 0 0 auto; }
+.cat-chevron:hover { color: var(--text-1); background: var(--surface-3); }
+.cat-chevron .ico { width: 14px; height: 14px; transition: transform var(--dur-2) var(--ease-out); }
+.cat-row[aria-expanded="false"] .cat-chevron .ico { transform: rotate(-90deg); }
+.cat-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cat-kind { margin-left: 4px; }
 .cat-empty { padding: var(--sp-4); }
 

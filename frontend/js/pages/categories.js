@@ -2,18 +2,18 @@
 const SLOTS = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
 const KIND_LABEL = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 const state = { tree: [], flat: [], totals: {}, counts: {}, selected: null, currency: 'USD', dragId: null };
+const COLLAPSED_KEY = 'ispend.catCollapsed';
+let collapsed = new Set();
+try { collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')); } catch { collapsed = new Set(); }
+function persistCollapsed() { try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(collapsed))); } catch { /* ignore */ } }
 
 initNav('categories').then(async (me) => {
   state.currency = await store.displayCurrency();
   $('[data-act="add-category"]').innerHTML = `${icon('plus')}<span>Add category</span>`;
   document.body.addEventListener('click', onAction);
   $('#cat-tree').addEventListener('dblclick', (e) => { const row = e.target.closest('.cat-row'); if (row && !e.target.closest('input')) startRename(Number(row.dataset.id)); });
-  $('#cat-tree').addEventListener('keydown', (e) => {
-    const row = e.target.closest('.cat-row'); if (!row || e.target.matches('input')) return;
-    if (e.key === 'Enter') { e.preventDefault(); select(Number(row.dataset.id)); }
-    if (e.key === 'F2') { e.preventDefault(); startRename(Number(row.dataset.id)); }
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(Number(row.dataset.id), e.key === 'ArrowUp' ? -1 : 1); }
-  });
+  $('#cat-tree').addEventListener('keydown', onTreeKey);
+  $('#cat-tree').addEventListener('focusin', (e) => { const row = e.target.closest('.cat-row'); if (row && e.target === row) setRoving(row); });
   wireDrag();
   const q = qs();
   if (q.id) state.selected = Number(q.id);
@@ -47,9 +47,12 @@ function countOf(c) { return (c.txn_count || 0) + (c.children || []).reduce((s, 
 function rowHtml(c, isChild) {
   const total = state.totals[c.id] || 0;
   const count = isChild ? (c.txn_count || 0) : countOf(c);
-  return `<div class="cat-row ${isChild ? 'cat-row--child' : 'cat-row--parent'} ${state.selected === c.id ? 'is-selected' : ''}" role="treeitem" tabindex="0" data-id="${c.id}" data-parent="${c.parent_id || ''}" draggable="true" aria-selected="${state.selected === c.id}">
+  const hasKids = !isChild && c.children && c.children.length > 0;
+  const expanded = hasKids ? !collapsed.has(c.id) : null;
+  return `<div class="cat-row ${isChild ? 'cat-row--child' : 'cat-row--parent'} ${state.selected === c.id ? 'is-selected' : ''}" role="treeitem" tabindex="-1" data-id="${c.id}" data-parent="${c.parent_id || ''}" draggable="true" aria-selected="${state.selected === c.id}" aria-level="${isChild ? 2 : 1}" ${hasKids ? `aria-expanded="${expanded}" aria-owns="cat-group-${c.id}"` : ''}>
     <div class="cat-main">
       <span class="cat-grip" data-act="grip" title="Drag to reorder" aria-hidden="true">${icon('grip-vertical', 'ico-sm')}</span>
+      ${hasKids ? `<button type="button" class="cat-chevron" data-act="toggle" data-id="${c.id}" tabindex="-1" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(c.name)}" aria-expanded="${expanded}">${icon('chevron-down', 'ico-sm')}</button>` : ''}
       <button type="button" class="cat-icon" data-act="color" data-id="${c.id}" style="--c:${catColor(c.color)}" title="Change color or icon" aria-label="Change color">${icon(c.icon || 'tag')}</button>
       <span class="cat-name" data-name>${esc(c.name)}</span>
       ${!isChild && c.children && c.children.length ? `<span class="cat-sub-count">${c.children.length}</span>` : ''}
@@ -71,7 +74,54 @@ function render() {
     host.innerHTML = `<div class="cat-empty">${ui.emptyState({ icon: 'tags', title: 'No categories', body: 'Add a category or restore the default set.', action: { label: 'Reset defaults', act: 'reset-defaults' } })}</div>`;
     return;
   }
-  host.innerHTML = state.tree.map((p) => rowHtml(p, false) + (p.children || []).map((c) => rowHtml(c, true)).join('')).join('');
+  host.innerHTML = state.tree.map((p) => rowHtml(p, false) + ((p.children || []).length ? `<div role="group" id="cat-group-${p.id}" ${collapsed.has(p.id) ? 'hidden' : ''}>${p.children.map((c) => rowHtml(c, true)).join('')}</div>` : '')).join('');
+  setRoving(host.querySelector(`.cat-row[data-id="${state.selected}"]`) || host.querySelector('.cat-row'));
+}
+
+/* ---------- Tree keyboard model (WAI-ARIA tree): roving tabindex, arrows, expand/collapse ---------- */
+function setRoving(row) {
+  if (!row) return;
+  $$('.cat-row').forEach((r) => r.setAttribute('tabindex', r === row ? '0' : '-1'));
+}
+function visibleRows() { return $$('.cat-row').filter((r) => !r.closest('[hidden]')); }
+function toggleParent(id, force) {
+  const row = $(`.cat-row[data-id="${id}"]`); const group = document.getElementById(`cat-group-${id}`);
+  if (!row || !group) return;
+  const open = force != null ? force : collapsed.has(id);
+  if (open) collapsed.delete(id); else collapsed.add(id);
+  persistCollapsed();
+  group.hidden = !open;
+  row.setAttribute('aria-expanded', open);
+  const chev = row.querySelector('.cat-chevron'); if (chev) { chev.setAttribute('aria-expanded', open); chev.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} ${findCat(id).name}`); }
+}
+function onTreeKey(e) {
+  const row = e.target.closest('.cat-row'); if (!row || e.target.matches('input')) return;
+  const id = Number(row.dataset.id);
+  if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(id, e.key === 'ArrowUp' ? -1 : 1); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const rows = visibleRows(); const i = rows.indexOf(row);
+  const focusRow = (r) => { if (r) { setRoving(r); r.focus(); } };
+  switch (e.key) {
+    case 'ArrowDown': e.preventDefault(); focusRow(rows[i + 1]); break;
+    case 'ArrowUp': e.preventDefault(); focusRow(rows[i - 1]); break;
+    case 'Home': e.preventDefault(); focusRow(rows[0]); break;
+    case 'End': e.preventDefault(); focusRow(rows[rows.length - 1]); break;
+    case 'ArrowRight': {
+      e.preventDefault();
+      if (row.getAttribute('aria-expanded') === 'false') toggleParent(id, true);
+      else if (row.getAttribute('aria-expanded') === 'true') focusRow(document.getElementById(`cat-group-${id}`).querySelector('.cat-row'));
+      break;
+    }
+    case 'ArrowLeft': {
+      e.preventDefault();
+      if (row.getAttribute('aria-expanded') === 'true') toggleParent(id, false);
+      else if (row.dataset.parent) focusRow($(`.cat-row[data-id="${row.dataset.parent}"]`));
+      break;
+    }
+    case 'Enter': case ' ': e.preventDefault(); select(id); break;
+    case 'F2': e.preventDefault(); startRename(id); break;
+    default:
+  }
 }
 
 function findCat(id) { return state.flat.find((c) => c.id === Number(id)); }
@@ -101,6 +151,7 @@ async function onAction(e) {
   if (act === 'side-merge') return openMerge(findCat(id));
   if (act === 'side-delete') return deleteCategory(findCat(id));
   if (act === 'grip') return;
+  if (act === 'toggle') { toggleParent(id); return; }
 }
 
 /* ---------- Select + side panel ---------- */
@@ -108,6 +159,7 @@ function select(id) {
   state.selected = state.selected === id ? null : id;
   setQs({ id: state.selected }, { replace: true, merge: true });
   $$('.cat-row').forEach((r) => { const on = Number(r.dataset.id) === state.selected; r.classList.toggle('is-selected', on); r.setAttribute('aria-selected', on); });
+  if (state.selected) setRoving($(`.cat-row[data-id="${state.selected}"]`));
   renderSide();
 }
 

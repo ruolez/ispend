@@ -233,14 +233,28 @@ const ui = (() => {
       pop.close('pick');
       if (it.onClick) it.onClick();
     });
-    el.addEventListener('keydown', (e) => {
-      const btns = $$('[data-i]', el);
-      const i = btns.indexOf(document.activeElement);
-      if (e.key === 'ArrowDown') { e.preventDefault(); (btns[i + 1] || btns[0]).focus(); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); (btns[i - 1] || btns[btns.length - 1]).focus(); }
-    });
+    el.setAttribute('aria-orientation', 'vertical');
+    el.addEventListener('keydown', (e) => menuKeys(e, $$('[data-i]', el), (b) => b.textContent));
     requestAnimationFrame(() => { const f = el.querySelector('[data-i]'); if (f) f.focus(); });
     return pop;
+  }
+
+  /* Shared keyboard model for menu-like lists: arrows wrap, Home/End jump, letters type-ahead. */
+  function menuKeys(e, btns, textOf) {
+    if (!btns.length) return;
+    const i = btns.indexOf(document.activeElement);
+    const go = (j) => { e.preventDefault(); btns[(j + btns.length) % btns.length].focus(); };
+    if (e.key === 'ArrowDown') return go(i + 1);
+    if (e.key === 'ArrowUp') return go(i - 1);
+    if (e.key === 'Home') return go(0);
+    if (e.key === 'End') return go(btns.length - 1);
+    if (e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(document.activeElement && document.activeElement.matches('input'))) {
+      const ch = e.key.toLowerCase();
+      for (let k = 1; k <= btns.length; k++) {
+        const b = btns[(i + k) % btns.length];
+        if ((textOf(b) || '').trim().toLowerCase().startsWith(ch)) { e.preventDefault(); b.focus(); return; }
+      }
+    }
   }
 
   /* ---------- Multi-select filter popover ---------- */
@@ -262,7 +276,20 @@ const ui = (() => {
         <div class="row" style="padding:2px 4px 4px"><button type="button" class="btn btn-ghost btn-xs" data-act="clear">Clear</button><button type="button" class="btn btn-ghost btn-xs ml-auto" data-act="all">Select all</button></div>`;
     };
     el.innerHTML = render();
-    const pop = popover(anchor, el);
+    el.setAttribute('role', 'menu');
+    if (title) el.setAttribute('aria-label', title);
+    const prevFocus = document.activeElement;
+    const pop = popover(anchor, el, { onClose: () => { if (prevFocus && prevFocus.focus) prevFocus.focus(); } });
+    el.addEventListener('keydown', (e) => {
+      const opts = $$('[data-v]', el);
+      if (document.activeElement && document.activeElement.matches('input.input')) {
+        if (e.key === 'ArrowDown' && opts.length) { e.preventDefault(); opts[0].focus(); }
+        return;
+      }
+      if ((e.key === 'ArrowUp') && opts.indexOf(document.activeElement) === 0 && el.querySelector('input.input')) { e.preventDefault(); el.querySelector('input.input').focus(); return; }
+      menuKeys(e, opts, (b) => (b.querySelector('.grow') || b).textContent);
+    });
+    requestAnimationFrame(() => { const f = el.querySelector('input.input') || el.querySelector('[data-v]'); if (f) f.focus(); });
     el.addEventListener('input', (e) => { if (e.target.matches('input.input')) { const v = e.target.value; el.innerHTML = render(v); const inp = el.querySelector('input.input'); inp.focus(); inp.setSelectionRange(v.length, v.length); } });
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-v]');
@@ -278,6 +305,60 @@ const ui = (() => {
       }
     });
     return pop;
+  }
+
+  /* ---------- Tabs & segmented controls (WAI-ARIA, roving tabindex, arrow keys) ---------- */
+  let rovingSeq = 0;
+  function rovingGroup(container, items, { attr, activeClass = 'active', onChange, initial }) {
+    let current = Math.max(0, items.findIndex((el) => el.getAttribute(attr) === 'true' || el.classList.contains(activeClass)));
+    if (typeof initial === 'number') current = initial;
+    const paint = () => items.forEach((el, i) => {
+      const on = i === current;
+      el.setAttribute(attr, on ? 'true' : 'false');
+      el.classList.toggle(activeClass, on);
+      el.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    const select = (target, { focus = true, silent = false } = {}) => {
+      const i = typeof target === 'number' ? target : items.indexOf(target);
+      if (i < 0 || i >= items.length) return;
+      const changed = i !== current;
+      current = i; paint();
+      if (focus) items[i].focus();
+      if (changed && !silent && onChange) onChange(items[i], i);
+    };
+    container.addEventListener('keydown', (e) => {
+      const i = items.indexOf(document.activeElement);
+      if (i < 0) return;
+      const map = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 };
+      if (!(e.key in map)) return;
+      e.preventDefault();
+      select((map[e.key] + items.length) % items.length);
+    });
+    container.addEventListener('click', (e) => { const i = items.findIndex((el) => el.contains(e.target)); if (i >= 0) select(i); });
+    paint();
+    return { select, current: () => current, items };
+  }
+  /* container holds role=tab buttons (or any `.tab`/`.seg-btn` children); panels referenced by
+     `aria-controls`/`data-panel` get role=tabpanel + aria-labelledby. onChange(tabEl, index). */
+  function tabs(container, { onChange, selector = '[role="tab"]', initial } = {}) {
+    if (!container) return null;
+    container.setAttribute('role', 'tablist');
+    const items = $$(selector, container);
+    items.forEach((el) => {
+      if (!el.id) el.id = `tab-${++rovingSeq}`;
+      const panelId = el.getAttribute('aria-controls') || el.dataset.panel;
+      const panel = panelId && document.getElementById(panelId);
+      if (panel) { el.setAttribute('aria-controls', panelId); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', el.id); if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '0'); }
+    });
+    return rovingGroup(container, items, { attr: 'aria-selected', onChange, initial });
+  }
+  /* container gets role=radiogroup; each .seg-btn becomes role=radio with aria-checked. onChange(btn, index). */
+  function segmented(container, { onChange, selector = '.seg-btn', initial } = {}) {
+    if (!container) return null;
+    container.setAttribute('role', 'radiogroup');
+    const items = $$(selector, container);
+    items.forEach((el) => { el.setAttribute('role', 'radio'); el.removeAttribute('aria-selected'); el.removeAttribute('aria-pressed'); });
+    return rovingGroup(container, items, { attr: 'aria-checked', onChange, initial });
   }
 
   /* ---------- Toasts ---------- */
@@ -362,7 +443,7 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, confirm, drawer, popover, menu, multiFilter, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, layers, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, layers, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

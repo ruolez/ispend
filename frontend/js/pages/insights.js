@@ -51,8 +51,8 @@ function renderRecurring() {
     ${rows.map((r) => { const c = state.cats.get(r.category_id); const n = r.days_until_next; return `<tr data-key="${esc(r.merchant_key)}" class="${r.is_active ? '' : 'text-3'}">
       <td><div class="rec-merchant"><a href="/transactions.html${toQuery({ q: r.merchant_name, range: 'all' })}">${esc(r.merchant_name)}</a><span class="sub">${plural(r.occurrences, 'charge')}${r.is_active ? '' : ' · inactive'}</span></div></td>
       <td>${c ? `<span class="catchip"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span></span>` : '<span class="text-4">—</span>'}</td>
-      <td class="col-cadence"><span class="badge badge-neutral cadence">${esc(r.cadence)}</span></td>
-      <td class="right"><div class="rec-amt"><span class="num fw-500">${fmtMoney(r.median_amount, cur)}</span>${r.amount_kind === 'variable' ? '<span class="badge badge-warning">varies</span>' : ''}</div></td>
+      <td class="col-cadence"><span class="badge badge-neutral cadence" aria-label="Cadence: ${esc(r.cadence)}">${esc(r.cadence)}</span></td>
+      <td class="right"><div class="rec-amt"><span class="num fw-500">${fmtMoney(r.median_amount, cur)}</span>${r.amount_kind === 'variable' ? '<span class="badge badge-warning" aria-label="Amount varies between charges">varies</span>' : ''}</div></td>
       <td class="col-last text-3">${fmtDate(r.last_date, { year: true })}</td>
       <td class="right"><div class="rec-next"><span class="when ${n != null && n < 0 ? 'is-over' : (n != null && n <= 3 ? 'is-soon' : '')}">${r.is_active ? esc(daysLabel(n)) : '—'}</span><span class="date">${fmtDate(r.next_expected)}</span></div></td>
       <td class="col-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs rec-dismiss" data-act="dismiss-rec" data-key="${esc(r.merchant_key)}" data-name="${esc(r.merchant_name)}" title="Not a subscription — hide">${icon('x')}</button></td></tr>`; }).join('')}</tbody></table></div>
@@ -64,7 +64,7 @@ function renderAnomalies() {
   if (!rows.length) { host.innerHTML = ui.emptyState({ icon: 'check-circle', title: 'Nothing unusual', body: 'No charges stood out in the last 45 days.' }); return; }
   host.innerHTML = `<div class="anom-list">${rows.map((a) => { const k = KIND[a.kind] || { label: a.kind, icon: 'alert-triangle' }; return `<div class="anom anom--${esc(a.kind)}" data-id="${a.transaction_id}">
     <span class="anom-ico">${icon(k.icon)}</span>
-    <div><div class="anom-title">${esc(a.merchant_name)}<span class="badge badge-neutral">${esc(k.label)}</span></div><div class="anom-text">${esc(a.text || describe(a))}</div><div class="anom-meta">${fmtDate(a.txn_date, { year: true })}${a.delta != null && a.kind === 'unusual_amount' ? ` · ${fmtMoney(Math.abs(a.delta), cur)} above usual` : ''}</div></div>
+    <div><div class="anom-title">${esc(a.merchant_name)}<span class="badge badge-neutral" aria-label="Anomaly type: ${esc(k.label)}">${esc(k.label)}</span></div><div class="anom-text">${esc(a.text || describe(a))}</div><div class="anom-meta">${fmtDate(a.txn_date, { year: true })}${a.delta != null && a.kind === 'unusual_amount' ? ` · ${fmtMoney(Math.abs(a.delta), cur)} above usual` : ''}</div></div>
     <div class="anom-actions"><span class="anom-amt">${fmtMoney(Math.abs(a.amount), cur)}</span><div class="row"><a class="btn btn-ghost btn-xs" href="/transactions.html${toQuery({ open: a.transaction_id, range: 'all' })}">View</a><button type="button" class="btn btn-ghost btn-xs" data-act="dismiss-anom" data-id="${a.transaction_id}">Looks fine</button></div></div></div>`; }).join('')}</div>`;
 }
 function describe(a) {
@@ -78,12 +78,14 @@ function describe(a) {
 function renderAI() {
   const ai = state.data.ai; const host = $('#ai-panel'); const actions = $('#ai-actions');
   actions.innerHTML = '';
+  host.setAttribute('aria-busy', state.generating ? 'true' : 'false');
   if (ai.status === 'disabled') {
     const admin = state.me.role === 'admin';
     host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add an OpenRouter key and turn on Monthly insights to get a written read on your spending each month.' : 'Ask an admin to enable AI insights in Settings.', action: admin ? { label: 'Open AI settings', href: '/settings.html#ai' } : undefined });
     return;
   }
   if (state.generating) {
+    actions.innerHTML = `<button type="button" class="btn btn-ghost btn-xs" disabled aria-busy="true"><span class="spinner"></span>Generating…</button>`;
     host.innerHTML = `<div class="ai-thinking"><span class="hint"><span class="spinner"></span>Reading ${esc(fmtMonth(state.month, { long: true }))}…</span>${ui.skeleton('95%', 14)}${ui.skeleton('88%', 14)}${ui.skeleton('60%', 14)}<div class="mt-2"></div>${ui.skeleton('100%', 56)}${ui.skeleton('100%', 56)}</div>`;
     return;
   }
@@ -96,7 +98,7 @@ function renderAI() {
   const items = Array.isArray(content.insights) ? content.insights : [];
   const sevIcon = { good: 'check-circle', warn: 'alert-triangle', info: 'info' };
   host.innerHTML = `${content.summary ? `<p class="ai-summary">${esc(content.summary)}</p>` : ''}
-    <div class="ai-list">${items.map((it) => { const sev = ['good', 'warn', 'info'].includes(it.severity) ? it.severity : 'info'; return `<div class="ai-item ai-item--${sev}"><div class="t">${icon(sevIcon[sev])}${esc(it.title || '')}</div>${it.body ? `<div class="b">${esc(it.body)}</div>` : ''}${it.category ? `<div class="c">${esc(it.category)}</div>` : ''}</div>`; }).join('')}</div>
+    <div class="ai-list">${items.map((it) => { const sev = ['good', 'warn', 'info'].includes(it.severity) ? it.severity : 'info'; return `<div class="ai-item ai-item--${sev}" aria-label="${sev === 'warn' ? 'Warning' : sev === 'good' ? 'Good news' : 'Note'}: ${esc(it.title || '')}"><div class="t">${icon(sevIcon[sev])}${esc(it.title || '')}</div>${it.body ? `<div class="b">${esc(it.body)}</div>` : ''}${it.category ? `<div class="c">${esc(it.category)}</div>` : ''}</div>`; }).join('')}</div>
     <div class="ai-meta"><span>${ai.model ? esc(ai.model) : ''}</span><span>${ai.created_at ? `Generated ${fmtRelative(ai.created_at)}` : ''}</span></div>`;
   actions.innerHTML = `<button type="button" class="btn btn-ghost btn-xs" data-act="regenerate">${icon('refresh', 'ico-sm')}Regenerate</button>`;
 }

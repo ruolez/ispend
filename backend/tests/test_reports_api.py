@@ -142,3 +142,56 @@ class RecurringReportTest(unittest.TestCase):
         self.assertEqual([(s["merchant_key"], s["category_name"], s["next_expected"]) for s in out],
                          [("NETFLIX", "Streaming", "2026-09-14")])
         self.assertEqual(anomalies, [])
+
+
+class IncludeTransfersTest(unittest.TestCase):
+    """include_transfers drops the transfer/excluded conditions from every spending query."""
+
+    CALLS = [
+        ("by_category", lambda inc: reports.by_category(1, date(2026, 8, 1), date(2026, 8, 31), "top", None, include_transfers=inc)),
+        ("monthly", lambda inc: reports.monthly_by_category(1, 3, None, include_transfers=inc)),
+        ("trends", lambda inc: reports.trends(1, 3, None, include_transfers=inc)),
+        ("top_merchants", lambda inc: reports.top_merchants(1, date(2026, 8, 1), date(2026, 8, 31), 5, None, include_transfers=inc)),
+        ("month_over_month", lambda inc: reports.month_over_month(1, "2026-08", None, include_transfers=inc)),
+    ]
+
+    def _sql(self, fn, inc):
+        with mock.patch.object(DB, "query", return_value=[], create=True) as q, \
+                mock.patch.object(reports, "today", return_value=NOW):
+            fn(inc)
+        return " ".join(q.call_args_list[0].args[0].split())
+
+    def test_default_excludes_transfers_and_excluded_rows(self):
+        for name, fn in self.CALLS:
+            with self.subTest(report=name):
+                self.assertIn("NOT t.is_transfer AND NOT t.is_excluded", self._sql(fn, False))
+
+    def test_include_transfers_counts_them(self):
+        for name, fn in self.CALLS:
+            with self.subTest(report=name):
+                sql = self._sql(fn, True)
+                self.assertNotIn("is_transfer", sql)
+                self.assertNotIn("is_excluded", sql)
+                self.assertIn("t.user_id = %s", sql)
+
+    def test_summary_case_expressions_follow_the_flag(self):
+        with mock.patch.object(DB, "query", return_value={"income": 0, "expenses": 0, "txn_count": 0,
+                                                          "uncategorized": 0, "transfers": 0, "suggested": 0}, create=True) as q:
+            reports.summary(1, date(2026, 8, 1), date(2026, 8, 31), include_transfers=True)
+            inc_sql = " ".join(q.call_args.args[0].split())
+            reports.summary(1, date(2026, 8, 1), date(2026, 8, 31))
+            dflt_sql = " ".join(q.call_args.args[0].split())
+        self.assertIn("CASE WHEN t.amount > 0 THEN t.amount END", inc_sql)
+        self.assertIn("CASE WHEN t.amount > 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END", dflt_sql)
+
+    def test_endpoint_param_reaches_the_query(self):
+        app = Flask(__name__)
+        app.secret_key = "test"
+        app.register_blueprint(reports_api.bp)
+        for path, expect_excluded in (("/api/reports/by-category?include_transfers=1", False),
+                                      ("/api/reports/by-category", True)):
+            with app.test_request_context(path), mock.patch.object(DB, "query", return_value=[], create=True) as q:
+                session["user_id"] = 1
+                reports_api.by_category()
+            sql = " ".join(q.call_args.args[0].split())
+            self.assertEqual("NOT t.is_transfer" in sql, expect_excluded, path)

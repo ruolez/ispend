@@ -21,5 +21,6 @@ PROFILE = BankProfile(
         (re.compile(r"^(Purchases|Transactions)", re.I), "charge"),
         (re.compile(r"^(Fees|Interest Charged)", re.I), "charge"),
     ),
+    pdf_stop=re.compile(r"^(Total fees|Total interest|Fees charged|Interest charged|Year[- ]to[- ]date|Important information)", re.I),
     default_account_type="credit_card",
 )

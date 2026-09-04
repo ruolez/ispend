@@ -7,12 +7,11 @@ initNav('dashboard').then(async (me) => {
   const q = qs();
   state.range = RANGES.includes(q.range) ? q.range : 'this-month';
   state.currency = await store.displayCurrency();
-  $('#range-seg').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-range]'); if (!b) return;
+  state.seg = ui.segmented($('#range-seg'), { onChange: (b) => {
     state.range = b.dataset.range;
     setQs({ range: state.range === 'this-month' ? null : state.range }, { replace: true, merge: true });
     load();
-  });
+  } });
   document.body.addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]'); if (!a) return;
     if (a.dataset.act === 'reload') load();
@@ -22,7 +21,8 @@ initNav('dashboard').then(async (me) => {
 });
 
 function renderSeg() {
-  $$('#range-seg .seg-btn').forEach((b) => { const on = b.dataset.range === state.range; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+  const idx = $$('#range-seg .seg-btn').findIndex((b) => b.dataset.range === state.range);
+  if (state.seg && idx >= 0 && state.seg.current() !== idx) state.seg.select(idx, { focus: false, silent: true });
 }
 
 async function load() {

@@ -60,8 +60,18 @@ class FakeDB:
 
 
 def install(tmp_dir="/tmp"):
+    """Install (once) a FakeDB as the `db` module and a config stub. Idempotent: every test file
+    that calls this shares the same FakeDB instance, so modules imported by an earlier test file
+    keep pointing at the object later files patch. Only STATEMENTS_DIR is updated on re-install."""
     os.environ.setdefault("SECRET_KEY", "test")
     os.environ.setdefault("POSTGRES_PASSWORD", "test")
+    existing = sys.modules.get("db")
+    # duck-typed: this module is imported both as `_stubs` and `tests._stubs`, giving two FakeDB classes
+    if existing is not None and type(existing).__name__ == "FakeDB":
+        cfg = sys.modules.get("config")
+        if cfg is not None and tmp_dir != "/tmp":
+            cfg.STATEMENTS_DIR = tmp_dir
+        return existing
     fake = FakeDB()
     sys.modules["db"] = fake
     sys.modules["config"] = types.SimpleNamespace(
@@ -70,3 +80,29 @@ def install(tmp_dir="/tmp"):
         OPENROUTER_BASE_URL="http://localhost", OPENROUTER_TIMEOUT=5, AI_BATCH_SIZE=40, APP_TIMEZONE="UTC",
     )
     return fake
+
+
+class Router:
+    """Answer db.query/db.execute by SQL substring instead of FIFO order; records every call.
+
+    routes: list of (substring, result); the first matching substring wins, a callable result
+    is called with (sql, params). Unmatched queries return None/[] (or `default`)."""
+
+    def __init__(self, routes=(), default=None):
+        self.routes = list(routes)
+        self.default = default
+        self.calls = []
+
+    def __call__(self, sql, params=None, one=False, returning=False, commit=True):
+        flat = " ".join(sql.split())
+        self.calls.append((flat, params))
+        for needle, result in self.routes:
+            if needle in flat:
+                return result(flat, params) if callable(result) else result
+        if self.default is not None:
+            return self.default
+        return None if (one or returning) else []
+
+    def sql(self, needle):
+        """All recorded (sql, params) whose SQL contains needle."""
+        return [(s, p) for s, p in self.calls if needle in s]

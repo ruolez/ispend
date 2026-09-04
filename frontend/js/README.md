@@ -79,6 +79,12 @@ const d = ui.drawer({ title, html, foot, width, onClose }); d.setBody(html); d.s
 const p = ui.popover(anchorEl, contentEl, { placement:'bottom-start'|'bottom-end', matchWidth, onClose }); p.position(); p.close();
 ui.menu(anchorEl, [{ label, icon, onClick, href, checked, danger, disabled, shortcut }, { divider:true }, { label, header:true }]);
 ui.multiFilter(anchorEl, { title, options:[{value,label,count,color}], selected:new Set(), onChange(set), searchable });
+// WAI-ARIA tabs: container holds role="tab" buttons; aria-controls/data-panel → panels get role=tabpanel + aria-labelledby.
+// Arrow/Home/End move + select (roving tabindex); click selects. Re-apply after re-rendering the container.
+const t = ui.tabs(tablistEl, { onChange: (tabEl, index) => showPanel(tabEl.dataset.panel) }); t.select(2, { focus:false, silent:true });
+// Segmented control (.seg with .seg-btn children): role=radiogroup/radio + aria-checked, same keyboard model.
+const seg = ui.segmented(segEl, { onChange: (btn) => setRange(btn.dataset.range) }); seg.current(); seg.select(i, { silent:true });
+// Menus and multiFilter lists support ArrowUp/Down (wrapping), Home/End and first-letter type-ahead; focus returns to the anchor on close.
 toast('Saved', { type:'success'|'error'|'info', action:{ label:'Undo', fn }, duration });   // window.toast, snackbar(msg,type) alias
 ui.skeleton(width, height) · ui.skeletonRows(n, cols) (tbody html) · ui.skeletonList(n)
 ui.emptyState({ icon, title, body, action:{ label, href } | { label, act:'data-act-name' } })
