@@ -162,6 +162,8 @@ def _categorize_rows(user_id, account_id, staged):
                 "merchant_key": s["merchant"].key, "amount": r.amount, "account_id": account_id,
             }, ctx)
             s["category_id"] = d.category_id
+            s["category_source"] = d.source if d.category_id else None
+            s["category_rule_id"] = d.rule_id
         except Exception:
             log.debug("categorize failed at preview", exc_info=True)
 
@@ -194,8 +196,7 @@ def _stage(st, result, ocr_rel):
     staged = _build_staged(result.rows, account_id, phrases)
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
-    if account_id:
-        _categorize_rows(uid, account_id, staged)
+    _categorize_rows(uid, account_id, staged)  # rules, memory and hints do not need an account
     values = []
     for s in staged:
         r = s["row"]
@@ -203,7 +204,7 @@ def _stage(st, result, ocr_rel):
         values.append((
             sid, r.row_index, r.txn_date, r.posted_date, r.description, r.amount, r.balance, json.dumps(r.raw, default=str),
             s["merchant"].name, s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1, r.is_valid,
-            r.is_valid and dup is None, s["category_id"], r.problems,
+            r.is_valid and dup is None, s["category_id"], r.problems, s.get("category_source"), s.get("category_rule_id"),
         ))
     stats = _preview_stats(staged, existing)
     stats["stripped_phrases"] = phrases
@@ -214,7 +215,7 @@ def _stage(st, result, ocr_rel):
         db.execute_values(
             """INSERT INTO import_rows (statement_id, row_index, txn_date, posted_date, description, amount, balance, raw,
                                         merchant_name, fingerprint, occurrence, duplicate_of, in_file_duplicate, is_valid,
-                                        include, category_id, problems) VALUES %s""",
+                                        include, category_id, problems, category_source, category_rule_id) VALUES %s""",
             values, commit=False,
         )
         db.execute(
@@ -231,6 +232,10 @@ def _stage(st, result, ocr_rel):
 
 def _preview_stats(staged, existing):
     valid = [s for s in staged if s["row"].is_valid]
+    predicted = {"rule": 0, "merchant": 0, "builtin": 0, "none": 0}
+    for s in valid:
+        src = s.get("category_source") if s.get("category_id") else None
+        predicted[src if src in predicted else "none"] += 1
     dup_existing = sum(1 for s in valid if (s["fingerprint"], s["occurrence"]) in existing)
     return {
         "rows_total": len(staged),
@@ -238,6 +243,7 @@ def _preview_stats(staged, existing):
         "rows_invalid": len(staged) - len(valid),
         "dupes_existing": dup_existing,
         "dupes_in_file": sum(1 for s in valid if s["occurrence"] > 1),
+        "predicted": predicted,
     }
 
 
@@ -303,8 +309,7 @@ def recompute_dupes(statement_id, account_id):
     dedupe.assign_occurrences(staged)
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
-    if account_id:
-        _categorize_rows(st["user_id"], account_id, staged)
+    _categorize_rows(st["user_id"], account_id, staged)
     with db.transaction():
         for s in staged:
             dup = existing.get((s["fingerprint"], s["occurrence"]))

@@ -45,10 +45,12 @@ function setStep(step) {
   window.scrollTo({ top: 0 });
 }
 function accountName(id) { const a = imp.accounts.find((x) => x.id === Number(id)); return a ? a.name : ''; }
-function catChip(id) {
+const SOURCE_LABEL = { rule: 'from one of your rules', merchant: 'remembered from an earlier import', builtin: 'built-in suggestion' };
+function catChip(id, source) {
   const c = imp.cats.get(Number(id));
   if (!c) return `<span class="catchip catchip--empty"><i class="dot"></i><span class="catchip-label">Uncategorized</span></span>`;
-  return `<span class="catchip" title="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span></span>`;
+  const why = SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : '';
+  return `<span class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}" title="${esc(c.path + why)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : ''}</span>`;
 }
 
 /* ---------- Step 1: upload ---------- */
@@ -246,6 +248,7 @@ function signCheck(s) {
     <div class="signcheck">
       <div class="sc-item"><span class="sc-label">Charges</span><span class="sc-value amt amt--expense">${fmtMoney(sm.charges.sum, cur)}</span><span class="sc-sub">${plural(sm.charges.n, 'charge')}</span></div>
       <div class="sc-item"><span class="sc-label">Payments / income</span><span class="sc-value amt amt--income">${fmtMoney(sm.payments.sum, cur, { sign: 'always' })}</span><span class="sc-sub">${plural(sm.payments.n, 'payment')}</span></div>
+      ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); if (p.builtin) parts.push(`${p.builtin} hints`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>`; })()}
       <div class="grow"></div>
       <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" title="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
     </div>
@@ -309,7 +312,7 @@ function previewTable(s) {
       <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid ? 'checked' : ''} ${!r.is_valid ? 'disabled' : ''} aria-label="Include row"></td>
       <td class="num nowrap">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
       <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
-      <td>${r.is_valid ? catChip(r.category_id) : ''}</td>
+      <td>${r.is_valid ? catChip(r.category_id, r.category_source) : ''}</td>
       <td class="right"><span class="amt ${r.amount > 0 ? 'amt--income' : 'amt--expense'}">${r.amount != null ? fmtMoney(r.amount, cur, { sign: 'always' }) : '<span class="text-danger">—</span>'}</span></td>
     </tr>`;
   }).join('');

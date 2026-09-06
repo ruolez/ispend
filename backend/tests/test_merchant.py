@@ -120,3 +120,15 @@ class PeerToPeerTest(unittest.TestCase):
     def test_paypal_instant_transfer_is_paypal(self):
         self.assertEqual(normalize("ACH Withdrawal PAYPAL INST XFER 260317 ******YHOPE").name, "PayPal")
         self.assertEqual(normalize("VENMO PAYMENT 260323 ********61042").name, "Venmo")
+
+
+class CounterpartyPhraseTest(unittest.TestCase):
+    def test_frequent_counterparty_is_not_treated_as_cardholder(self):
+        from merchant import frequent_phrases
+        docs = ["A2A Payment Credit ZELLE MATVEY KOSTUKOVSKY"] * 12 + ["A2A Account Debit ZELLE MATVEY KOSTUKOVSKI"] * 6 \
+            + ["ACH Withdrawal PAYPAL PURCHASE 260417 ******YHOPE"] * 4
+        self.assertEqual(frequent_phrases(docs), [])
+
+    def test_paypal_purchase_and_masked_reference(self):
+        self.assertEqual(normalize("ACH Withdrawal PAYPAL PURCHASE 260417 ******YHOPE").name, "PayPal")
+        self.assertEqual(normalize("A2A Payment Credit ZELLE MATVEY KOSTUKOVSKY").key, "ZELLE MATVEY KOSTUKOVSKY")

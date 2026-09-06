@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 import unittest
 from datetime import date
 from decimal import Decimal
@@ -97,3 +98,25 @@ class RenormalizeUserTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LearnFromHistoryTest(unittest.TestCase):
+    def test_majority_category_becomes_memory(self):
+        import maintenance
+        from unittest import mock
+        calls = []
+        rows = [{"merchant_key": "ZELLE JOHN", "category_id": 64, "n": 3, "last_at": 2, "is_transfer": False},
+                {"merchant_key": "ZELLE JOHN", "category_id": 98, "n": 1, "last_at": 3, "is_transfer": False},
+                {"merchant_key": "PAYPAL", "category_id": 98, "n": 2, "last_at": 1, "is_transfer": False}]
+        def query(sql, params=None, one=False, commit=True):
+            calls.append((sql, params))
+            if "FROM transactions" in sql: return rows
+            if "FROM merchant_memory" in sql: return {"id": 7, "category_id": 98, "times_used": 1} if params[1] == "PAYPAL" else None
+            return None
+        fake = types.SimpleNamespace(query=query, execute=lambda sql, params=None, **k: calls.append((sql, params)),
+                                     transaction=_stubs.FakeDB().transaction)
+        with mock.patch.object(maintenance, "db", fake):
+            out = maintenance.learn_from_history(1)
+        inserts = [c for c in calls if "INSERT INTO merchant_memory" in c[0]]
+        self.assertEqual(out, {"merchants_seen": 2, "memory_added": 1, "memory_updated": 1})
+        self.assertEqual(inserts[0][1][:3], (1, "ZELLE JOHN", 64))

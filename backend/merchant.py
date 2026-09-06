@@ -163,7 +163,9 @@ def raw_descriptor(description):
 
 
 PHRASE_STOP = {"PAYMENT", "THANK", "YOU", "ONLINE", "MOBILE", "PURCHASE", "DEBIT", "CREDIT", "CARD", "POS", "THE",
-               "AND", "INC", "LLC", "LTD", "COM", "WWW", "STORE", "MARKET", "AUTOPAY", "TRANSFER", "INTERAC"}
+               "AND", "INC", "LLC", "LTD", "COM", "WWW", "STORE", "MARKET", "AUTOPAY", "TRANSFER", "INTERAC",
+               "ZELLE", "VENMO", "PAYPAL", "ETRANSFER", "ACH", "A2A", "WITHDRAWAL", "DEPOSIT", "ACCOUNT", "FUNDS",
+               "BANK", "FROM", "TO", "VIA", "XFER", "INST", "BILL", "PMT"}
 
 
 def frequent_phrases(descriptions, min_share=0.35, min_rows=15):
@@ -173,22 +175,25 @@ def frequent_phrases(descriptions, min_share=0.35, min_rows=15):
     docs = [d for d in descriptions if d]
     if len(docs) < min_rows:
         return []
-    counts = {}
+    counts, followed = {}, {}
     for d in docs:
         toks = [t.upper() for t in _WORD.findall(d)]
-        seen = set()
-        for a, b in zip(toks, toks[1:]):
+        seen = {}
+        for i, (a, b) in enumerate(zip(toks, toks[1:])):
             if not (a.isalpha() and b.isalpha() and len(a) >= 2 and len(b) >= 2):
                 continue
             if a in PHRASE_STOP or b in PHRASE_STOP or b in STATES or b in COUNTRY_SUFFIX:
                 continue  # "CHICAGO IL" is a location, not a cardholder
-            seen.add(f"{a} {b}")
-        for ph in seen:
+            seen[f"{a} {b}"] = i + 2 < len(toks)  # is something printed after the pair?
+        for ph, has_tail in seen.items():
             counts[ph] = counts.get(ph, 0) + 1
+            followed[ph] = followed.get(ph, 0) + (1 if has_tail else 0)
     if not counts:
         return []
     top, n = max(counts.items(), key=lambda kv: kv[1])
-    if n / len(docs) < min_share:
+    # A cardholder name sits between the pretty merchant and the raw descriptor, so it is followed by
+    # more text; a frequent counterparty ("ZELLE JOHN SMITH") ends the line and must be kept.
+    if n / len(docs) < min_share or followed.get(top, 0) / n < 0.6:
         return []
     surname = top.split()[1]
     out = [top]
@@ -206,7 +211,8 @@ def strip_phrases(description, phrases):
 
 
 _P2P_FIXUPS = [
-    (re.compile(r"\bPAYPAL\s+INST\s+XFER\b.*$", re.I), "PAYPAL"),          # "PAYPAL INST XFER 260317 ******YHOPE"
+    (re.compile(r"\bPAYPAL\s+(?:INST\s+XFER|PURCHASE|TRANSFER|RETRY\s+PYMT)\b.*$", re.I), "PAYPAL"),  # "PAYPAL INST XFER 260317 ******YHOPE"
+    (re.compile(r"\*{2,}[A-Z0-9]+", re.I), " "),                            # masked references "******YHOPE"
     (re.compile(r"\b(ZELLE|VENMO|INTERAC)\s+(?:PAYMENT\s+)?(?:TO|FROM)\b", re.I), r"\1"),  # "ZELLE FROM JANE DOE" -> "ZELLE JANE DOE"
 ]
 

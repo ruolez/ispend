@@ -19,6 +19,7 @@ initNav('settings').then(async (me) => {
   });
   $('[data-act="add-account"]').innerHTML = `${icon('plus')}<span class="label">Add account</span>`;
   $('[data-act="renormalize"]').innerHTML = `${icon('sparkles')}<span class="label">Re-detect merchant names</span>`;
+  $('[data-act="learn-history"]').innerHTML = `${icon('book')}<span class="label">Learn from history</span>`;
   $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add user</span>`;
   window.addEventListener('hashchange', showTab);
   showTab();
@@ -384,6 +385,14 @@ async function onAction(e) {
       } },
     ]);
     case 'reload-accounts': return loadAccounts();
+    case 'learn-history': {
+      el.classList.add('is-loading');
+      try {
+        const r = await api('/api/merchants/learn', { method: 'POST', body: {} });
+        toast(`${fmtNumber(r.merchants_seen)} merchants reviewed · ${fmtNumber(r.memory_added)} newly remembered`, { type: 'success', duration: 7000 });
+      } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); }
+      return;
+    }
     case 'renormalize': {
       if (!(await ui.confirm({ title: 'Re-detect merchant names?', body: 'Merchant names on all your transactions will be recomputed. Rules and remembered merchants are updated to match, so nothing stops working. This may take a few seconds.', confirmText: 'Re-detect' }))) return;
       el.classList.add('is-loading');

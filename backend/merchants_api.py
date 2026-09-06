@@ -81,3 +81,13 @@ def renormalize():
     result = maintenance.renormalize_user(session["user_id"])
     audit("merchants.renormalize", result)
     return jsonify(result)
+
+
+@bp.post("/learn")
+@login_required
+def learn():
+    """Rebuild merchant memory from everything already categorized (safe to run any time)."""
+    import maintenance
+    result = maintenance.learn_from_history(session["user_id"])
+    audit("merchants.learn", result)
+    return jsonify(result)

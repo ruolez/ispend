@@ -35,6 +35,10 @@
               <div><b>Re-detect merchant names</b><div class="text-3 fs-sm">Recomputes merchant names for every transaction using the current rules (strips cardholder names, processor codes and store numbers). Rules and remembered merchants follow the new names.</div></div>
               <button type="button" class="btn btn-secondary" data-act="renormalize"></button>
             </div></div>
+            <div class="card mt-3"><div class="card-body row-between" style="gap:16px;flex-wrap:wrap">
+              <div><b>Learn from history</b><div class="text-3 fs-sm">Rebuilds merchant memory from every transaction you have categorized so far, so the next import recognizes them. Runs automatically as you categorize; use this after bulk changes.</div></div>
+              <button type="button" class="btn btn-secondary" data-act="learn-history"></button>
+            </div></div>
           </div>
         </section>
         <section class="tab-panel" data-panel="ai">

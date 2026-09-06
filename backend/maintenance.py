@@ -108,3 +108,36 @@ def renormalize_user(user_id):
         "memory_updated": memory_updated,
         "memory_merged": memory_merged,
     }
+
+
+def learn_from_history(user_id):
+    """Mine confirmed categorizations into merchant memory: for every merchant the user has
+    categorized, the category they used most often (latest wins ties) is remembered."""
+    rows = db.query(
+        """SELECT merchant_key, category_id, COUNT(*) AS n, MAX(updated_at) AS last_at,
+                  BOOL_OR(is_transfer) AS is_transfer
+           FROM transactions
+           WHERE user_id = %s AND category_id IS NOT NULL AND category_status = 'confirmed' AND merchant_key <> ''
+           GROUP BY merchant_key, category_id""",
+        (user_id,),
+    ) or []
+    best = {}
+    for r in rows:
+        cur = best.get(r["merchant_key"])
+        if cur is None or (r["n"], r["last_at"]) > (cur["n"], cur["last_at"]):
+            best[r["merchant_key"]] = r
+    added = updated = 0
+    with db.transaction():
+        for key, r in best.items():
+            existing = db.query("SELECT id, category_id, times_used FROM merchant_memory WHERE user_id = %s AND merchant_key = %s",
+                                (user_id, key), one=True, commit=False)
+            if existing is None:
+                db.execute(
+                    """INSERT INTO merchant_memory (user_id, merchant_key, category_id, is_transfer, times_used)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (user_id, key, r["category_id"], bool(r["is_transfer"]), int(r["n"])), commit=False)
+                added += 1
+            elif existing["times_used"] < r["n"]:
+                db.execute("UPDATE merchant_memory SET times_used = %s WHERE id = %s", (int(r["n"]), existing["id"]), commit=False)
+                updated += 1
+    return {"merchants_seen": len(best), "memory_added": added, "memory_updated": updated}

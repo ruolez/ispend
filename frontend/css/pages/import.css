@@ -79,3 +79,5 @@
 .done-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .parsing-card { display: flex; align-items: center; gap: 14px; padding: var(--sp-5); }
 .parsing-card .spinner-lg { flex: 0 0 auto; }
+
+.chip-src { margin-left: 4px; color: var(--text-4); }

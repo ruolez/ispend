@@ -63,6 +63,7 @@ class PreviewStatsTest(unittest.TestCase):
         existing = {(staged[2]["fingerprint"], 1): 99}
         self.assertEqual(pipeline._preview_stats(staged, existing), {
             "rows_total": 4, "rows_valid": 3, "rows_invalid": 1, "dupes_existing": 1, "dupes_in_file": 1,
+            "predicted": {"rule": 0, "merchant": 0, "builtin": 0, "none": 3},
         })
 
 
