@@ -1,3 +1,4 @@
+import re
 import json
 
 from flask import Blueprint, jsonify, request, send_file, session
@@ -42,6 +43,24 @@ def _predicted(statement_id):
                       "GROUP BY category_source", (statement_id,)) or []:
         out[r["s"] if r["s"] in out else "none"] += r["n"]
     return out
+
+
+def _suggest_account(st):
+    """Best guess for the account a statement belongs to: an account whose last four digits appear in
+    the file name or statement text, else the only account at the detected bank."""
+    accounts = db.query("SELECT id, last4, institution FROM accounts WHERE user_id = %s AND is_active", (st["user_id"],)) or []
+    if not accounts:
+        return None
+    haystack = f"{st.get('original_filename') or ''} {json.dumps((st.get('stats') or {}).get('header') or '')}"
+    digits = set(re.findall(r"\d{4}", haystack))
+    by_last4 = [a for a in accounts if a["last4"] and a["last4"] in digits]
+    if len(by_last4) == 1:
+        return by_last4[0]["id"]
+    if st.get("bank_profile"):
+        same_bank = [a for a in accounts if a["institution"] == st["bank_profile"]]
+        if len(same_bank) == 1:
+            return same_bank[0]["id"]
+    return None
 
 
 def _detail(st):
@@ -99,6 +118,8 @@ def _detail(st):
         out["profile_options"] = [{"key": p.key, "label": p.label, "country": p.country} for p in bank_profiles.all_profiles()]
     if st.get("status") == "previewed":
         out["stats"] = {**(out.get("stats") or {}), "predicted": _predicted(st["id"])}
+    if st.get("status") == "previewed" and not st.get("account_id"):
+        out["suggested_account_id"] = _suggest_account(st)
     return out
 
 

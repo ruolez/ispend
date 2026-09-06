@@ -5,6 +5,10 @@ const ROLE_OPTIONS = [['', 'Ignore'], ['date', 'Date'], ['posted_date', 'Posted 
 const DATE_FORMATS = [['', 'Auto-detect'], ['%m/%d/%Y', 'MM/DD/YYYY'], ['%d/%m/%Y', 'DD/MM/YYYY'], ['%Y-%m-%d', 'YYYY-MM-DD'], ['%m/%d/%y', 'MM/DD/YY'], ['%Y%m%d', 'YYYYMMDD'], ['%b %d, %Y', 'Mon DD, YYYY'], ['%d %b %Y', 'DD Mon YYYY']];
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
 
+const LAST_ACCOUNT_KEY = 'ispend.importAccount';
+function rememberAccount(id) { try { if (id) localStorage.setItem(LAST_ACCOUNT_KEY, String(id)); } catch { /* ignore */ } }
+function rememberedAccount() { try { const v = Number(localStorage.getItem(LAST_ACCOUNT_KEY)); return imp.accounts.some((a) => a.id === v) ? v : null; } catch { return null; } }
+
 const imp = {
   step: 'upload',
   files: [],          // {lid, name, size, kind, progress, statementId, statement, error, done}
@@ -69,7 +73,7 @@ function renderUpload() {
     </label>
     <div class="row mt-3" style="gap:10px;flex-wrap:wrap">
       <span class="text-3 fs-base">Import into</span>
-      <select class="select input-sm" id="upload-account" style="max-width:260px"><option value="">Choose during review</option>${imp.accounts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
+      <select class="select input-sm" id="upload-account" style="max-width:260px"><option value="">Choose during review</option>${imp.accounts.map((a) => `<option value="${a.id}" ${a.id === rememberedAccount() ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
       <button type="button" class="btn btn-ghost btn-sm" data-act="new-account">${icon('plus', 'ico-sm')}New account</button>
     </div>
     <div class="file-list" id="file-list"></div>`;
@@ -169,6 +173,7 @@ async function reopenStatement(id) {
 function reviewable() { return imp.files.filter((f) => f.statement && ['previewed', 'error', 'parsing', 'uploaded', 'committing', 'discarded'].includes(f.statement.status) && !f.done); }
 
 function renderReview() {
+  { const f0 = activeFile(); if (f0 && autoAccount(f0)) return; }
   const real = $('#step-review');
   const files = reviewable();
   let tabs = '';
@@ -383,6 +388,11 @@ function onImportChange(e) {
   const f = activeFile();
   const t = e.target;
   if (t.id === 'rv-account' && f) return changeAccount(f, t.value);
+  if (t.id === 'upload-account') {
+    rememberAccount(t.value);
+    imp.files.filter((x) => x.statementId && x.statement && !x.statement.account_id).forEach((x) => changeAccount(x, t.value, { quiet: true }));
+    return;
+  }
   if (t.id === 'rv-profile' && f) return applyMapping(f, readMappingFromDom(f.statement), { bank_profile: t.value });
   if (t.matches('[data-map], .mapping-table select[data-col]') && f) return scheduleMapping(f);
   if (t.matches('[data-row-include]') && f) return setRows(f, { row_ids: [Number(t.dataset.rowInclude)], include: t.checked });
@@ -413,13 +423,28 @@ async function onImportClick(e) {
   }
 }
 
-async function changeAccount(f, value) {
+async function changeAccount(f, value, { quiet = false, reason = '' } = {}) {
   const id = value ? Number(value) : null;
   try {
     f.statement = await api(`/api/statements/${f.statementId}/account`, { method: 'PUT', body: { account_id: id } });
     if (!f.statement.rows) await reloadStatement(f, { silent: true });
-    renderReview();
+    rememberAccount(id);
+    if (imp.step === 'review') renderReview();
+    if (reason && id) toast(`Using ${esc(accountName(id))} ${reason} — change it above if that is wrong`, { type: 'info', duration: 6000 });
+    else if (!quiet && id) toast(`Account set to ${esc(accountName(id))}`, { type: 'success' });
   } catch (err) { toast(err.message, { type: 'error' }); }
+}
+/* A previewed statement with no account gets one automatically: the account the statement points at
+   (last four digits / bank) or the account used for the previous import. Once per file. */
+function autoAccount(f) {
+  const s = f.statement;
+  if (!s || s.status !== 'previewed' || s.account_id || f.autoAccountTried) return false;
+  f.autoAccountTried = true;
+  const suggested = s.suggested_account_id && imp.accounts.some((a) => a.id === s.suggested_account_id) ? s.suggested_account_id : null;
+  const pick = suggested || rememberedAccount();
+  if (!pick) return false;
+  changeAccount(f, pick, { reason: suggested ? '(matched from the statement)' : '(your last import)' });
+  return true;
 }
 async function setRows(f, body) {
   try {
