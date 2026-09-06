@@ -535,7 +535,7 @@ function renderDone() {
       </div>
       ${imp.results.some((r) => r.ai_queued) ? `<div class="notice mt-2 mb-4" style="text-align:left">${icon('sparkles')}<div>AI suggestions are being prepared for the remaining charges. They appear in Review shortly.</div></div>` : ''}
       <div class="done-actions">
-        ${tot.unc ? `<a class="btn btn-primary" href="/review.html">${icon('inbox', 'ico-sm')}Review ${fmtNumber(tot.unc)} charge${tot.unc === 1 ? '' : 's'}</a>` : `<a class="btn btn-primary" href="/transactions.html?range=all">${icon('list', 'ico-sm')}View transactions</a>`}
+        ${tot.unc ? `<a class="btn btn-primary" href="/review.html?mode=merchant">${icon('inbox', 'ico-sm')}Review ${fmtNumber(tot.unc)} charge${tot.unc === 1 ? '' : 's'}</a>` : `<a class="btn btn-primary" href="/transactions.html?range=all">${icon('list', 'ico-sm')}View transactions</a>`}
         <a class="btn btn-secondary" href="/transactions.html?statement=${imp.results[imp.results.length - 1].statementId}&range=all">See imported rows</a>
         <button type="button" class="btn btn-ghost" data-act="restart">Import another</button>
       </div></div>`;

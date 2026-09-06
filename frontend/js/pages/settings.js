@@ -179,7 +179,7 @@ async function suggestUncategorized(btn) {
   try {
     const r = await api('/api/ai/categorize', { method: 'POST', body: { scope: 'uncategorized' } });
     if (r && r.queued != null) toast(`Queued ${fmtNumber(r.queued)} charges for AI suggestions. They appear in Review as they arrive.`, { type: 'success', duration: 7000 });
-    else if (r && r.suggested != null) toast(r.suggested ? `${fmtNumber(r.suggested)} suggestion${r.suggested === 1 ? '' : 's'} added — review them in the Review queue.` : 'Nothing to suggest: every charge already has a category.', { type: 'success', duration: 7000, action: r.suggested ? { label: 'Open Review', fn: () => { location.href = '/review.html'; } } : undefined });
+    else if (r && r.suggested != null) toast(r.suggested ? `${fmtNumber(r.suggested)} suggestion${r.suggested === 1 ? '' : 's'} added — review them in the Review queue.` : 'Nothing to suggest: every charge already has a category.', { type: 'success', duration: 7000, action: r.suggested ? { label: 'Open Review', fn: () => { location.href = '/review.html?mode=merchant'; } } : undefined });
     else toast('Suggestions requested', { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     loadAIStatus();

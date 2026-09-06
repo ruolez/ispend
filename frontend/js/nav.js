@@ -222,7 +222,7 @@ function openPalette() {
   const actions = [
     { group: 'Actions', label: 'Import a statement', icon: 'upload', run: () => { location.href = '/import.html'; } },
     { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: () => Theme.toggle() },
-    { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html'; } },
+    { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
   ];
   const pages = NAV_ITEMS.map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 

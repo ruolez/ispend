@@ -300,7 +300,7 @@ function renderAttention(data) {
   const rec = data.recurring;
   const parts = [];
   parts.push(total
-    ? `<a class="attn-cta" href="/review.html"><span class="attn-ico">${icon('inbox')}</span><div class="grow"><div class="attn-title">${plural(total, 'charge')} need a category</div><div class="attn-sub">${rc.suggested ? `${fmtNumber(rc.suggested)} suggested` : ''}${rc.suggested && rc.uncategorized ? ' · ' : ''}${rc.uncategorized ? `${fmtNumber(rc.uncategorized)} unknown` : ''}</div></div>${icon('chevron-right')}</a>`
+    ? `<a class="attn-cta" href="/review.html?mode=merchant"><span class="attn-ico">${icon('inbox')}</span><div class="grow"><div class="attn-title">${plural(total, 'charge')} need a category</div><div class="attn-sub">${rc.suggested ? `${fmtNumber(rc.suggested)} suggested` : ''}${rc.suggested && rc.uncategorized ? ' · ' : ''}${rc.uncategorized ? `${fmtNumber(rc.uncategorized)} unknown` : ''}</div></div>${icon('chevron-right')}</a>`
     : `<div class="attn-cta attn-cta--ok"><span class="attn-ico">${icon('check-circle')}</span><div class="grow"><div class="attn-title">All caught up</div><div class="attn-sub">Every charge has a category.</div></div></div>`);
   parts.push(`<div class="attn-block"><div class="attn-head"><span class="section-label">Recurring</span><a href="/insights.html">Details</a></div>
     ${rec.count ? `<div class="attn-row"><span>${plural(rec.count, 'active subscription')}</span><b>${fmtMoney(rec.monthly_total, cur)}<span class="text-4 fw-500"> / mo</span></b></div>
