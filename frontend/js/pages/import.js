@@ -173,7 +173,7 @@ async function reopenStatement(id) {
 function reviewable() { return imp.files.filter((f) => f.statement && ['previewed', 'error', 'parsing', 'uploaded', 'committing', 'discarded'].includes(f.statement.status) && !f.done); }
 
 function renderReview() {
-  { const f0 = activeFile(); if (f0 && autoAccount(f0)) return; }
+  { const f0 = activeFile() || reviewable()[0]; if (f0 && autoAccount(f0)) return; }
   const real = $('#step-review');
   const files = reviewable();
   let tabs = '';
