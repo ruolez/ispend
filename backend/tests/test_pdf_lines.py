@@ -169,3 +169,30 @@ class PageHeaderTest(unittest.TestCase):
         rows = pdf_lines.rows_to_transactions(lines, None, (date(2026, 4, 9), date(2026, 5, 8)))
         self.assertEqual([(str(r.amount), r.is_valid, r.description[:12]) for r in rows],
                          [("40.00", True, "A2A Payment "), ("None", False, "AMAZON .COM*")])
+
+
+class DepositTicketPageTest(unittest.TestCase):
+    """A deposit-ticket listing on a later page repeats ledger deposits without a balance and with
+    amounts printed further left; those rows are twins, not withdrawals."""
+
+    def test_twins_flagged_and_signs_judged_per_page(self):
+        from datetime import date
+        W = lambda t, x0: {"text": t, "x0": x0, "x1": x0 + 30, "top": 0, "bottom": 10}
+        def L(text, top, x0, page, amt_x0):
+            return pdf_lines.Line(text=text, top=top, x0=x0, x1=500.0, words=[W(w, x0 + i * 60) for i, w in enumerate(text.split())][:-1] + [W(text.split()[-1], amt_x0)], page=page)
+        lines = [
+            L("06-30 Deposit 9,000.00 15,346.29", 10, 109, 3, 400),
+            L("07-01 Withdrawal 800.00 14,546.29", 20, 109, 3, 400),
+            L("07-06 Deposit 5,000.00 19,626.29", 30, 109, 3, 400),
+            L("06/30/2026 Deposit $9,000.00", 10, 72, 4, 200),
+            L("07/06/2026 Deposit $5,000.00", 20, 72, 4, 200),
+        ]
+        rows = pdf_lines.rows_to_transactions(lines, None, (date(2026, 6, 9), date(2026, 7, 8)))
+        got = [(r.txn_date, str(r.amount), r.balance is not None, r.raw.get("twin_of") is not None) for r in rows]
+        self.assertEqual(got, [
+            (date(2026, 6, 30), "9000.00", True, False),
+            (date(2026, 7, 1), "800.00", True, False),
+            (date(2026, 7, 6), "5000.00", True, False),
+            (date(2026, 6, 30), "9000.00", False, True),
+            (date(2026, 7, 6), "5000.00", False, True),
+        ])

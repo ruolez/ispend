@@ -203,8 +203,9 @@ def _stage(st, result, ocr_rel):
         dup = existing.get((s["fingerprint"], s["occurrence"]))
         values.append((
             sid, r.row_index, r.txn_date, r.posted_date, r.description, r.amount, r.balance, json.dumps(r.raw, default=str),
-            s["merchant"].name, s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1, r.is_valid,
-            r.is_valid and dup is None, s["category_id"], r.problems, s.get("category_source"), s.get("category_rule_id"),
+            s["merchant"].name, s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1 or (r.raw or {}).get("twin_of") is not None,
+            r.is_valid, r.is_valid and dup is None and (r.raw or {}).get("twin_of") is None, s["category_id"], r.problems,
+            s.get("category_source"), s.get("category_rule_id"),
         ))
     stats = _preview_stats(staged, existing)
     stats["stripped_phrases"] = phrases
@@ -242,7 +243,7 @@ def _preview_stats(staged, existing):
         "rows_valid": len(valid),
         "rows_invalid": len(staged) - len(valid),
         "dupes_existing": dup_existing,
-        "dupes_in_file": sum(1 for s in valid if s["occurrence"] > 1),
+        "dupes_in_file": sum(1 for s in valid if s["occurrence"] > 1 or (s["row"].raw or {}).get("twin_of") is not None),
         "predicted": predicted,
     }
 

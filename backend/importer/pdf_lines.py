@@ -206,6 +206,7 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
                 continue
         continuation = 2
     _infer_column_signs(unsigned_rows)
+    mark_ledger_twins(rows)
     return rows
 
 
@@ -222,18 +223,41 @@ def _amount_word(line, has_balance):
 
 def _infer_column_signs(rows, min_gap=40.0):
     """Bank statements often print unsigned amounts in separate Withdrawals | Deposits columns.
-    When the amount x-positions form two clusters, the left cluster is money out."""
-    xs = sorted((r.raw.get("amt_x0"), i) for i, r in enumerate(rows) if r.raw.get("amt_x0") is not None)
-    if len(xs) < 2:
-        return
-    gaps = [(xs[i + 1][0] - xs[i][0], i) for i in range(len(xs) - 1)]
-    gap, at = max(gaps)
-    if gap < min_gap:
-        return
-    left_x = xs[at][0]
-    for x, i in xs:
-        if x <= left_x and rows[i].amount is not None and rows[i].amount > 0:
-            rows[i].amount = -rows[i].amount
+    When the amount x-positions on a page form two clusters, the left cluster is money out.
+    Judged per page: a deposit-ticket listing on another page must not be read as a column."""
+    by_page = {}
+    for i, r in enumerate(rows):
+        if r.raw.get("amt_x0") is not None:
+            by_page.setdefault(r.raw.get("page"), []).append((r.raw["amt_x0"], i))
+    for xs in by_page.values():
+        xs.sort()
+        if len(xs) < 3:
+            continue
+        gaps = [(xs[i + 1][0] - xs[i][0], i) for i in range(len(xs) - 1)]
+        gap, at = max(gaps)
+        if gap < min_gap:
+            continue
+        left_x = xs[at][0]
+        for x, i in xs:
+            if x <= left_x and rows[i].amount is not None and rows[i].amount > 0:
+                rows[i].amount = -rows[i].amount
+
+
+def mark_ledger_twins(rows):
+    """Statements sometimes list a transaction twice: once in the running-balance ledger and again in
+    a deposit/check image section without a balance. Flag the balance-less copy as a twin."""
+    ledger = {}
+    for r in rows:
+        if r.is_valid and r.balance is not None:
+            ledger.setdefault((r.txn_date, abs(r.amount)), r.row_index)
+    if not ledger:
+        return 0
+    n = 0
+    for r in rows:
+        if r.is_valid and r.balance is None and (r.txn_date, abs(r.amount)) in ledger:
+            r.raw["twin_of"] = ledger[(r.txn_date, abs(r.amount))]
+            n += 1
+    return n
 
 
 def lines_text(lines):
