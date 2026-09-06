@@ -9,10 +9,16 @@ PREFIXES = (
     "ONLINE PAYMENT", "RECURRING PAYMENT", "RECURRING", "PAYMENT TO", "ELECTRONIC WITHDRAWAL",
     "DIRECT DEBIT", "DIRECT DEPOSIT", "PREAUTHORIZED", "PRE-AUTHORIZED", "AUTOPAY", "AUTOMATIC PAYMENT",
     "INTERAC", "E-TRANSFER", "INTERAC E-TRANSFER", "WITHDRAWAL", "DEPOSIT", "BILL PAYMENT", "PAYMENT",
-    "CARD PURCHASE", "TFR", "PURCHASE AUTHORIZED ON", "BPS",
+    "CARD PURCHASE", "TFR", "PURCHASE AUTHORIZED ON", "BPS", "A2A PAYMENT CREDIT", "A2A ACCOUNT DEBIT", "A2A",
+    "ACH WITHDRAWAL", "ACH DEPOSIT", "FUNDS TRANSFER", "ELECTRONIC DEPOSIT", "ELECTRONIC PAYMENT",
 )
 _PREFIX_RE = re.compile(
     r"^(?:(?:" + "|".join(re.escape(p) for p in sorted(PREFIXES, key=len, reverse=True)) + r")\b\s*[\*\-:#/]*\s*)+",
+    re.I,
+)
+# one prefix at a time, so "ACH WITHDRAWAL PAYPAL" keeps its last word instead of vanishing
+_PREFIX_ONE = re.compile(
+    r"^(?:" + "|".join(re.escape(p) for p in sorted(PREFIXES, key=len, reverse=True)) + r")\b\s*[\*\-:#/]*\s*",
     re.I,
 )
 _STAR_CODE = re.compile(r"\*\s*(?=[A-Z0-9\-]*\d)[A-Z0-9][A-Z0-9\-]{1,}\b")
@@ -64,8 +70,7 @@ ALIASES = [
     ("THE HOME DEPOT", "Home Depot"), ("LOWES", "Lowe's"), ("SHELL OIL", "Shell"), ("SHELL", "Shell"),
     ("CHEVRON", "Chevron"), ("EXXON", "Exxon"), ("EXXONMOBIL", "Exxon"), ("BP", "BP"), ("7-ELEVEN", "7-Eleven"),
     ("CVS", "CVS"), ("CVS/PHARMACY", "CVS"), ("WALGREENS", "Walgreens"), ("CHIPOTLE", "Chipotle"),
-    ("DOORDASH", "DoorDash"), ("GRUBHUB", "Grubhub"), ("INSTACART", "Instacart"), ("VENMO", "Venmo"),
-    ("ZELLE", "Zelle"), ("PAYPAL", "PayPal"), ("SHOPPERS DRUG", "Shoppers Drug Mart"), ("LOBLAWS", "Loblaws"),
+    ("DOORDASH", "DoorDash"), ("GRUBHUB", "Grubhub"), ("INSTACART", "Instacart"), ("VENMO", "Venmo"), ("PAYPAL", "PayPal"), ("SHOPPERS DRUG", "Shoppers Drug Mart"), ("LOBLAWS", "Loblaws"),
     ("SOBEYS", "Sobeys"), ("METRO", "Metro"), ("CANADIAN TIRE", "Canadian Tire"), ("PETRO-CANADA", "Petro-Canada"),
     ("PETRO CANADA", "Petro-Canada"), ("ESSO", "Esso"), ("HULU", "Hulu"), ("DISNEY PLUS", "Disney+"),
     ("DISNEYPLUS", "Disney+"), ("HBO MAX", "HBO Max"), ("AUDIBLE", "Audible"), ("MICROSOFT", "Microsoft"),
@@ -200,17 +205,25 @@ def strip_phrases(description, phrases):
     return re.sub(r"\s+", " ", text).strip()
 
 
+_P2P_FIXUPS = [
+    (re.compile(r"\bPAYPAL\s+INST\s+XFER\b.*$", re.I), "PAYPAL"),          # "PAYPAL INST XFER 260317 ******YHOPE"
+    (re.compile(r"\b(ZELLE|VENMO|INTERAC)\s+(?:PAYMENT\s+)?(?:TO|FROM)\b", re.I), r"\1"),  # "ZELLE FROM JANE DOE" -> "ZELLE JANE DOE"
+]
+
+
 def clean_description(description, light=False):
     text = (description or "").upper().replace("’", "'").replace("’", "'")
+    for pat, repl in _P2P_FIXUPS:
+        text = pat.sub(repl, text)
     text = re.sub(r"[ \t]+", " ", text)
     text = text.strip()
     had_prefix = False
-    for _ in range(3):
+    for _ in range(4):
         if light:
             break
-        stripped = _PREFIX_RE.sub("", text).strip()
-        if stripped == text:
-            break
+        stripped = _PREFIX_ONE.sub("", text).strip()
+        if stripped == text or not stripped:
+            break  # nothing to strip, or stripping would leave no merchant at all
         text = stripped
         had_prefix = True
     if light:

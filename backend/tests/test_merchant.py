@@ -69,7 +69,7 @@ class PaymentDescriptionsTest(unittest.TestCase):
 
     def test_leading_preposition_is_dropped(self):
         self.assertEqual(normalize("ONLINE PAYMENT TO AMEX CARD 1234").key, "AMEX")
-        self.assertEqual(normalize("ZELLE PAYMENT FROM JANE DOE CONF# ABC123").name, "Zelle")
+        self.assertEqual(normalize("ZELLE PAYMENT FROM JANE SMITH CONF# ABC123").name, "Zelle Jane Smith")
 
 
 class RawDescriptorTailTest(unittest.TestCase):
@@ -111,3 +111,12 @@ class FrequentPhrasesTest(unittest.TestCase):
         self.assertEqual(frequent_phrases([f"Merchant {i} Eugene Braverman" for i in range(5)]), [])
         self.assertEqual(frequent_phrases([f"Shop {i} City {i}" for i in range(30)]), [])
         self.assertEqual(frequent_phrases([f"Shop {i} CHICAGO IL" for i in range(30)]), [])
+
+
+class PeerToPeerTest(unittest.TestCase):
+    def test_zelle_keeps_the_counterparty(self):
+        self.assertEqual(normalize("A2A Payment Credit ZELLE ANHELINA MELNYK BYLINE BANK 65620").key, "ZELLE ANHELINA MELNYK")
+
+    def test_paypal_instant_transfer_is_paypal(self):
+        self.assertEqual(normalize("ACH Withdrawal PAYPAL INST XFER 260317 ******YHOPE").name, "PayPal")
+        self.assertEqual(normalize("VENMO PAYMENT 260323 ********61042").name, "Venmo")

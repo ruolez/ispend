@@ -83,16 +83,18 @@ def build_mapping_from_format(fmt, header_row, header_index):
 
 
 MONEY_RE = r"\(?-?\$?\s?[\d,]*\d\.\d{2}\)?(?:\s?CR)?-?"
-DATE_RE = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+DATE_RE = r"\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?"
 DATE_TXT_RE = r"[A-Z][a-z]{2}\.? \d{1,2}(?:,? \d{4})?"
 
 GENERIC_LINE = re.compile(
     rf"^(?P<date>{DATE_RE}|{DATE_TXT_RE})\s+(?:(?P<post>{DATE_RE}|{DATE_TXT_RE})\s+)?"
+    rf"(?:[\'\"*\u2022\u00b7\u2019]\s+)?"  # some banks print a marker glyph between date and description
     rf"(?P<desc>.+?)\s+(?P<amt>{MONEY_RE})(?:\s+(?P<bal>{MONEY_RE}))?\s*$"
 )
 GENERIC_SKIP = re.compile(
     r"^(total|totals|subtotal|previous balance|new balance|minimum payment|payment due|statement balance|"
     r"balance forward|beginning balance|ending balance|opening balance|closing balance|interest charged|fees charged|"
+    r"beginning totals|ending totals|totals for|daily balance|daily ending balance|"
     r"total fees|total interest|year-to-date|page \d+)",
     re.I,
 )

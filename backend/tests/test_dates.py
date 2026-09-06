@@ -61,3 +61,10 @@ class InferYearTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LastThisStatementPeriodTest(unittest.TestCase):
+    def test_last_and_this_statement_lines_give_the_period(self):
+        from datetime import date
+        text = "Last statement: March 08, 2026\nThis statement: April 08, 2026\nTotal days in statement period: 31"
+        self.assertEqual(find_period(text), (date(2026, 3, 9), date(2026, 4, 8)))

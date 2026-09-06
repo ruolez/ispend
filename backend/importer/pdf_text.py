@@ -10,6 +10,10 @@ def extract_pages(path):
     pages = []
     with pdfplumber.open(path) as pdf:
         for n, page in enumerate(pdf.pages, start=1):
+            try:
+                page = page.dedupe_chars(tolerance=1)  # bold text is often printed twice, giving "EEUUGGEENNEE"
+            except Exception:
+                pass
             words = page.extract_words(x_tolerance=1.5, y_tolerance=3, keep_blank_chars=False, extra_attrs=["size"])
             pages.append({
                 "page": n,

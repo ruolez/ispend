@@ -130,3 +130,31 @@ class UnreadableLineTest(unittest.TestCase):
             (date(2024, 8, 5), rows[0].amount, True, []),
             (date(2024, 8, 9), None, False, ["Could not read an amount on this line"]),
         ])
+
+
+class DashDateBankLayoutTest(unittest.TestCase):
+    """Byline-style checking statements: MM-DD dates, a marker glyph, amount + running balance,
+    indented detail lines, and a 'Beginning balance' row that is not a transaction."""
+
+    def _line(self, text, top, x0):
+        return pdf_lines.Line(text=text, top=top, x0=x0, x1=500.0, words=[], page=1)
+
+    def test_rows_with_balance_and_continuations(self):
+        from datetime import date
+        L = self._line
+        lines = [
+            L("Date Description Additions Subtractions Balance", 10, 109.3),
+            L("03-08 Beginning balance $1,240.61", 20, 109.3),
+            L("03-10 ' Funds Transfer 45.00 1,285.61", 30, 109.3),
+            L("FROM ACCT *9885 FUNDS TRANSFER VIA M", 40, 157.6),
+            L("03-17 ' ACH Withdrawal -10.00 1,327.61", 50, 109.3),
+            L("PAYPAL INST XFER", 60, 157.6),
+            L("03-23 ' A2A Payment Credit 515.00 1,972.61", 70, 109.3),
+            L("ZELLE EXQUISITE JEWELERS", 80, 157.6),
+        ]
+        rows = pdf_lines.rows_to_transactions(lines, None, (date(2026, 3, 9), date(2026, 4, 8)))
+        self.assertEqual([(r.txn_date, str(r.amount), r.description, str(r.balance)) for r in rows], [
+            (date(2026, 3, 10), "45.00", "Funds Transfer FROM ACCT *9885 FUNDS TRANSFER VIA M", "1285.61"),
+            (date(2026, 3, 17), "-10.00", "ACH Withdrawal PAYPAL INST XFER", "1327.61"),
+            (date(2026, 3, 23), "515.00", "A2A Payment Credit ZELLE EXQUISITE JEWELERS", "1972.61"),
+        ])

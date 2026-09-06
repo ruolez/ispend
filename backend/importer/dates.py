@@ -89,10 +89,16 @@ _RANGE_PATTERNS = [
 _OPEN_CLOSE = re.compile(
     rf"Opening\s+Date[:\s]+({_NUM_DATE}|{_TXT_DATE}).{{0,80}}?Closing\s+Date[:\s]+({_NUM_DATE}|{_TXT_DATE})", re.S)
 _CLOSING = re.compile(rf"(?:Closing|Statement)\s+Date[:\s]+({_NUM_DATE}|{_TXT_DATE})")
+_LAST_THIS = re.compile(rf"Last\s+statement:?\s+({_TXT_DATE}|{_NUM_DATE}).*?This\s+statement:?\s+({_TXT_DATE}|{_NUM_DATE})", re.I | re.S)
 
 
 def find_period(text):
     """(start, end) from statement header text, or None."""
+    m = _LAST_THIS.search(text or "")
+    if m:
+        a, b = parse_date(m.group(1)), parse_date(m.group(2))
+        if a and b and a < b:
+            return (a + timedelta(days=1), b)
     if not text:
         return None
     m = _OPEN_CLOSE.search(text)

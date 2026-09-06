@@ -10,7 +10,8 @@ from importer.amounts import parse_amount
 from importer.dates import apply_year, parse_date
 from importer.models import ParsedRow
 
-_DATE_START = re.compile(r"^(\d{1,2}/\d{1,2}(?:/\d{2,4})?|[A-Z][a-z]{2}\.? \d{1,2}|\d{1,2} [A-Z][a-z]{2}|[A-Z]{3}\d{1,2})\b")
+_DATE_START = re.compile(r"^(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Z][a-z]{2}\.? \d{1,2}|\d{1,2} [A-Z][a-z]{2}|[A-Z]{3}\d{1,2})\b")
+_MARKER_TOKEN = re.compile(r"^[\'\"*\u2022\u00b7\u2019]+$")
 _HEADING = re.compile(r"^[A-Z][A-Z &,'/\-]{3,}$")
 
 
@@ -104,7 +105,7 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
     default_mode = profile.pdf_sign if profile else "as_is"
     mode = default_mode
     default_year = period[1].year if period else (today or date.today()).year
-    rows, desc_x0s, continuation, unsigned_rows = [], [], 2, []
+    rows, desc_x0s, continuation, unsigned_rows, date_x0s = [], [], 2, [], []
     for idx, line in enumerate(lines):
         text = ocr_repair(line.text.strip())
         if not text:
@@ -132,7 +133,13 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
             posted = parse_date(post, default_year=default_year) if post else None
             if posted and not re.search(r"\d{4}|\d{2}/\d{2}/\d{2}", post):
                 posted = apply_year(posted, period, today)
-            desc = m.group("desc").strip()
+            desc_tokens = m.group("desc").split()
+            while desc_tokens and _MARKER_TOKEN.match(desc_tokens[0]):
+                desc_tokens.pop(0)
+            desc = " ".join(desc_tokens).strip()
+            if GENERIC_SKIP.match(desc):
+                continuation = 2
+                continue  # "03-08 Beginning balance $1,240.61" is a balance line, not a transaction
             problems = []
             if value is None:
                 problems.append(f"Unparseable amount '{amt_text}'")
@@ -161,6 +168,7 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
             k = _date_word_count(m)
             if line.words and k < len(line.words):
                 desc_x0s.append(float(line.words[k]["x0"]))
+            date_x0s.append(float(line.x0))
             continuation = 0
             continue
         if _DATE_START.match(text) and len(text.split()) >= 3 and not re.search(r"\b(?:to|through|thru)\b", text, re.I) \
@@ -177,10 +185,13 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
             ))
             continuation = 2
             continue
+        # An all-caps line is a section heading only at the left margin; indented ones are detail lines.
+        indented = bool(date_x0s) and line.x0 - statistics.median(date_x0s) > 8
         if rows and continuation < 2 and not _DATE_START.match(text) and len(text) <= 90 \
-                and not _HEADING.match(text) and parse_amount(text.split()[-1]) is None:
+                and (indented or not _HEADING.match(text)) and parse_amount(text.split()[-1]) is None:
             ref = statistics.median(desc_x0s) if desc_x0s else line.x0
-            if abs(line.x0 - ref) <= 24:
+            # continuation lines sit at the description column or indented a little further in
+            if -24 <= line.x0 - ref <= 70:
                 rows[-1].description = (rows[-1].description + " " + text).strip()
                 continuation += 1
                 continue
