@@ -414,6 +414,7 @@ async function onImportClick(e) {
     case 'flip-signs': if (f) { const m = readMappingFromDom(f.statement); m.flip_sign = !((f.statement.mapping || {}).flip_sign); return applyMapping(f, m); } return;
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;
+    case 'undo-import': return undoImport(Number(btn.dataset.sid), btn);
     case 'pick-cat': if (f) return pickRowCategory(f, btn, Number(btn.dataset.row)); return;
     case 'confirm-suggestions': if (f) return confirmSuggestions(f, btn); return;
     case 'ai-extract': if (f) return aiExtract(f, btn); return;
@@ -498,6 +499,20 @@ async function pickRowCategory(f, anchor, rowId) {
     },
   });
 }
+async function undoImport(statementId, button) {
+  const res = imp.results.find((r) => r.statementId === statementId);
+  const n = res ? res.imported : null;
+  const ok = await ui.confirm({ title: 'Undo this import?', body: `This deletes the ${n != null ? `<b>${fmtNumber(n)}</b> ` : ''}transactions just imported from “${esc(res ? res.name : 'this file')}” and removes the file. Reports update immediately. You can import the file again later.`, confirmText: 'Undo import', danger: true });
+  if (!ok) return;
+  if (button) button.classList.add('is-loading');
+  try {
+    const r = await api(`/api/statements/${statementId}?with_transactions=true`, { method: 'DELETE' });
+    imp.results = imp.results.filter((x) => x.statementId !== statementId);
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    toast(`Import undone · ${fmtNumber(r.deleted_transactions || n || 0)} transactions removed`, { type: 'success' });
+    if (imp.results.length) renderDone(); else { setStep('upload'); renderUpload(); }
+  } catch (err) { toast(err.message, { type: 'error' }); } finally { if (button) button.classList.remove('is-loading'); }
+}
 async function reparse(f) {
   try {
     await api(`/api/statements/${f.statementId}/reparse`, { method: 'POST', body: {} });
@@ -548,6 +563,7 @@ function renderDone() {
         ${tot.unc ? `<a class="btn btn-primary" href="/review.html?mode=merchant">${icon('inbox', 'ico-sm')}Review ${fmtNumber(tot.unc)} charge${tot.unc === 1 ? '' : 's'}</a>` : `<a class="btn btn-primary" href="/transactions.html?range=all">${icon('list', 'ico-sm')}View transactions</a>`}
         <a class="btn btn-secondary" href="/transactions.html?statement=${imp.results[imp.results.length - 1].statementId}&range=all">See imported rows</a>
         <button type="button" class="btn btn-ghost" data-act="restart">Import another</button>
+        <button type="button" class="btn btn-ghost text-danger" data-act="undo-import" data-sid="${imp.results[imp.results.length - 1].statementId}">${icon('rotate-ccw', 'ico-sm')}Undo this import</button>
       </div></div>`;
 }
 

@@ -507,6 +507,14 @@ def discard_statement(st, delete_transactions=False):
     deleted = 0
     with db.transaction():
         if delete_transactions:
+            # a transfer partner outside this statement must not stay flagged as paired
+            db.execute(
+                """UPDATE transactions p SET transfer_pair_id = NULL,
+                       is_transfer = CASE WHEN c.kind = 'transfer' THEN p.is_transfer ELSE FALSE END,
+                       is_excluded = CASE WHEN c.kind = 'transfer' THEN p.is_excluded ELSE FALSE END
+                   FROM transactions t LEFT JOIN categories c ON c.id = p.category_id
+                   WHERE t.statement_id = %s AND p.id = t.transfer_pair_id AND p.statement_id IS DISTINCT FROM %s""",
+                (sid, sid), commit=False)
             deleted = db.execute("DELETE FROM transactions WHERE statement_id = %s", (sid,), commit=False)
         db.execute("DELETE FROM import_rows WHERE statement_id = %s", (sid,), commit=False)
         db.execute("DELETE FROM statements WHERE id = %s", (sid,), commit=False)
