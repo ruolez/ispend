@@ -80,3 +80,22 @@ class ListModelsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TruncatedAnswerTest(unittest.TestCase):
+    def test_length_cutoff_reports_reasoning_starvation(self):
+        payload = {"choices": [{"finish_reason": "length", "message": {"content": "{"}}],
+                   "usage": {"completion_tokens_details": {"reasoning_tokens": 15}}}
+        fake = mock.Mock(status_code=200, json=lambda: payload, text="")
+        with mock.patch("requests.post", return_value=fake):
+            with self.assertRaises(openrouter.OpenRouterError) as ctx:
+                openrouter.chat_json("s", "u", model_id="m", key="k")
+        self.assertIn("ran out of tokens", str(ctx.exception))
+        self.assertIn("15", str(ctx.exception))
+
+    def test_request_asks_for_low_reasoning_effort(self):
+        payload = {"choices": [{"finish_reason": "stop", "message": {"content": "{\"ok\": true}"}}], "usage": {}}
+        fake = mock.Mock(status_code=200, json=lambda: payload, text="")
+        with mock.patch("requests.post", return_value=fake) as post:
+            openrouter.chat_json("s", "u", model_id="m", key="k")
+        self.assertEqual(post.call_args.kwargs["json"]["reasoning"], {"effort": "low"})

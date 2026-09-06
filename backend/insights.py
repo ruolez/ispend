@@ -93,7 +93,7 @@ def generate(uid, start, end, force=False, account_ids=None):
     model_id = openrouter.model(uid)
     started = time.time()
     try:
-        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, json.dumps(context, default=str), max_tokens=2500,
+        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, json.dumps(context, default=str), max_tokens=5000,
                                              temperature=0.4, user_id=uid)
         clean = _validate(parsed)
     except OpenRouterError as e:

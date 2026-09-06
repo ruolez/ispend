@@ -61,7 +61,7 @@ def _call(uid, rows, cats):
     model_id = openrouter.model(uid)
     started = time.time()
     try:
-        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, build_prompt(rows, cats), max_tokens=120 * len(rows) + 200,
+        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, build_prompt(rows, cats), max_tokens=200 * len(rows) + 1500,
                                              user_id=uid)
     except OpenRouterError as e:
         openrouter.log_call(uid, "categorize", model_id, len(rows), None, "error", str(e),

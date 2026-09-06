@@ -102,6 +102,14 @@ def list_models(force=False):
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.S)
 
 
+def _looks_complete_json(text):
+    try:
+        json.loads(text)
+        return True
+    except ValueError:
+        return False
+
+
 def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, timeout=None, key=None, user_id=None):
     """Chat completion that must return a JSON object. Returns (parsed, usage)."""
     model_id = model_id or model(user_id)
@@ -113,6 +121,9 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
         "max_tokens": max_tokens,
         "temperature": temperature,
         "response_format": {"type": "json_object"},
+        # Reasoning models spend completion tokens on hidden thinking before the JSON answer;
+        # keep that to a minimum so the budget goes to the actual reply.
+        "reasoning": {"effort": "low"},
     }
     try:
         resp = requests.post(
@@ -135,10 +146,16 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
         msg = err.get("message") if isinstance(err, dict) else str(err or resp.text[:200])
         raise OpenRouterError(f"OpenRouter error {code}: {msg}")
     try:
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError):
         raise OpenRouterError("OpenRouter response had no content")
     text = _FENCE.sub("", (content or "").strip())
+    if choice.get("finish_reason") == "length" and not _looks_complete_json(text):
+        used = ((data.get("usage") or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
+        hint = f" ({used} of them on hidden reasoning)" if used else ""
+        raise OpenRouterError(f"The model ran out of tokens before finishing its answer{hint}. "
+                              "Try a model with less reasoning overhead, or a larger token budget.")
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -155,7 +172,7 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
 def test_connection(key=None, model_id=None, user_id=None):
     started = time.time()
     parsed, usage = chat_json(
-        "Reply with a JSON object {\"ok\": true}.", "ping", model_id=model_id, max_tokens=20, key=key, timeout=30,
+        "Reply with a JSON object {\"ok\": true}.", "ping", model_id=model_id, max_tokens=600, key=key, timeout=45,
         user_id=user_id,
     )
     return {"ok": True, "model": model_id or model(user_id), "latency_ms": int((time.time() - started) * 1000),
