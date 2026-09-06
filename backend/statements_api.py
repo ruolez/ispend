@@ -35,6 +35,15 @@ def _statement_json(st):
     return out
 
 
+def _predicted(statement_id):
+    """Live 'Already known' counts for the preview: how each valid row got its category."""
+    out = {"rule": 0, "merchant": 0, "builtin": 0, "manual": 0, "none": 0}
+    for r in db.query("SELECT category_source AS s, COUNT(*) AS n FROM import_rows WHERE statement_id = %s AND is_valid "
+                      "GROUP BY category_source", (statement_id,)) or []:
+        out[r["s"] if r["s"] in out else "none"] += r["n"]
+    return out
+
+
 def _detail(st):
     out = _statement_json(st)
     if st["status"] in ("previewed", "committing"):
@@ -88,6 +97,8 @@ def _detail(st):
         out["rows_limit"] = limit
         import bank_profiles
         out["profile_options"] = [{"key": p.key, "label": p.label, "country": p.country} for p in bank_profiles.all_profiles()]
+    if st.get("status") == "previewed":
+        out["stats"] = {**(out.get("stats") or {}), "predicted": _predicted(st["id"])}
     return out
 
 
@@ -199,6 +210,21 @@ def put_rows(statement_id):
     if st["status"] != "previewed":
         return api_error("Rows can only be changed while previewing", 409)
     data = request.get_json(silent=True) or {}
+    if "category_id" in data:
+        ids = parse_int_list(data.get("row_ids"))
+        if not ids:
+            return api_error("row_ids is required")
+        cid = data.get("category_id")
+        if cid is not None:
+            cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (cid, session["user_id"]), one=True)
+            if not cat:
+                return api_error("Category not found", 404)
+        n = db.execute(
+            """UPDATE import_rows SET category_id = %s, category_source = %s, category_rule_id = NULL
+               WHERE statement_id = %s AND id = ANY(%s) AND is_valid""",
+            (cid, "manual" if cid is not None else None, statement_id, ids))
+        audit("statement.rows.category", {"id": statement_id, "rows": n, "category_id": cid})
+        return jsonify({"updated": n, **_detail(_get(statement_id))})
     include = bool(data.get("include", True))
     if data.get("all"):
         sql = "UPDATE import_rows SET include = %s WHERE statement_id = %s AND is_valid"

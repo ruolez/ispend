@@ -291,9 +291,10 @@ def recompute_dupes(statement_id, account_id):
     st = _load(statement_id)
     if not st or st["status"] != "previewed":
         return
-    rows = db.query("SELECT id, txn_date, description, amount, is_valid FROM import_rows WHERE statement_id = %s ORDER BY row_index",
-                    (statement_id,))
+    rows = db.query("SELECT id, txn_date, description, amount, is_valid, category_id, category_source FROM import_rows "
+                    "WHERE statement_id = %s ORDER BY row_index", (statement_id,))
     rows = [dict(r) for r in rows]
+    manual = {r["id"]: r["category_id"] for r in rows if r.get("category_source") == "manual" and r.get("category_id")}
     flipped = _should_auto_flip(st, account_id, [r["amount"] for r in rows if r["is_valid"]])
     if flipped:
         for r in rows:
@@ -310,14 +311,17 @@ def recompute_dupes(statement_id, account_id):
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
     _categorize_rows(st["user_id"], account_id, staged)
+    for s_ in staged:
+        if s_["id"] in manual:  # a category chosen by hand in the preview survives re-detection
+            s_["category_id"], s_["category_source"], s_["category_rule_id"] = manual[s_["id"]], "manual", None
     with db.transaction():
         for s in staged:
             dup = existing.get((s["fingerprint"], s["occurrence"]))
             db.execute(
                 """UPDATE import_rows SET fingerprint = %s, occurrence = %s, duplicate_of = %s, in_file_duplicate = %s,
-                       include = %s, category_id = %s, amount = %s WHERE id = %s""",
+                       include = %s, category_id = %s, category_source = %s, category_rule_id = %s, amount = %s WHERE id = %s""",
                 (s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1, s["row"].is_valid and dup is None,
-                 s["category_id"], s["row"].amount, s["id"]), commit=False,
+                 s["category_id"], s.get("category_source"), s.get("category_rule_id"), s["row"].amount, s["id"]), commit=False,
             )
         stats = dict(st["stats"] or {})
         stats.update(_preview_stats(staged, existing))
@@ -393,6 +397,7 @@ def _commit_locked(st, account):
     events, inserted_ids, uncategorized_ids = [], [], []
     skipped_dupes = 0
     values, meta = [], {}
+    manual_learn = {}
     for s in staged:
         r, m = s["row"], s["merchant"]
         if (s["fingerprint"], s["occurrence"]) in existing:
@@ -414,6 +419,10 @@ def _commit_locked(st, account):
         confidence = getattr(d, "confidence", None) if category_id else None
         is_transfer = bool(getattr(d, "is_transfer", False))
         is_excluded = bool(getattr(d, "is_excluded", False)) or is_transfer
+        if r.get("category_source") == "manual" and r.get("category_id"):
+            # the user set this category in the preview: it wins and is remembered
+            category_id, status, source, rule_id, confidence = r["category_id"], "confirmed", "manual", None, 1.0
+            manual_learn[m.key] = category_id
         values.append((
             uid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
             r["description"] or "", m.clean, m.key, m.name, category_id, status, source, rule_id, confidence,
@@ -482,6 +491,12 @@ def _commit_locked(st, account):
             result["ai_queued"] = False
             stats["ai_queued"] = False
             db.execute("UPDATE statements SET stats = %s WHERE id = %s", (json.dumps(stats, default=str), sid))
+    for key, cid in manual_learn.items():
+        try:
+            categorizer.learn(uid, key, cid)
+        except Exception:
+            log.debug("learn failed for %s", key, exc_info=True)
+
     return result
 
 

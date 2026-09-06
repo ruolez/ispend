@@ -46,11 +46,14 @@ function setStep(step) {
 }
 function accountName(id) { const a = imp.accounts.find((x) => x.id === Number(id)); return a ? a.name : ''; }
 const SOURCE_LABEL = { rule: 'from one of your rules', merchant: 'remembered from an earlier import', builtin: 'built-in suggestion' };
-function catChip(id, source) {
+function catChip(id, source, rowId) {
   const c = imp.cats.get(Number(id));
-  if (!c) return `<span class="catchip catchip--empty"><i class="dot"></i><span class="catchip-label">Uncategorized</span></span>`;
-  const why = SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : '';
-  return `<span class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}" title="${esc(c.path + why)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : ''}</span>`;
+  const act = rowId != null ? ` data-act="pick-cat" data-row="${rowId}" title="Click to change the category"` : '';
+  const tag = rowId != null ? 'button type="button"' : 'span';
+  const close = rowId != null ? 'button' : 'span';
+  if (!c) return `<${tag} class="catchip catchip--empty"${act}><i class="dot"></i><span class="catchip-label">Uncategorized</span></${close}>`;
+  const why = SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
+  return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} title="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
 }
 
 /* ---------- Step 1: upload ---------- */
@@ -248,7 +251,7 @@ function signCheck(s) {
     <div class="signcheck">
       <div class="sc-item"><span class="sc-label">Charges</span><span class="sc-value amt amt--expense">${fmtMoney(sm.charges.sum, cur)}</span><span class="sc-sub">${plural(sm.charges.n, 'charge')}</span></div>
       <div class="sc-item"><span class="sc-label">Payments / income</span><span class="sc-value amt amt--income">${fmtMoney(sm.payments.sum, cur, { sign: 'always' })}</span><span class="sc-sub">${plural(sm.payments.n, 'payment')}</span></div>
-      ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); if (p.builtin) parts.push(`${p.builtin} hints`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>`; })()}
+      ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0) + (p.manual || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.manual) parts.push(`${p.manual} set by you`); if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); if (p.builtin) parts.push(`${p.builtin} hints`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>`; })()}
       <div class="grow"></div>
       <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" title="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
     </div>
@@ -312,7 +315,7 @@ function previewTable(s) {
       <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid ? 'checked' : ''} ${!r.is_valid ? 'disabled' : ''} aria-label="Include row"></td>
       <td class="num nowrap">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
       <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
-      <td>${r.is_valid ? catChip(r.category_id, r.category_source) : ''}</td>
+      <td>${r.is_valid ? catChip(r.category_id, r.category_source, r.id) : ''}</td>
       <td class="right"><span class="amt ${r.amount > 0 ? 'amt--income' : 'amt--expense'}">${r.amount != null ? fmtMoney(r.amount, cur, { sign: 'always' }) : '<span class="text-danger">—</span>'}</span></td>
     </tr>`;
   }).join('');
@@ -401,6 +404,7 @@ async function onImportClick(e) {
     case 'flip-signs': if (f) { const m = readMappingFromDom(f.statement); m.flip_sign = !((f.statement.mapping || {}).flip_sign); return applyMapping(f, m); } return;
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;
+    case 'pick-cat': if (f) return pickRowCategory(f, btn, Number(btn.dataset.row)); return;
     case 'ai-extract': if (f) return aiExtract(f, btn); return;
     case 'discard': if (f) return discard(f); return;
     case 'commit': if (f) return commit(f); return;
@@ -440,6 +444,24 @@ async function aiExtract(f, button) {
     toast(r.added ? `AI added ${fmtNumber(r.added)} transaction${r.added === 1 ? '' : 's'} · review dates and signs before importing` : 'AI found no additional transactions', { type: r.added ? 'success' : 'info', duration: 7000 });
   } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
   finally { if (button) button.classList.remove('is-loading'); }
+}
+async function pickRowCategory(f, anchor, rowId) {
+  const rows = f.statement.rows || [];
+  const row = rows.find((r) => r.id === rowId); if (!row) return;
+  categoryPicker({
+    anchor, value: row.category_id, allowNone: !!row.category_id,
+    onPick: async (cat) => {
+      const same = rows.filter((r) => r.is_valid && r.merchant_name && r.merchant_name === row.merchant_name);
+      const ids = (same.length > 1 ? same : [row]).map((r) => r.id);
+      try {
+        const res = await api(`/api/statements/${f.statementId}/rows`, { method: 'PUT', body: { row_ids: ids, category_id: cat ? cat.id : null } });
+        if (cat && !imp.cats.has(cat.id)) imp.cats.set(cat.id, cat);
+        f.statement = { ...f.statement, ...res };
+        renderReview();
+        toast(cat ? `${esc(cat.name)} set for ${ids.length === 1 ? 'this row' : `${ids.length} rows from ${esc(row.merchant_name)}`} · it will be remembered` : 'Category cleared', { type: 'success' });
+      } catch (err) { toast(err.message, { type: 'error' }); }
+    },
+  });
 }
 async function reparse(f) {
   try {
