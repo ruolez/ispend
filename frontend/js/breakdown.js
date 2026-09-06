@@ -39,16 +39,16 @@
     return Array.from(parents.values()).filter((p) => p.total > 0 || p.count > 0).sort((a, b) => b.total - a.total);
   }
 
-  function deltaHtml(cur, prev, currency) {
+  function deltaHtml(cur, prev, currency, upIsGood = false) {
     if (!prev) return '<span class="bd-delta text-4">new</span>';
     const pct = (cur - prev) / prev;
     const dir = Math.abs(pct) < 0.005 ? 'flat' : pct > 0 ? 'up' : 'down';
-    const cls = dir === 'up' ? 'is-bad' : dir === 'down' ? 'is-good' : '';
+    const cls = dir === 'flat' ? '' : ((dir === 'up') === upIsGood ? 'is-good' : 'is-bad');
     const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '–';
     return `<span class="bd-delta ${cls}" title="Previous period: ${esc(fmtMoney(prev, currency))}">${arrow} ${esc(fmtPct(Math.abs(pct)))}</span>`;
   }
 
-  function renderBreakdown(host, { rows, prevRows, total, currency, range, storageKey, categories, showHeader = true }) {
+  function renderBreakdown(host, { rows, prevRows, total, currency, range, storageKey, categories, showHeader = true, upIsGood = false }) {
     const cur = currency || 'USD';
     const tree = buildTree(rows || [], prevRows || [], categories || []);
     const grand = total || tree.reduce((s, p) => s + p.total, 0);
@@ -67,7 +67,7 @@
           <td class="bd-name"><span class="bd-chev">${hasKids ? icon('chevron-right', 'ico-sm') : ''}</span><span class="cat-icon" style="--c:${color(p.color)}">${icon(p.icon || 'tag')}</span><a class="bd-link" href="${link(p.id)}">${esc(p.name)}</a>${hasKids ? `<span class="bd-kids text-4">${p.children.length}</span>` : ''}</td>
           <td class="bd-share"><span class="share-bar" style="--c:${color(p.color)}"><span style="width:${(share * 100).toFixed(1)}%"></span></span><span class="pct">${fmtPct(share)}</span></td>
           <td class="right num col-count">${fmtNumber(p.count)}</td>
-          <td class="right col-delta">${deltaHtml(p.total, p.prev, cur)}</td>
+          <td class="right col-delta">${deltaHtml(p.total, p.prev, cur, upIsGood)}</td>
           <td class="right num fw-500">${fmtMoney(p.total, cur)}</td></tr>`;
         if (!hasKids || !open) return head;
         const kids = [];
@@ -77,7 +77,7 @@
           <td class="bd-name"><span class="bd-indent"></span><span class="dot" style="--c:${color(c.color || p.color)}"></span><a class="bd-link ${c.direct ? 'text-3' : ''}" href="${link(c.id)}">${esc(c.name)}</a></td>
           <td class="bd-share"><span class="share-bar is-sub" style="--c:${color(c.color || p.color)}"><span style="width:${grand ? (c.total / grand * 100).toFixed(1) : 0}%"></span></span><span class="pct text-4">${fmtPct(grand ? c.total / grand : 0)}</span></td>
           <td class="right num col-count text-3">${fmtNumber(c.count)}</td>
-          <td class="right col-delta">${c.direct ? '' : deltaHtml(c.total, c.prev, cur)}</td>
+          <td class="right col-delta">${c.direct ? '' : deltaHtml(c.total, c.prev, cur, upIsGood)}</td>
           <td class="right num">${fmtMoney(c.total, cur)}</td></tr>`).join('');
       }).join('');
       host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl bd-table">

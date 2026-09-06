@@ -22,10 +22,12 @@
       <button type="button" class="tab" role="tab" data-tab="trend">Trend</button>
       <button type="button" class="tab" role="tab" data-tab="merchants">Merchants</button>
       <button type="button" class="tab" role="tab" data-tab="compare">Compare months</button>
+      <button type="button" class="tab" role="tab" data-tab="cashflow">Cash flow</button>
     </div>
     <div class="filter-row" id="filter-row">
       <button type="button" class="btn btn-secondary" id="range-btn"></button>
       <button type="button" class="btn btn-secondary" id="acct-btn"></button>
+      <div class="seg" id="flow-seg" title="Report money out or money in"><button type="button" class="seg-btn active" data-flow="spending">Spending</button><button type="button" class="seg-btn" data-flow="income">Income</button></div>
       <div class="seg" id="months-seg"><button type="button" class="seg-btn" data-months="6">6m</button><button type="button" class="seg-btn active" data-months="12">12m</button><button type="button" class="seg-btn" data-months="24">24m</button></div>
       <label class="switch switch-sm filter-switch" title="Count transfers between your own accounts and excluded transactions as spending or income"><input type="checkbox" id="incl-transfers"><span class="switch-track"></span>Include transfers</label>
       <span class="hint grow" id="filter-hint">Transfers and excluded transactions are left out.</span>
@@ -35,6 +37,7 @@
     <section class="tab-panel" data-panel="trend" id="panel-trend"></section>
     <section class="tab-panel" data-panel="merchants" id="panel-merchants"></section>
     <section class="tab-panel" data-panel="compare" id="panel-compare"></section>
+    <section class="tab-panel" data-panel="cashflow" id="panel-cashflow"></section>
   </main>
   <script src="/js/api.js"></script>
   <script src="/js/format.js"></script>

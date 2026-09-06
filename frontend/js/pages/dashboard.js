@@ -112,6 +112,7 @@ async function load() {
   loadBreakdown(data.range);
   renderMonthly(data);
   renderDonut(data);
+  renderIncome(data);
   renderRecent(data);
   renderAttention(data);
 }
@@ -124,21 +125,25 @@ function renderKpis(data) {
     spent: data.monthly.map((m) => m.spent),
     income: data.monthly.map((m) => m.income),
     net: data.monthly.map((m) => m.net),
+    saved: data.monthly.map((m) => (m.income > 0 ? m.net / m.income : 0)),
   };
+  const rate = k.income > 0 ? k.net / k.income : null;
+  const ratePrev = k.income_prev > 0 && k.net_prev != null ? k.net_prev / k.income_prev : null;
+  const rateDelta = rate != null && ratePrev != null ? ratePoints(rate - ratePrev) : null;
   const defs = [
     { key: 'spent', label: 'Spent', value: fmtMoney(k.spent, cur), delta: fmtDelta(k.spent, k.spent_prev), goodWhen: 'down', color: '--accent' },
     { key: 'income', label: 'Income', value: fmtMoney(k.income, cur), delta: fmtDelta(k.income, k.income_prev), goodWhen: 'up', color: '--success' },
     { key: 'net', label: 'Net', value: fmtMoney(k.net, cur, { sign: 'always' }), delta: fmtDelta(k.net, k.net_prev), goodWhen: 'up', color: k.net >= 0 ? '--success' : '--danger' },
-    { key: 'txn', label: 'Transactions', value: fmtNumber(k.txn_count), delta: null },
+    { key: 'saved', label: 'Savings rate', value: rate == null ? '—' : fmtPct(rate), delta: rateDelta, goodWhen: 'up', color: rate == null || rate >= 0 ? '--success' : '--danger', idle: rate == null ? 'No income in this period' : 'of income kept' },
   ];
   defs.forEach((d) => {
     const el = $(`#kpis .stat[data-kpi="${d.key}"]`);
-    el.querySelector('.stat-label').textContent = d.label + (d.key !== 'txn' ? '' : ` · ${data.range.label.toLowerCase()}`);
+    el.querySelector('.stat-label').textContent = d.label;
     el.querySelector('.stat-value').textContent = d.value;
     const deltaEl = el.querySelector('.stat-delta');
     if (!d.delta || d.delta.dir === 'flat' || d.delta.pct == null) {
       deltaEl.className = 'stat-delta';
-      deltaEl.innerHTML = d.delta && d.delta.dir === 'flat' && d.delta.pct != null ? `${icon('minus')} No change <span class="stat-delta-vs">vs previous</span>` : `<span class="stat-delta-vs">${d.key === 'txn' ? 'in this period' : 'No previous period'}</span>`;
+      deltaEl.innerHTML = d.delta && d.delta.dir === 'flat' && d.delta.pct != null ? `${icon('minus')} No change <span class="stat-delta-vs">vs previous</span>` : `<span class="stat-delta-vs">${d.idle || 'No previous period'}</span>`;
     } else {
       const good = d.delta.dir === d.goodWhen;
       deltaEl.className = `stat-delta ${good ? 'stat-delta--good' : 'stat-delta--bad'}`;
@@ -159,6 +164,28 @@ function renderKpis(data) {
     }
     el.classList.remove('is-loading');
   });
+}
+
+function ratePoints(diff) {
+  const pts = Math.abs(diff) * 100;
+  const dir = pts < 0.05 ? 'flat' : (diff > 0 ? 'up' : 'down');
+  return { dir, pct: diff, text: `${pts.toFixed(1)} pts` };
+}
+
+/* ---------- Income ---------- */
+function renderIncome(data) {
+  const inc = data.income; const cur = state.currency; const host = $('#income-body'); if (!host || !inc) return;
+  $('#inc-label').textContent = `${fmtMoney(inc.total, cur)} · ${data.range.label}`;
+  if (!inc.categories.length) { host.innerHTML = ui.emptyState({ icon: 'trending-up', title: 'No income in this period', body: 'Deposits filed under Income (Salary, Interest, Refunds…) show up here.' }); return; }
+  const { start, end } = data.range;
+  const max = Math.max(...inc.categories.map((c) => c.total));
+  const cats = inc.categories.map((c) => { const color = catColor(c.color || 'muted'); return `<a class="inc-row" href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: start, to: end })}">
+      <span class="cat-icon" style="--c:${color}">${icon(c.icon || 'tag')}</span><span class="inc-name">${esc(c.name)}</span>
+      <span class="inc-bar" style="--c:${color}"><span style="width:${max ? (c.total / max * 100).toFixed(1) : 0}%"></span></span>
+      <span class="inc-pct">${fmtPct(c.pct / 100)}</span><b class="num">${fmtMoney(c.total, cur)}</b></a>`; }).join('');
+  const srcs = inc.sources.map((s) => `<a class="inc-row inc-row--src" href="/transactions.html${toQuery({ q: s.merchant_name, from: start, to: end })}">
+      <span class="inc-name">${esc(s.merchant_name)}</span><span class="sub">${plural(s.count, 'deposit')}${s.count > 1 ? ` · avg ${fmtMoney(s.avg, cur)}` : ''}</span><b class="num amt amt--income">${fmtMoney(s.total, cur)}</b></a>`).join('');
+  host.innerHTML = `<div class="income-grid"><div><div class="section-label">By category</div>${cats}</div><div><div class="section-label">Top sources</div>${srcs || '<div class="hint">No deposits in this period.</div>'}</div></div>`;
 }
 
 /* ---------- Monthly bar ---------- */

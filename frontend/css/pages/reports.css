@@ -32,3 +32,8 @@
 .cmp-swap { margin-bottom: 2px; }
 .cmp-quick { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
 .compare-row .hint { flex-basis: 100%; }
+
+/* cash flow tab */
+#panel-cashflow .stat-grid { margin-bottom: var(--sp-4); }
+.rate--good { color: var(--success); }
+.rate--bad { color: var(--danger); }

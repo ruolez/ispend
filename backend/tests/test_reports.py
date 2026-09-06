@@ -82,8 +82,11 @@ class DashboardAssemblyTest(unittest.TestCase):
                                                   "color": "c1", "balance": Decimal("-10.00"), "last_txn_date": date(2026, 1, 10)}]),
             ("ORDER BY t.txn_date DESC, t.id DESC LIMIT 10", [{"id": 9, "txn_date": date(2026, 1, 10), "amount": Decimal("-5.00")}]),
         ])
+        income_cats = [_cat(20 + i, 1000.0 - i) for i in range(8)]
+        sources = [{"merchant_key": "GUSTO", "merchant_name": "Gusto", "count": 2, "total": 900.0, "avg": 450.0}]
         with mock.patch.object(reports, "summary", side_effect=[cur, prev]) as summ, \
-                mock.patch.object(reports, "by_category", return_value=cats), \
+                mock.patch.object(reports, "by_category", side_effect=[cats, income_cats]) as bycat, \
+                mock.patch.object(reports, "top_merchants", return_value=sources) as merch, \
                 mock.patch.object(reports, "trends", return_value=trend), \
                 mock.patch.object(reports, "recurring_summary", return_value={"count": 1, "monthly_total": 9.99, "next": []}), \
                 mock.patch.object(reports, "today", return_value=JAN15), \
@@ -96,6 +99,10 @@ class DashboardAssemblyTest(unittest.TestCase):
         self.assertEqual(out["top_categories"][-1]["total"], 93.0 + 92.0)
         self.assertEqual(out["top_categories"][-1]["count"], 7 + 8)
         self.assertEqual(out["monthly"], [{"month": "2026-01", "spent": 500.0, "income": 900.0, "net": 400.0}])
+        self.assertEqual(out["income"], {"total": 900.0, "previous": 800.0, "categories": income_cats[:6], "sources": sources})
+        self.assertEqual(bycat.call_args_list[1].kwargs, {"flow": "income"})
+        self.assertEqual(bycat.call_args_list[1].args, (7, date(2026, 1, 1), date(2026, 1, 31), "sub", [1]))
+        self.assertEqual(merch.call_args, mock.call(7, date(2026, 1, 1), date(2026, 1, 31), 6, [1], flow="income"))
         self.assertEqual(out["review_count"], {"uncategorized": 3, "suggested": 2})
         self.assertEqual(out["accounts"][0]["balance"], -10.0)
         self.assertEqual(out["recent"][0]["amount"], -5.0)
@@ -109,12 +116,14 @@ class DashboardAssemblyTest(unittest.TestCase):
         router = _stubs.Router([("FILTER (WHERE category_id IS NULL", {"uncategorized": 0, "suggested": 0})])
         with mock.patch.object(reports, "summary", return_value=cur), \
                 mock.patch.object(reports, "by_category", return_value=[]), \
+                mock.patch.object(reports, "top_merchants", return_value=[]), \
                 mock.patch.object(reports, "trends", return_value=[]), \
                 mock.patch.object(reports, "recurring_summary", return_value={}), \
                 mock.patch.object(reports, "today", return_value=JAN15), \
                 mock.patch.object(reports, "db", FAKE), mock.patch.object(FAKE, "query", side_effect=router):
             out = reports.dashboard(7, "all")
         self.assertEqual((out["kpis"]["spent_prev"], out["kpis"]["net_prev"], out["top_categories"]), (None, None, []))
+        self.assertEqual(out["income"], {"total": 0.0, "previous": None, "categories": [], "sources": []})
 
 
 if __name__ == "__main__":

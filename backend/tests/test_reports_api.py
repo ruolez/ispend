@@ -195,3 +195,46 @@ class IncludeTransfersTest(unittest.TestCase):
                 reports_api.by_category()
             sql = " ".join(q.call_args.args[0].split())
             self.assertEqual("NOT t.is_transfer" in sql, expect_excluded, path)
+
+
+class FlowTest(unittest.TestCase):
+    CALLS = [
+        ("by_category", lambda flow: reports.by_category(1, date(2026, 8, 1), date(2026, 8, 31), "top", None, flow=flow)),
+        ("monthly_by_category", lambda flow: reports.monthly_by_category(1, 3, None, flow=flow)),
+        ("top_merchants", lambda flow: reports.top_merchants(1, date(2026, 8, 1), date(2026, 8, 31), 5, None, flow=flow)),
+        ("month_over_month", lambda flow: reports.month_over_month(1, "2026-08", None, flow=flow)),
+    ]
+
+    def _sql(self, fn, flow):
+        with mock.patch.object(DB, "query", return_value=[], create=True) as q, \
+                mock.patch.object(reports, "today", return_value=NOW):
+            fn(flow)
+        return " ".join(q.call_args_list[0].args[0].split())
+
+    def test_income_flow_sums_positive_amounts(self):
+        for name, fn in self.CALLS:
+            with self.subTest(report=name):
+                sql = self._sql(fn, "income")
+                self.assertIn("t.amount > 0", sql)
+                self.assertNotIn("-t.amount", sql)
+                self.assertIn("NOT t.is_transfer AND NOT t.is_excluded", sql)
+
+    def test_default_flow_is_spending(self):
+        for name, fn in self.CALLS:
+            with self.subTest(report=name):
+                sql = self._sql(fn, "spending")
+                self.assertIn("t.amount < 0", sql)
+                self.assertIn("-t.amount", sql)
+
+    def test_endpoint_flow_param(self):
+        app = Flask(__name__)
+        app.secret_key = "test"
+        app.register_blueprint(reports_api.bp)
+        for path, expect in (("/api/reports/top-merchants?flow=income", "t.amount > 0"),
+                             ("/api/reports/top-merchants?flow=bogus", "t.amount < 0"),
+                             ("/api/reports/by-category?flow=income", "t.amount > 0")):
+            with app.test_request_context(path), mock.patch.object(DB, "query", return_value=[], create=True) as q:
+                session["user_id"] = 1
+                out = reports_api.top_merchants() if "merchants" in path else reports_api.by_category()
+            self.assertIn(expect, " ".join(q.call_args_list[0].args[0].split()), path)
+            self.assertEqual(json.loads(out.get_data())["flow"], "income" if "flow=income" in path else "spending")

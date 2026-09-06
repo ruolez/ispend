@@ -45,6 +45,11 @@ def _inc():
     return request.args.get("include_transfers") in ("1", "true")
 
 
+def _flow():
+    """flow=income reports money in by category/source instead of spending."""
+    return "income" if request.args.get("flow") == "income" else "spending"
+
+
 @bp.get("/dashboard")
 @login_required
 def dashboard():
@@ -69,10 +74,11 @@ def summary():
 def by_category():
     r = _range()
     level = "sub" if request.args.get("level") == "sub" else "top"
-    rows = reports.by_category(_uid(), r["start"], r["end"], level, _accounts(), include_transfers=_inc())
+    flow = _flow()
+    rows = reports.by_category(_uid(), r["start"], r["end"], level, _accounts(), include_transfers=_inc(), flow=flow)
     if _wants_csv():
-        return _csv_response(rows, "spending-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
-    return jsonify({"range": reports.range_json(r), "level": level, "categories": rows,
+        return _csv_response(rows, f"{flow}-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
+    return jsonify({"range": reports.range_json(r), "level": level, "flow": flow, "categories": rows,
                     "total": round(sum(c["total"] for c in rows), 2)})
 
 
@@ -89,7 +95,8 @@ def monthly():
         parent_id = int(parent_id) if parent_id else None
     except ValueError:
         return api_error("parent_id must be an integer")
-    data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id)
+    data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id,
+                                       flow=_flow())
     if _wants_csv():
         rows = []
         for s in data["series"]:
@@ -98,7 +105,7 @@ def monthly():
             rows.append(row)
         rows.append({"category": "Total", "total": round(sum(data["totals"]), 2),
                      **{m: v for m, v in zip(data["months"], data["totals"])}})
-        return _csv_response(rows, "spending-by-month.csv", ["category", "total", *data["months"]])
+        return _csv_response(rows, f"{data['flow']}-by-month.csv", ["category", "total", *data["months"]])
     return jsonify(data)
 
 
@@ -123,18 +130,19 @@ def top_merchants():
         limit = int(request.args.get("limit", 20))
     except ValueError:
         return api_error("limit must be an integer")
-    rows = reports.top_merchants(_uid(), r["start"], r["end"], limit, _accounts(), include_transfers=_inc())
+    flow = _flow()
+    rows = reports.top_merchants(_uid(), r["start"], r["end"], limit, _accounts(), include_transfers=_inc(), flow=flow)
     if _wants_csv():
-        return _csv_response(rows, "top-merchants.csv",
+        return _csv_response(rows, "income-sources.csv" if flow == "income" else "top-merchants.csv",
                              ["merchant_name", "count", "total", "avg", "pct", "last_date", "category_id", "merchant_key"])
-    return jsonify({"range": reports.range_json(r), "merchants": rows})
+    return jsonify({"range": reports.range_json(r), "flow": flow, "merchants": rows})
 
 
 @bp.get("/month-over-month")
 @login_required
 def month_over_month():
     data = reports.month_over_month(_uid(), request.args.get("month"), _accounts(), include_transfers=_inc(),
-                                    vs=request.args.get("vs"))
+                                    vs=request.args.get("vs"), flow=_flow())
     if _wants_csv():
         rows = [*data["categories"], {"name": "Total", **data["totals"]}]
         return _csv_response(rows, f"compare-{data['month']}-vs-{data['previous_month']}.csv",

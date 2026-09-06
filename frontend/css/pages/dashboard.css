@@ -60,3 +60,19 @@
 .legend-drill { margin-left: 4px; color: var(--text-4); vertical-align: middle; }
 #donut-head h2 { margin: 0; }
 .donut-legend .legend-item .legend-val { display: inline-flex; align-items: center; white-space: nowrap; flex: 0 0 auto; }
+
+/* income card */
+.income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6); }
+.income-grid .section-label { margin-bottom: 4px; }
+.inc-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 110px 44px 96px; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; font-size: var(--fs-base); }
+.inc-row--src { grid-template-columns: minmax(0, 1fr) auto 96px; }
+.inc-row:last-child { border-bottom: 0; }
+.inc-row:hover { text-decoration: none; }
+.inc-row:hover .inc-name { color: var(--accent); }
+.inc-row .inc-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inc-row .inc-pct { font-size: var(--fs-xs); color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+.inc-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.inc-row .sub { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+.inc-bar { display: block; height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+.inc-bar > span { display: block; height: 100%; background: var(--c, var(--success)); border-radius: inherit; }
+@media (max-width: 760px) { .income-grid { grid-template-columns: 1fr; } .inc-row { grid-template-columns: 24px minmax(0, 1fr) 44px 96px; } .inc-row .inc-bar { display: none; } }

@@ -16,9 +16,20 @@ CASHFLOW = "t.user_id = %s AND NOT t.is_transfer AND NOT t.is_excluded"
 _NOT_TRANSFER = " AND NOT t.is_transfer AND NOT t.is_excluded"
 
 
+def flow_where(flow="spending", include_transfers=False):
+    """Money out (spending) or money in (income) for this user; transfers/excluded rows drop out
+    unless include_transfers."""
+    sign = "t.amount > 0" if flow == "income" else "t.amount < 0"
+    return f"t.user_id = %s AND {sign}" + ("" if include_transfers else _NOT_TRANSFER)
+
+
 def spending_where(include_transfers=False):
-    """Money out for this user; transfers/excluded rows drop out unless include_transfers."""
-    return "t.user_id = %s AND t.amount < 0" + ("" if include_transfers else _NOT_TRANSFER)
+    return flow_where("spending", include_transfers)
+
+
+def _amt(flow):
+    """Positive magnitude expression for the flow being reported."""
+    return "t.amount" if flow == "income" else "-t.amount"
 
 
 def cashflow_where(include_transfers=False):
@@ -178,15 +189,15 @@ def _cat_row(r, total_all):
     }
 
 
-def by_category(uid, start, end, level="top", account_ids=None, include_transfers=False):
+def by_category(uid, start, end, level="top", account_ids=None, include_transfers=False, flow="spending"):
     acct_sql, acct_params = _acct(account_ids)
-    where = spending_where(include_transfers)
+    where = flow_where(flow, include_transfers)
     if level == "sub":
         select = "c.id, c.name, c.color, c.icon, c.parent_id"
     else:
         select = "g.id, g.name, g.color, g.icon, g.parent_id"
     rows = db.query(
-        f"""SELECT {select}, SUM(-t.amount) AS total, COUNT(*) AS count
+        f"""SELECT {select}, SUM({_amt(flow)}) AS total, COUNT(*) AS count
             FROM transactions t {_CAT_JOIN}
             WHERE {where} AND t.txn_date BETWEEN %s AND %s{acct_sql}
             GROUP BY {select}
@@ -206,7 +217,8 @@ def _month_list(months, end=None):
     return out
 
 
-def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None):
+def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None,
+                        flow="spending"):
     """Top-level categories by month; with parent_id, that category's subcategories by month
     (charges filed directly on the parent appear as 'Directly in <parent>')."""
     months = max(1, min(int(months or 12), 60))
@@ -220,9 +232,9 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
             f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
                        c.id AS category_id,
                        CASE WHEN c.id = %s THEN 'Directly in ' || c.name ELSE c.name END AS name,
-                       c.color, SUM(-t.amount) AS total
+                       c.color, SUM({_amt(flow)}) AS total
                 FROM transactions t JOIN categories c ON c.id = t.category_id
-                WHERE {spending_where(include_transfers)} AND t.txn_date >= %s
+                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s
                   AND c.user_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
                 GROUP BY 1, 2, 3, 4""",
             (parent_id, uid, first, uid, parent_id, parent_id, *acct_params),
@@ -230,9 +242,9 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
     else:
         rows = db.query(
             f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
-                       g.id AS category_id, g.name, g.color, SUM(-t.amount) AS total
+                       g.id AS category_id, g.name, g.color, SUM({_amt(flow)}) AS total
                 FROM transactions t {_CAT_JOIN}
-                WHERE {spending_where(include_transfers)} AND t.txn_date >= %s{acct_sql}
+                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s{acct_sql}
                 GROUP BY 1, 2, 3, 4""",
             (uid, first, *acct_params),
         )
@@ -262,7 +274,7 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
     if other:
         series.append(other)
     totals = [round(sum(s["values"][j] for s in series), 2) for j in range(len(month_keys))]
-    return {"months": month_keys, "series": series, "totals": totals, "parent_id": parent_id}
+    return {"months": month_keys, "series": series, "totals": totals, "parent_id": parent_id, "flow": flow}
 
 
 def trends(uid, months=12, account_ids=None, include_transfers=False):
@@ -290,13 +302,14 @@ def trends(uid, months=12, account_ids=None, include_transfers=False):
     return out
 
 
-def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers=False):
+def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers=False, flow="spending"):
     acct_sql, acct_params = _acct(account_ids)
     limit = max(1, min(int(limit or 20), 200))
-    where = spending_where(include_transfers)
+    where = flow_where(flow, include_transfers)
+    amt = _amt(flow)
     rows = db.query(
         f"""SELECT t.merchant_key, MAX(t.merchant_name) AS merchant_name, COUNT(*) AS count,
-                   SUM(-t.amount) AS total, AVG(-t.amount) AS avg, MAX(t.txn_date) AS last_date,
+                   SUM({amt}) AS total, AVG({amt}) AS avg, MAX(t.txn_date) AS last_date,
                    mode() WITHIN GROUP (ORDER BY t.category_id) AS category_id
             FROM transactions t
             WHERE {where} AND t.txn_date BETWEEN %s AND %s{acct_sql}
@@ -311,7 +324,7 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
         month_keys = _month_list(6)
         fy, fm = (int(x) for x in month_keys[0].split("-"))
         srows = db.query(
-            f"""SELECT t.merchant_key, to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month, SUM(-t.amount) AS total
+            f"""SELECT t.merchant_key, to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month, SUM({amt}) AS total
                 FROM transactions t
                 WHERE {where} AND t.txn_date >= %s AND t.merchant_key = ANY(%s){acct_sql}
                 GROUP BY 1, 2""",
@@ -335,7 +348,7 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
     return out
 
 
-def month_over_month(uid, month=None, account_ids=None, include_transfers=False, vs=None):
+def month_over_month(uid, month=None, account_ids=None, include_transfers=False, vs=None, flow="spending"):
     """Compare one month with another (default: the month before it)."""
     y, m = parse_month(month)
     cur_start, cur_end = month_bounds(y, m)
@@ -349,10 +362,10 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False,
     acct_sql, acct_params = _acct(account_ids)
     rows = db.query(
         f"""SELECT g.id, g.name, g.color, g.icon,
-                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN -t.amount END), 0) AS current,
-                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN -t.amount END), 0) AS previous
+                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_amt(flow)} END), 0) AS current,
+                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_amt(flow)} END), 0) AS previous
             FROM transactions t {_CAT_JOIN}
-            WHERE {spending_where(include_transfers)} AND (t.txn_date BETWEEN %s AND %s OR t.txn_date BETWEEN %s AND %s){acct_sql}
+            WHERE {flow_where(flow, include_transfers)} AND (t.txn_date BETWEEN %s AND %s OR t.txn_date BETWEEN %s AND %s){acct_sql}
             GROUP BY g.id, g.name, g.color, g.icon
             ORDER BY current DESC, previous DESC""",
         (cur_start, cur_end, prev_start, prev_end, uid, cur_start, cur_end, prev_start, prev_end, *acct_params),
@@ -371,7 +384,7 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False,
         })
     delta = round(tot_cur - tot_prev, 2)
     return {
-        "month": f"{y:04d}-{m:02d}", "previous_month": f"{py:04d}-{pm:02d}",
+        "month": f"{y:04d}-{m:02d}", "previous_month": f"{py:04d}-{pm:02d}", "flow": flow,
         "categories": cats,
         "totals": {"current": round(tot_cur, 2), "previous": round(tot_prev, 2), "delta": delta,
                    "pct": round(delta / tot_prev * 100, 1) if tot_prev else None},
@@ -461,6 +474,11 @@ def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=No
                     "pct": round(sum(c["pct"] for c in rest), 1)})
     monthly = [{"month": m["month"], "spent": m["expenses"], "income": m["income"], "net": m["net"]}
                for m in trends(uid, 12, account_ids)]
+    income = {
+        "total": cur["income"], "previous": prev["income"] if prev else None,
+        "categories": by_category(uid, r["start"], r["end"], "sub", account_ids, flow="income")[:6],
+        "sources": top_merchants(uid, r["start"], r["end"], 6, account_ids, flow="income"),
+    }
     acct_sql, acct_params = _acct(account_ids)
     recent = rows_json(db.query(
         f"""SELECT t.id, t.txn_date, t.amount, t.currency, t.merchant_name, t.description_clean, t.account_id,
@@ -497,6 +515,7 @@ def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=No
             "txn_count": cur["txn_count"],
         },
         "top_categories": top,
+        "income": income,
         "monthly": monthly,
         "recent": recent,
         "review_count": {"uncategorized": review["uncategorized"], "suggested": review["suggested"]},

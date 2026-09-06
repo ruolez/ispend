@@ -36,7 +36,7 @@
       <div class="stat is-loading" data-kpi="spent"><div class="stat-label">Spent</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
       <div class="stat is-loading" data-kpi="income"><div class="stat-label">Income</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
       <div class="stat is-loading" data-kpi="net"><div class="stat-label">Net</div><div class="stat-value">$0</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
-      <div class="stat is-loading" data-kpi="txn"><div class="stat-label">Transactions</div><div class="stat-value">0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading" data-kpi="saved"><div class="stat-label">Savings rate</div><div class="stat-value">0%</div><div class="stat-delta">—</div><canvas class="stat-spark" aria-hidden="true"></canvas><span class="skel stat-skel"></span></div>
     </div>
 
     <div id="dash-body">
@@ -54,6 +54,11 @@
           </div>
         </section>
       </div>
+
+      <section class="card mt-4" id="income-card">
+        <header class="card-head"><h2>Income · <span id="inc-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/reports.html?flow=income">Income report</a></div></header>
+        <div class="card-body pt-0" id="income-body"></div>
+      </section>
 
       <section class="card mt-4">
         <header class="card-head"><h2>Category breakdown · <span id="bd-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/reports.html?tab=category">Full report</a></div></header>
