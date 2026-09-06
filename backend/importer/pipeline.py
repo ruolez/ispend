@@ -292,7 +292,7 @@ def recompute_dupes(statement_id, account_id):
     st = _load(statement_id)
     if not st or st["status"] != "previewed":
         return
-    rows = db.query("SELECT id, txn_date, description, amount, is_valid, category_id, category_source FROM import_rows "
+    rows = db.query("SELECT id, txn_date, description, amount, is_valid, category_id, category_source, raw FROM import_rows "
                     "WHERE statement_id = %s ORDER BY row_index", (statement_id,))
     rows = [dict(r) for r in rows]
     manual = {r["id"]: r["category_id"] for r in rows if r.get("category_source") == "manual" and r.get("category_id")}
@@ -321,7 +321,8 @@ def recompute_dupes(statement_id, account_id):
             db.execute(
                 """UPDATE import_rows SET fingerprint = %s, occurrence = %s, duplicate_of = %s, in_file_duplicate = %s,
                        include = %s, category_id = %s, category_source = %s, category_rule_id = %s, amount = %s WHERE id = %s""",
-                (s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1, s["row"].is_valid and dup is None,
+                (s["fingerprint"], s["occurrence"], dup, s["occurrence"] > 1 or s["row"].raw.get("twin_of") is not None,
+                 s["row"].is_valid and dup is None and s["row"].raw.get("twin_of") is None,
                  s["category_id"], s.get("category_source"), s.get("category_rule_id"), s["row"].amount, s["id"]), commit=False,
             )
         stats = dict(st["stats"] or {})
@@ -347,6 +348,7 @@ class _RowShim:
         self.amount = r["amount"]
         self.description = r["description"] or ""
         self.is_valid = bool(r["is_valid"])
+        self.raw = r.get("raw") or {}
 
 
 def commit_statement(statement_id, account_id):
@@ -509,11 +511,14 @@ def discard_statement(st, delete_transactions=False):
         if delete_transactions:
             # a transfer partner outside this statement must not stay flagged as paired
             db.execute(
-                """UPDATE transactions p SET transfer_pair_id = NULL,
-                       is_transfer = CASE WHEN c.kind = 'transfer' THEN p.is_transfer ELSE FALSE END,
-                       is_excluded = CASE WHEN c.kind = 'transfer' THEN p.is_excluded ELSE FALSE END
-                   FROM transactions t LEFT JOIN categories c ON c.id = p.category_id
-                   WHERE t.statement_id = %s AND p.id = t.transfer_pair_id AND p.statement_id IS DISTINCT FROM %s""",
+                """UPDATE transactions p SET transfer_pair_id = NULL, updated_at = now(),
+                       is_transfer = p.is_transfer AND EXISTS (
+                           SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.kind = 'transfer'),
+                       is_excluded = p.is_excluded AND EXISTS (
+                           SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.kind = 'transfer')
+                   WHERE p.statement_id IS DISTINCT FROM %s
+                     AND p.id IN (SELECT transfer_pair_id FROM transactions
+                                  WHERE statement_id = %s AND transfer_pair_id IS NOT NULL)""",
                 (sid, sid), commit=False)
             deleted = db.execute("DELETE FROM transactions WHERE statement_id = %s", (sid,), commit=False)
         db.execute("DELETE FROM import_rows WHERE statement_id = %s", (sid,), commit=False)

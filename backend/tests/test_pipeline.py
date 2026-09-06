@@ -153,3 +153,17 @@ class CommitStatementTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RowShimTest(unittest.TestCase):
+    def test_preview_stats_counts_twins_on_staged_import_rows(self):
+        base = {"txn_date": date(2026, 5, 1), "description": "GUSTO PAYROLL", "amount": Decimal("100"), "is_valid": True}
+        ledger = pipeline._RowShim({**base, "id": 1, "raw": {"balance": "1.00"}})
+        twin = pipeline._RowShim({**base, "id": 2, "raw": {"twin_of": 0}})
+        no_raw = pipeline._RowShim({**base, "id": 3})
+        staged = [{"id": r.description, "fingerprint": f"fp{i}", "occurrence": 1, "row": r, "category_id": None}
+                  for i, r in enumerate((ledger, twin, no_raw))]
+        self.assertEqual(pipeline._preview_stats(staged, {}), {
+            "rows_total": 3, "rows_valid": 3, "rows_invalid": 0, "dupes_existing": 0, "dupes_in_file": 1,
+            "predicted": {"rule": 0, "merchant": 0, "builtin": 0, "none": 3},
+        })
