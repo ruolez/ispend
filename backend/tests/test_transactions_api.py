@@ -72,6 +72,12 @@ class BuildFiltersTest(unittest.TestCase):
         self.assertEqual(params, [1, date(2026, 2, 1)])
         self.assertNotIn("<=", sql)
 
+    def test_month_preset_bounds_the_query(self):
+        sql, params = tapi.build_filters({"range": "month:2026-08"}, 1)
+        self.assertEqual(params, [1, date(2026, 8, 1), date(2026, 8, 31)])
+        self.assertIn("t.txn_date >= %s", sql)
+        self.assertIn("t.txn_date <= %s", sql)
+
     def test_junk_is_ignored(self):
         sql, params = tapi.build_filters({"account_id": "x", "min": "abc", "statement_id": "nope"}, 1)
         self.assertEqual((sql, params), (" t.user_id = %s", [1]))

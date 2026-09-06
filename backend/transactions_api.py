@@ -104,7 +104,7 @@ def build_filters(args, user_id):
     d_from = _parse_date(args.get("from"))
     d_to = _parse_date(args.get("to"))
     rng = args.get("range")
-    if rng in RANGES and not (d_from or d_to):
+    if rng and (rng in RANGES or rng.startswith("month:")) and not (d_from or d_to):
         d_from, d_to = range_bounds(rng)
     if d_from:
         sql += " AND t.txn_date >= %s"
