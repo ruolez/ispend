@@ -42,7 +42,7 @@ def _detail(st):
         limit = min(int(request.args.get("limit") or ROW_LIMIT_DEFAULT), ROW_LIMIT_MAX)
         rows = db.query(
             """SELECT r.id, r.row_index, r.txn_date, r.posted_date, r.description, r.amount, r.balance, r.merchant_name,
-                      r.occurrence, r.duplicate_of, r.in_file_duplicate, r.is_valid, r.include, r.category_id, category_source, r.problems,
+                      r.occurrence, r.duplicate_of, r.in_file_duplicate, r.is_valid, r.include, r.category_id, r.category_source, r.problems,
                       t.txn_date AS dup_date, t.description_raw AS dup_description, t.amount AS dup_amount
                FROM import_rows r LEFT JOIN transactions t ON t.id = r.duplicate_of
                WHERE r.statement_id = %s ORDER BY r.row_index OFFSET %s LIMIT %s""",
