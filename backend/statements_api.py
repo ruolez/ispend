@@ -231,6 +231,14 @@ def put_rows(statement_id):
     if st["status"] != "previewed":
         return api_error("Rows can only be changed while previewing", 409)
     data = request.get_json(silent=True) or {}
+    if data.get("confirm_suggestions"):
+        # built-in hints become the user's own choice: confirmed at commit and learned into memory
+        n = db.execute(
+            """UPDATE import_rows SET category_source = 'manual'
+               WHERE statement_id = %s AND is_valid AND category_id IS NOT NULL AND category_source = 'builtin'""",
+            (statement_id,))
+        audit("statement.rows.confirm_suggestions", {"id": statement_id, "rows": n})
+        return jsonify({"updated": n, **_detail(_get(statement_id))})
     if "category_id" in data:
         ids = parse_int_list(data.get("row_ids"))
         if not ids:

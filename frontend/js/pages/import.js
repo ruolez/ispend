@@ -56,8 +56,8 @@ function catChip(id, source, rowId) {
   const tag = rowId != null ? 'button type="button"' : 'span';
   const close = rowId != null ? 'button' : 'span';
   if (!c) return `<${tag} class="catchip catchip--empty"${act}><i class="dot"></i><span class="catchip-label">Uncategorized</span></${close}>`;
-  const why = SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
-  return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} title="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
+  const why = source === 'builtin' ? ' · suggested — will need confirming in Review unless you confirm it here' : SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
+  return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} title="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}${source === 'builtin' ? '<span class="chip-q">?</span>' : ''}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
 }
 
 /* ---------- Step 1: upload ---------- */
@@ -256,7 +256,7 @@ function signCheck(s) {
     <div class="signcheck">
       <div class="sc-item"><span class="sc-label">Charges</span><span class="sc-value amt amt--expense">${fmtMoney(sm.charges.sum, cur)}</span><span class="sc-sub">${plural(sm.charges.n, 'charge')}</span></div>
       <div class="sc-item"><span class="sc-label">Payments / income</span><span class="sc-value amt amt--income">${fmtMoney(sm.payments.sum, cur, { sign: 'always' })}</span><span class="sc-sub">${plural(sm.payments.n, 'payment')}</span></div>
-      ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0) + (p.manual || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.manual) parts.push(`${p.manual} set by you`); if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); if (p.builtin) parts.push(`${p.builtin} hints`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>`; })()}
+      ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0) + (p.manual || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.manual) parts.push(`${p.manual} set by you`); if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>${p.builtin ? `<div class="sc-item"><span class="sc-label">Suggested</span><span class="sc-value text-warning">${p.builtin}</span><span class="sc-sub">guessed from keywords · <button type="button" class="btn btn-secondary btn-xs" data-act="confirm-suggestions">${icon('check', 'ico-sm')}Confirm all ${p.builtin}</button></span></div>` : ''}`; })()}
       <div class="grow"></div>
       <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" title="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
     </div>
@@ -415,6 +415,7 @@ async function onImportClick(e) {
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;
     case 'pick-cat': if (f) return pickRowCategory(f, btn, Number(btn.dataset.row)); return;
+    case 'confirm-suggestions': if (f) return confirmSuggestions(f, btn); return;
     case 'ai-extract': if (f) return aiExtract(f, btn); return;
     case 'discard': if (f) return discard(f); return;
     case 'commit': if (f) return commit(f); return;
@@ -470,6 +471,15 @@ async function aiExtract(f, button) {
   } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
   finally { if (button) button.classList.remove('is-loading'); }
 }
+async function confirmSuggestions(f, button) {
+  if (button) button.classList.add('is-loading');
+  try {
+    const res = await api(`/api/statements/${f.statementId}/rows`, { method: 'PUT', body: { confirm_suggestions: true } });
+    f.statement = { ...f.statement, ...res };
+    renderReview();
+    toast(`${fmtNumber(res.updated)} suggestion${res.updated === 1 ? '' : 's'} confirmed · they will be remembered for next time`, { type: 'success' });
+  } catch (err) { toast(err.message, { type: 'error' }); } finally { if (button) button.classList.remove('is-loading'); }
+}
 async function pickRowCategory(f, anchor, rowId) {
   const rows = f.statement.rows || [];
   const row = rows.find((r) => r.id === rowId); if (!row) return;
@@ -522,7 +532,7 @@ async function commit(f) {
 /* ---------- Step 3: done ---------- */
 function renderDone() {
   const host = $('#step-done');
-  const tot = imp.results.reduce((a, r) => ({ imported: a.imported + (r.imported || 0), dup: a.dup + (r.skipped_duplicates || 0), unc: a.unc + ((r.categorized || {}).uncategorized || 0) + ((r.categorized || {}).suggested || 0), rule: a.rule + ((r.categorized || {}).rule || 0) + ((r.categorized || {}).merchant || 0) + ((r.categorized || {}).manual || 0) }), { imported: 0, dup: 0, unc: 0, rule: 0 });
+  const tot = imp.results.reduce((a, r) => ({ imported: a.imported + (r.imported || 0), dup: a.dup + (r.skipped_duplicates || 0), unc: a.unc + ((r.categorized || {}).uncategorized || 0) + ((r.categorized || {}).suggested || 0), sugg: (a.sugg || 0) + ((r.categorized || {}).suggested || 0), rule: a.rule + ((r.categorized || {}).rule || 0) + ((r.categorized || {}).merchant || 0) + ((r.categorized || {}).manual || 0) }), { imported: 0, dup: 0, unc: 0, rule: 0 });
   host.innerHTML = `<div class="card done-card">
       <div class="done-icon">${icon('check')}</div>
       <h2 style="font-size:var(--fs-xl)">Import complete</h2>
@@ -530,7 +540,7 @@ function renderDone() {
       <div class="done-stats">
         <div><div class="n">${fmtNumber(tot.imported)}</div><div class="l">transactions imported</div></div>
         <div><div class="n">${fmtNumber(tot.rule)}</div><div class="l">categorized automatically</div></div>
-        <div><div class="n ${tot.unc ? 'text-warning' : ''}">${fmtNumber(tot.unc)}</div><div class="l">need a category</div></div>
+        <div><div class="n ${tot.unc ? 'text-warning' : ''}">${fmtNumber(tot.unc)}</div><div class="l">${tot.unc && tot.unc === tot.sugg ? 'to confirm' : 'need a category'}</div></div>
         ${tot.dup ? `<div><div class="n text-3">${fmtNumber(tot.dup)}</div><div class="l">duplicates skipped</div></div>` : ''}
       </div>
       ${imp.results.some((r) => r.ai_queued) ? `<div class="notice mt-2 mb-4" style="text-align:left">${icon('sparkles')}<div>AI suggestions are being prepared for the remaining charges. They appear in Review shortly.</div></div>` : ''}

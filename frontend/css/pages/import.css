@@ -81,3 +81,6 @@
 .parsing-card .spinner-lg { flex: 0 0 auto; }
 
 .chip-src { margin-left: 4px; color: var(--text-4); }
+
+.chip-q { margin-left: 3px; color: var(--warning); font-weight: 700; }
+.catchip--suggested { border: 1px dashed var(--border-strong); background: var(--info-soft); }
