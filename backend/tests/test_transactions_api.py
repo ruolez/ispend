@@ -72,6 +72,11 @@ class BuildFiltersTest(unittest.TestCase):
         self.assertEqual(params, [1, date(2026, 2, 1)])
         self.assertNotIn("<=", sql)
 
+    def test_flow_filters_debits_or_credits(self):
+        self.assertEqual(tapi.build_filters({"flow": "out"}, 1), (" t.user_id = %s AND t.amount < 0", [1]))
+        self.assertEqual(tapi.build_filters({"flow": "in"}, 1), (" t.user_id = %s AND t.amount > 0", [1]))
+        self.assertEqual(tapi.build_filters({"flow": "sideways"}, 1), (" t.user_id = %s", [1]))
+
     def test_month_preset_bounds_the_query(self):
         sql, params = tapi.build_filters({"range": "month:2026-08"}, 1)
         self.assertEqual(params, [1, date(2026, 8, 1), date(2026, 8, 31)])

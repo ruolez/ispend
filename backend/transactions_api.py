@@ -128,6 +128,11 @@ def build_filters(args, user_id):
         sql += " AND t.is_transfer"
     elif status == "excluded":
         sql += " AND t.is_excluded"
+    flow = args.get("flow")
+    if flow == "in":
+        sql += " AND t.amount > 0"
+    elif flow == "out":
+        sql += " AND t.amount < 0"
     transfers_mode = args.get("transfers") or "include"
     if transfers_mode == "exclude":
         sql += " AND NOT t.is_transfer"

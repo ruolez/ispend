@@ -16,7 +16,7 @@ const EVENT_TEXT = {
 const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off' };
 
 const tx = {
-  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' },
+  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' },
   items: [], byId: new Map(), cursor: null, total: 0, sumIn: 0, sumOut: 0, facets: null,
   loading: false, done: false, seq: 0,
   selection: new Set(), focus: -1,
@@ -42,6 +42,7 @@ initNav('transactions').then(async () => {
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   $('#f-status').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); });
+  $('#f-flow').addEventListener('click', (e) => { const b = e.target.closest('[data-flow]'); if (!b) return; tx.filters.flow = tx.filters.flow === b.dataset.flow ? '' : b.dataset.flow; applyFilters(); });
   $('#tx-table thead').addEventListener('click', (e) => { const th = e.target.closest('th.sortable'); if (th) toggleSort(th.dataset.sort); });
   $('#tx-check-all').addEventListener('change', (e) => { if (e.target.checked) tx.items.forEach((i) => tx.selection.add(i.id)); else tx.selection.clear(); paintSelection(); });
   $('#tx-body').addEventListener('click', onRowClick);
@@ -88,6 +89,7 @@ function readUrl() {
   tx.filters.acct = (q.acct || '').split(',').filter(Boolean).map(Number);
   tx.filters.cat = (q.cat || '').split(',').filter(Boolean);
   tx.filters.status = STATUS_OPTS.some(([k]) => k === q.status) ? q.status : 'all';
+  tx.filters.flow = ['in', 'out'].includes(q.flow) ? q.flow : '';
   tx.filters.q = q.q || '';
   tx.filters.sort = q.sort || SORT_DEFAULT;
   tx.filters.statement = q.statement || '';
@@ -95,18 +97,18 @@ function readUrl() {
 }
 function writeUrl() {
   const f = tx.filters;
-  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, open: null });
+  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, open: null });
 }
 function queryParams(extra = {}) {
   const f = tx.filters;
-  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, ...extra };
+  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, ...extra };
 }
 function hasFilters() {
   const f = tx.filters;
-  return f.acct.length || f.cat.length || f.status !== 'all' || f.q || f.statement || f.transfers || (f.range && f.range.preset !== 'this-month');
+  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || (f.range && f.range.preset !== 'this-month');
 }
 function clearFilters() {
-  tx.filters = { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' };
+  tx.filters = { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' };
   $('#f-q').value = '';
   applyFilters();
 }
@@ -136,6 +138,7 @@ function paintToolbar() {
     const n = st && k === 'uncategorized' ? st.uncategorized : st && k === 'suggested' ? st.suggested : st && k === 'transfer' ? st.transfer : null;
     return `<button type="button" class="seg-btn ${f.status === k ? 'active' : ''}" data-status="${k}" aria-pressed="${f.status === k}">${l}${n ? `<span class="pill pill-soft count">${fmtNumber(n)}</span>` : ''}</button>`;
   }).join('');
+  $$('#f-flow .seg-btn').forEach((b) => { const on = b.dataset.flow === f.flow; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
   $('#f-clear').hidden = !hasFilters();
   $$('#tx-table th.sortable').forEach((th) => {
     const k = th.dataset.sort;
