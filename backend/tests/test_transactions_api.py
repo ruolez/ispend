@@ -142,6 +142,21 @@ class ListEndpointTest(unittest.TestCase):
         self.assertEqual(body["sum_out"], -4.5)
         self.assertEqual(body["facets"]["categories"], [{"id": None, "n": 1}, {"id": 5, "n": 2}])
         self.assertEqual(body["facets"]["status"]["uncategorized"], 1)
+        self.assertEqual(body["skipped"], {"count": 0, "sum": 0.0})
+
+    def test_totals_leave_out_transfers_and_excluded_rows(self):
+        seen = []
+
+        def handler(sql, params, one):
+            if "COUNT(*) AS total" in sql:
+                seen.append(" ".join(sql.split()))
+                return {"total": 0, "sum_in": 0, "sum_out": 0, "sum_skipped": Decimal("750.00"), "skipped": 2}
+            return {} if one else []
+        with patch_db(FakeDB(handler)):
+            body = json.loads(self.client.get("/api/transactions").get_data())
+        self.assertIn("CASE WHEN t.amount > 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END", seen[0])
+        self.assertIn("CASE WHEN t.amount < 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END", seen[0])
+        self.assertEqual(body["skipped"], {"count": 2, "sum": 750.0})
 
     def test_list_scopes_by_user(self):
         seen = []

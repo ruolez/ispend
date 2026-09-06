@@ -185,7 +185,7 @@ async function loadMore(first = false) {
   try {
     const r = await api('/api/transactions' + toQuery(params));
     if (seq !== tx.seq) return;
-    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.facets = r.facets; tx.currencies = r.currencies || [];
+    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
     tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
     const startIdx = tx.items.length;
     r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
@@ -206,7 +206,7 @@ function paintSummary() {
   const curs = tx.currencies && tx.currencies.length ? tx.currencies : (tx.items.length ? [currencyOf(tx.items[0])] : []);
   const cur = curs[0] || tx.displayCurrency || 'USD';
   const mixed = curs.length > 1;
-  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span><span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span><span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span><span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
+  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span><span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span><span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span><span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>${tx.skipped.count ? `<span class="text-3" title="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
 $('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); });
 

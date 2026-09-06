@@ -206,8 +206,10 @@ def list_transactions():
         next_cursor = encode_cursor(items[-1], sort)
     totals = db.query(
         f"""SELECT COUNT(*) AS total,
-                   COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount END), 0) AS sum_in,
-                   COALESCE(SUM(CASE WHEN t.amount < 0 THEN t.amount END), 0) AS sum_out,
+                   COALESCE(SUM(CASE WHEN t.amount > 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END), 0) AS sum_in,
+                   COALESCE(SUM(CASE WHEN t.amount < 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END), 0) AS sum_out,
+                   COALESCE(SUM(abs(t.amount)) FILTER (WHERE t.is_transfer OR t.is_excluded), 0) AS sum_skipped,
+                   COUNT(*) FILTER (WHERE t.is_transfer OR t.is_excluded) AS skipped,
                    COUNT(*) FILTER (WHERE t.category_id IS NULL AND NOT t.is_transfer) AS uncategorized,
                    COUNT(*) FILTER (WHERE t.category_status = 'suggested') AS suggested,
                    COUNT(*) FILTER (WHERE t.is_transfer) AS transfer
@@ -231,6 +233,7 @@ def list_transactions():
         "total": totals.get("total", 0),
         "sum_in": float(totals.get("sum_in") or 0),
         "sum_out": float(totals.get("sum_out") or 0),
+        "skipped": {"count": totals.get("skipped") or 0, "sum": float(totals.get("sum_skipped") or 0)},
         "facets": {
             "accounts": [dict(r) for r in acct_facets],
             "categories": [dict(r) for r in cat_facets],
