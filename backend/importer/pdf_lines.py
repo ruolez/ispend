@@ -167,6 +167,11 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
             amt_word = _amount_word(line, bal_text)
             if amt_word is not None:
                 raw["amt_x0"] = amt_word
+            if bal_text and line.words:
+                try:
+                    raw["bal_x0"] = float(line.words[-1]["x0"])
+                except (KeyError, TypeError, ValueError):
+                    pass
             unsigned = value is not None and mode == default_mode == "as_is" and not re.search(r"[-()]|\bCR\b", amt_text)
             rows.append(ParsedRow(
                 row_index=idx, txn_date=txn_date, posted_date=posted, description=desc, amount=amount,
@@ -206,6 +211,7 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
                 continue
         continuation = 2
     _infer_column_signs(unsigned_rows)
+    reconcile_with_balances(rows)
     mark_ledger_twins(rows)
     return rows
 
@@ -225,13 +231,19 @@ def _infer_column_signs(rows, min_gap=40.0):
     """Bank statements often print unsigned amounts in separate Withdrawals | Deposits columns.
     When the amount x-positions on a page form two clusters, the left cluster is money out.
     Judged per page: a deposit-ticket listing on another page must not be read as a column."""
-    by_page = {}
+    by_page, bal_x = {}, {}
     for i, r in enumerate(rows):
         if r.raw.get("amt_x0") is not None:
             by_page.setdefault(r.raw.get("page"), []).append((r.raw["amt_x0"], i))
-    for xs in by_page.values():
+        if r.raw.get("bal_x0") is not None:
+            bal_x.setdefault(r.raw.get("page"), []).append(r.raw["bal_x0"])
+    for page, xs in by_page.items():
+        # an "amount" printed where this page prints balances is a misread line, not a column
+        if bal_x.get(page):
+            bx = statistics.median(bal_x[page])
+            xs = [(x, i) for x, i in xs if abs(x - bx) > 8]
         xs.sort()
-        if len(xs) < 3:
+        if len(xs) < 2:
             continue
         gaps = [(xs[i + 1][0] - xs[i][0], i) for i in range(len(xs) - 1)]
         gap, at = max(gaps)
@@ -241,6 +253,49 @@ def _infer_column_signs(rows, min_gap=40.0):
         for x, i in xs:
             if x <= left_x and rows[i].amount is not None and rows[i].amount > 0:
                 rows[i].amount = -rows[i].amount
+
+
+def reconcile_with_balances(rows, tol=Decimal("0.01")):
+    """Use the running balance as a cross-check on ledger statements. When most consecutive rows
+    satisfy prev_balance + amount == balance, the exceptions are repaired: a flipped sign, or a
+    line whose only number was really the balance (a penny deposit such as 'ACH Deposit .01')."""
+    seq = [r for r in rows if r.is_valid and r.amount is not None and r.raw.get("twin_of") is None]
+    if len(seq) < 4:
+        return 0
+    checks = ok = 0
+    prev = None
+    for r in seq:
+        if prev is not None and r.balance is not None:
+            checks += 1
+            if abs(prev + r.amount - r.balance) <= tol:
+                ok += 1
+        if r.balance is not None:
+            prev = r.balance
+    if checks < 3 or ok / checks < 0.6:
+        return 0
+    fixed = 0
+    prev = None
+    for i, r in enumerate(seq):
+        if prev is not None:
+            if r.balance is not None and abs(prev + r.amount - r.balance) > tol:
+                if abs(prev - r.amount - r.balance) <= tol:
+                    r.amount = -r.amount
+                    r.raw["reconciled"] = "sign"
+                    fixed += 1
+            elif r.balance is None:
+                # the number we took as the amount may be the balance: does the next row chain from it?
+                nxt = seq[i + 1] if i + 1 < len(seq) else None
+                candidate = r.amount
+                if nxt is not None and nxt.balance is not None and abs(candidate + nxt.amount - nxt.balance) <= tol \
+                        and abs(prev + candidate - candidate) > tol:
+                    implied = (candidate - prev).quantize(Decimal("0.01"))
+                    if implied != 0:
+                        r.balance, r.amount = candidate, implied
+                        r.raw["reconciled"] = "balance"
+                        fixed += 1
+        if r.balance is not None:
+            prev = r.balance
+    return fixed
 
 
 def mark_ledger_twins(rows):

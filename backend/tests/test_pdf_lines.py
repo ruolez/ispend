@@ -196,3 +196,35 @@ class DepositTicketPageTest(unittest.TestCase):
             (date(2026, 6, 30), "9000.00", False, True),
             (date(2026, 7, 6), "5000.00", False, True),
         ])
+
+
+class BalanceReconciliationTest(unittest.TestCase):
+    def _rows(self, lines):
+        from datetime import date
+        L = lambda t, top: pdf_lines.Line(text=t, top=top, x0=109.3, x1=500.0, words=[], page=1)
+        return pdf_lines.rows_to_transactions([L(t, i * 10) for i, t in enumerate(lines)], None, (date(2026, 6, 9), date(2026, 7, 8)))
+
+    def test_penny_deposit_amount_is_parsed(self):
+        rows = self._rows(["07-13 ' ACH Deposit .01 21,777.11"])
+        self.assertEqual((str(rows[0].amount), str(rows[0].balance)), ("0.01", "21777.11"))
+
+    def test_running_balance_repairs_a_misread_line(self):
+        rows = self._rows([
+            "06-30 Deposit 9,000.00 15,346.29",
+            "07-01 ' ACH Withdrawal -800.00 14,546.29",
+            "07-06 Deposit 5,000.00 19,546.29",
+            "07-10 ' Zelle Credit 20.00 19,566.29",
+            "07-13 ' ACH Deposit GUSTO 19,566.30",       # only one number: it is the balance, amount is 0.01
+            "07-14 ' ACH Withdrawal -100.00 19,466.30",
+        ])
+        r = rows[4]
+        self.assertEqual((str(r.amount), str(r.balance), r.raw.get("reconciled")), ("0.01", "19566.30", "balance"))
+
+    def test_running_balance_flips_a_wrong_sign(self):
+        rows = self._rows([
+            "06-30 Deposit 9,000.00 15,346.29",
+            "07-01 ' ACH Withdrawal 800.00 14,546.29",   # printed unsigned but the balance went down
+            "07-06 Deposit 5,000.00 19,546.29",
+            "07-10 ' Zelle Credit 20.00 19,566.29",
+        ])
+        self.assertEqual((str(rows[1].amount), rows[1].raw.get("reconciled")), ("-800.00", "sign"))

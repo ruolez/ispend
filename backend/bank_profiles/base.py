@@ -82,7 +82,7 @@ def build_mapping_from_format(fmt, header_row, header_index):
     return m
 
 
-MONEY_RE = r"\(?-?\$?\s?[\d,]*\d\.\d{2}\)?(?:\s?CR)?-?"
+MONEY_RE = r"\(?-?\$?\s?(?:[\d,]*\d)?\.\d{2}\)?(?:\s?CR)?-?"  # ".01" penny deposits count too
 DATE_RE = r"\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?"
 DATE_TXT_RE = r"[A-Z][a-z]{2}\.? \d{1,2}(?:,? \d{4})?"
 
