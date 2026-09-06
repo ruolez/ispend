@@ -522,7 +522,7 @@ async function commit(f) {
 /* ---------- Step 3: done ---------- */
 function renderDone() {
   const host = $('#step-done');
-  const tot = imp.results.reduce((a, r) => ({ imported: a.imported + (r.imported || 0), dup: a.dup + (r.skipped_duplicates || 0), unc: a.unc + ((r.categorized || {}).uncategorized || 0) + ((r.categorized || {}).suggested || 0), rule: a.rule + ((r.categorized || {}).rule || 0) + ((r.categorized || {}).merchant || 0) }), { imported: 0, dup: 0, unc: 0, rule: 0 });
+  const tot = imp.results.reduce((a, r) => ({ imported: a.imported + (r.imported || 0), dup: a.dup + (r.skipped_duplicates || 0), unc: a.unc + ((r.categorized || {}).uncategorized || 0) + ((r.categorized || {}).suggested || 0), rule: a.rule + ((r.categorized || {}).rule || 0) + ((r.categorized || {}).merchant || 0) + ((r.categorized || {}).manual || 0) }), { imported: 0, dup: 0, unc: 0, rule: 0 });
   host.innerHTML = `<div class="card done-card">
       <div class="done-icon">${icon('check')}</div>
       <h2 style="font-size:var(--fs-xl)">Import complete</h2>

@@ -12,7 +12,9 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("review", __name__, url_prefix="/api/review")
 
-QUEUE_WHERE = "t.user_id = %s AND NOT t.is_transfer AND (t.category_id IS NULL OR t.category_status = 'suggested')"
+# Needs a decision: no category yet (transfers excepted), or a category that is only a suggestion —
+# including suggested transfers, which still deserve a confirmation.
+QUEUE_WHERE = "t.user_id = %s AND ((t.category_id IS NULL AND NOT t.is_transfer) OR t.category_status = 'suggested')"
 
 
 @bp.get("/count")

@@ -392,7 +392,7 @@ def _commit_locked(st, account):
     except Exception:
         log.warning("categorizer unavailable during commit", exc_info=True)
         categorizer = None
-    counts = {"rule": 0, "merchant": 0, "builtin": 0, "suggested": 0, "uncategorized": 0}
+    counts = {"rule": 0, "merchant": 0, "builtin": 0, "manual": 0, "suggested": 0, "uncategorized": 0}
     rule_hits = {}
     events, inserted_ids, uncategorized_ids = [], [], []
     skipped_dupes = 0
@@ -449,7 +449,7 @@ def _commit_locked(st, account):
             category_id, source, status = info.get("category_id"), info.get("source"), info.get("status")
             inserted_ids.append(tid)
             events.append((tid, "imported", {"statement_id": sid, "filename": st["original_filename"]}, uid))
-            if category_id and source in ("rule", "merchant", "builtin"):
+            if category_id and source in ("rule", "merchant", "builtin", "manual"):
                 events.append((tid, source, {"category_id": category_id, "rule_id": info.get("rule_id"),
                                              "confidence": info.get("confidence"), "status": status}, uid))
                 if status == "confirmed":
