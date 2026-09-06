@@ -519,3 +519,46 @@ def recover_interrupted():
             db.close_db()
         except Exception:
             pass
+
+
+def ai_extract_statement(statement_id, user_id, replace=False):
+    """Stage rows read by the AI model. New rows are added next to parsed ones (matched on date+amount)
+    unless replace=True. Returns {"added", "total", "calls"}."""
+    import ai_extract
+    from importer import pdf_text
+    from importer.models import ParseResult
+
+    st = _load(statement_id)
+    if not st or st["user_id"] != user_id:
+        raise ImportError_("Statement not found")
+    if st["status"] not in ("previewed", "error"):
+        raise ImportError_("Only statements in preview can be read with AI")
+    if st["file_kind"] != "pdf":
+        raise ImportError_("AI reading is for PDF statements")
+    source = abs_path(st["ocr_path"]) if st.get("ocr_path") and os.path.exists(abs_path(st["ocr_path"])) else abs_path(st["stored_path"])
+    texts = pdf_text.page_texts(source)
+    period = (st["period_start"], st["period_end"]) if st.get("period_start") and st.get("period_end") else None
+    ai_rows, calls = ai_extract.extract_rows(user_id, texts, period=period)
+
+    existing = db.query("SELECT row_index, txn_date, amount, description FROM import_rows WHERE statement_id = %s ORDER BY row_index",
+                        (statement_id,)) or []
+    have = {(r["txn_date"], r["amount"]) for r in existing if r["amount"] is not None}
+    keep = [] if replace else existing
+    fresh = [r for r in ai_rows if replace or (r.txn_date, r.amount) not in have]
+    if not fresh and not replace:
+        return {"added": 0, "total": len(existing), "calls": calls}
+    # rebuild the preview from the kept parsed rows plus the AI rows
+    from importer.models import ParsedRow
+    rows = [ParsedRow(row_index=r["row_index"], txn_date=r["txn_date"], posted_date=None, description=r["description"],
+                      amount=r["amount"], balance=None, raw={"line": r["description"]}, problems=[])
+            for r in keep if r["amount"] is not None] + fresh
+    rows.sort(key=lambda r: (r.txn_date or date.max, r.row_index))
+    for i, r in enumerate(rows):
+        r.row_index = i
+    mapping = Mapping.from_dict(st["mapping"]) if st.get("mapping") else None
+    result = ParseResult(rows=rows, profile=st.get("bank_profile"), profile_confidence=float(st["profile_confidence"] or 0),
+                         mapping=mapping, period=period, warnings=[w for w in (st.get("warnings") or []) if "No transactions" not in w],
+                         header=None, sample=[], ocr_applied=bool(st.get("ocr_applied")))
+    result.warnings.append(f"{len(fresh)} rows were read by AI ({calls} model calls); check dates and signs before importing.")
+    _stage(st, result, st.get("ocr_path"))
+    return {"added": len(fresh), "total": len(rows), "calls": calls}

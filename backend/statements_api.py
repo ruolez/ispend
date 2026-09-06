@@ -293,6 +293,27 @@ def flip_signs(statement_id):
     return jsonify({"flipped": n})
 
 
+@bp.post("/<int:statement_id>/ai-extract")
+@login_required
+def ai_extract(statement_id):
+    """Read the statement's pages with the AI model and add the transactions it finds to the preview."""
+    import openrouter
+    st = _get(statement_id)
+    if not st:
+        return api_error("Statement not found", 404)
+    if not openrouter.configured(session["user_id"]):
+        return api_error("Add an OpenRouter key and model in Settings → AI first", 409)
+    data = request.get_json(silent=True) or {}
+    try:
+        result = importer.ai_extract_statement(statement_id, session["user_id"], replace=bool(data.get("replace")))
+    except openrouter.OpenRouterError as e:
+        return api_error(f"AI reading failed: {e}", 502)
+    except importer.ImportError_ as e:
+        return api_error(str(e), 409)
+    audit("statement.ai_extract", {"id": statement_id, **result})
+    return jsonify({**result, **_detail(_get(statement_id))})
+
+
 @bp.get("/<int:statement_id>/file")
 @login_required
 def download(statement_id):

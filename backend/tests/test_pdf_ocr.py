@@ -46,3 +46,9 @@ class OcrEndToEndTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MixedDocumentTest(unittest.TestCase):
+    def test_text_pdf_with_an_image_only_page_needs_ocr(self):
+        self.assertTrue(pdf_ocr.needs_ocr("x.pdf", char_count_fn=lambda p: (4000, 4), image_pages_fn=lambda p: [4]))
+        self.assertFalse(pdf_ocr.needs_ocr("x.pdf", char_count_fn=lambda p: (4000, 4), image_pages_fn=lambda p: []))

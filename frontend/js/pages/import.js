@@ -17,6 +17,7 @@ const imp = {
 };
 
 initNav('import').then(async () => {
+  store.settings().then((cfg) => { imp.aiReady = !!(cfg && cfg.ai_configured); }).catch(() => {});
   imp.accounts = (await store.accounts().catch(() => [])).filter((a) => a.is_active);
   (await store.categoriesFlat().catch(() => [])).forEach((c) => imp.cats.set(c.id, c));
   store.on('accounts-changed', async () => { imp.accounts = (await store.accounts()).filter((a) => a.is_active); });
@@ -314,10 +315,10 @@ function previewTable(s) {
   }).join('');
   return `<div class="preview-head">
       <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'}</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
-      <div class="row" style="gap:12px">${dupCount ? `<label class="switch switch-sm"><input type="checkbox" id="skip-dupes" ${dupSkipped === dupCount ? 'checked' : ''}><span class="switch-track"></span>Skip ${fmtNumber(dupCount)} duplicate${dupCount === 1 ? '' : 's'}</label>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
+      <div class="row" style="gap:12px">${dupCount ? `<label class="switch switch-sm"><input type="checkbox" id="skip-dupes" ${dupSkipped === dupCount ? 'checked' : ''}><span class="switch-track"></span>Skip ${fmtNumber(dupCount)} duplicate${dupCount === 1 ? '' : 's'}</label>` : ''}${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" title="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-preview"><thead><tr><th class="col-check"></th><th>Date</th><th>Description</th><th>Category</th><th class="right">Amount</th></tr></thead>
-      <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'The PDF text did not contain recognizable transaction lines. If it is a scan, the OCR quality may be too low; try a clearer export or a CSV.' : 'Check the column mapping above.' })}</td></tr>`}</tbody></table>
+      <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'The PDF text did not contain recognizable transaction lines. If it is a scan, the OCR quality may be too low; try a clearer export or a CSV.' + (imp.aiReady ? ' You can also let the AI model read the pages with “Read with AI” above.' : '') : 'Check the column mapping above.' })}</td></tr>`}</tbody></table>
       ${rows.length >= 2000 ? '<div class="preview-more text-3 fs-sm">Showing the first 2,000 rows.</div>' : ''}</div>`;
 }
 
@@ -397,6 +398,7 @@ async function onImportClick(e) {
     case 'flip-signs': if (f) { const m = readMappingFromDom(f.statement); m.flip_sign = !((f.statement.mapping || {}).flip_sign); return applyMapping(f, m); } return;
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;
+    case 'ai-extract': if (f) return aiExtract(f, btn); return;
     case 'discard': if (f) return discard(f); return;
     case 'commit': if (f) return commit(f); return;
     case 'restart': { location.href = '/import.html'; return; }
@@ -425,6 +427,16 @@ async function setRows(f, body) {
       const head = $('.preview-head'); if (head) { const tmp = document.createElement('div'); tmp.innerHTML = previewTable(f.statement); head.outerHTML = tmp.querySelector('.preview-head').outerHTML; }
     }
   } catch (err) { toast(err.message, { type: 'error' }); }
+}
+async function aiExtract(f, button) {
+  if (button) button.classList.add('is-loading');
+  try {
+    const r = await api(`/api/statements/${f.statementId}/ai-extract`, { method: 'POST', body: {} });
+    f.statement = { ...f.statement, ...r };
+    renderReview();
+    toast(r.added ? `AI added ${fmtNumber(r.added)} transaction${r.added === 1 ? '' : 's'} · review dates and signs before importing` : 'AI found no additional transactions', { type: r.added ? 'success' : 'info', duration: 7000 });
+  } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
+  finally { if (button) button.classList.remove('is-loading'); }
 }
 async function reparse(f) {
   try {

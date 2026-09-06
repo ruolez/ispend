@@ -72,3 +72,36 @@ def parse_pdf(path, profile_key=None, flip_sign=False, pages=None):
     sample = [[ln.text] for ln in lines[:8]]
     return ParseResult(rows=rows, profile=profile.key if profile else None, profile_confidence=confidence,
                        mapping=mapping, period=period, warnings=warnings, header=None, sample=sample)
+
+
+def image_only_pages(path):
+    """Pages with (almost) no text but an image covering most of the page — scans embedded in a text PDF."""
+    import pdfplumber
+
+    found = []
+    with pdfplumber.open(path) as pdf:
+        for n, page in enumerate(pdf.pages, start=1):
+            if len(page.chars) >= 40:
+                continue
+            area = float(page.width) * float(page.height) or 1.0
+            covered = 0.0
+            for im in page.images:
+                covered += max(0.0, (float(im["x1"]) - float(im["x0"]))) * max(0.0, (float(im["bottom"]) - float(im["top"])))
+            if covered / area >= 0.3:
+                found.append(n)
+    return found
+
+
+def page_texts(path):
+    """[(page_number, text)] with overprinted characters collapsed — the input for AI extraction."""
+    import pdfplumber
+
+    out = []
+    with pdfplumber.open(path) as pdf:
+        for n, page in enumerate(pdf.pages, start=1):
+            try:
+                page = page.dedupe_chars(tolerance=1)
+            except Exception:
+                pass
+            out.append((n, page.extract_text() or ""))
+    return out

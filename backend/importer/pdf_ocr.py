@@ -12,11 +12,18 @@ class OcrError(Exception):
     pass
 
 
-def needs_ocr(path, char_count_fn=None):
-    from importer.pdf_text import char_count
+def needs_ocr(path, char_count_fn=None, image_pages_fn=None):
+    """True for scanned documents, and for text PDFs that embed scanned pages (ocrmypdf's
+    --skip-text then OCRs only the pages without a text layer)."""
+    from importer.pdf_text import char_count, image_only_pages
 
     chars, pages = (char_count_fn or char_count)(path)
-    return chars < MIN_CHARS_PER_PAGE * max(pages, 1)
+    if chars < MIN_CHARS_PER_PAGE * max(pages, 1):
+        return True
+    try:
+        return bool((image_pages_fn or image_only_pages)(path))
+    except Exception:
+        return False
 
 
 def ocr_available():

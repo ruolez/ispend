@@ -158,3 +158,14 @@ class DashDateBankLayoutTest(unittest.TestCase):
             (date(2026, 3, 17), "-10.00", "ACH Withdrawal PAYPAL INST XFER", "1327.61"),
             (date(2026, 3, 23), "515.00", "A2A Payment Credit ZELLE EXQUISITE JEWELERS", "1972.61"),
         ])
+
+
+class PageHeaderTest(unittest.TestCase):
+    def test_page_headers_are_not_damaged_rows(self):
+        from datetime import date
+        L = lambda t, top: pdf_lines.Line(text=t, top=top, x0=109.3, x1=500.0, words=[], page=2)
+        lines = [L("May 08, 2026 0000422304", 10), L("05-01 ' A2A Payment Credit 40.00 482.53", 20),
+                 L("08/09/24 AMAZON .COM*2K4J75 AMZN.COM/BILL WA $31 wl", 30)]
+        rows = pdf_lines.rows_to_transactions(lines, None, (date(2026, 4, 9), date(2026, 5, 8)))
+        self.assertEqual([(str(r.amount), r.is_valid, r.description[:12]) for r in rows],
+                         [("40.00", True, "A2A Payment "), ("None", False, "AMAZON .COM*")])

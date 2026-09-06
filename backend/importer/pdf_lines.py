@@ -98,6 +98,15 @@ def ocr_repair(text):
     # a detached sign token before the amount: "THANK YOU - $500.00" -> "THANK YOU -$500.00"
     return _DETACHED_SIGN.sub("-", text)
 
+def _looks_like_damaged_row(text):
+    """A date-led line with a merchant-like word and some digits (a garbled amount) — not a page
+    header such as "May 08, 2026 0000422304" or "05-08 04/2026 statement"."""
+    rest = _DATE_START.sub("", text, count=1)
+    rest = re.sub(r"^\s*,?\s*(?:\d{4})?\s*", "", rest)  # drop a trailing ", 2026" of a long date
+    words = re.findall(r"[A-Za-z]{3,}", rest)
+    return bool(words) and bool(re.search(r"\d", rest)) and not re.fullmatch(r"[\s\d,.-]*", rest)
+
+
 def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
     """State machine over lines: section headings set the sign mode, matching lines become rows,
     indented non-matching lines extend the previous description."""
@@ -172,7 +181,7 @@ def rows_to_transactions(lines, profile, period, today=None, flip_sign=False):
             continuation = 0
             continue
         if _DATE_START.match(text) and len(text.split()) >= 3 and not re.search(r"\b(?:to|through|thru)\b", text, re.I) \
-                and not re.search(r"\d{1,2}/\d{1,2}(?:/\d{2,4})?\s*$", text):
+                and not re.search(r"\d{1,2}/\d{1,2}(?:/\d{2,4})?\s*$", text) and _looks_like_damaged_row(text):
             # Looks like a transaction line but no amount could be read (typical OCR damage):
             # keep it as an invalid preview row so the user sees what was skipped.
             txn_date = parse_date(_DATE_START.match(text).group(1), default_year=default_year)
