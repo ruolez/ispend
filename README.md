@@ -46,10 +46,13 @@ The dev overlay bind-mounts `backend/` with gunicorn `--reload`; the frontend is
 Run the backend test suite (no database needed; pure modules and stubbed APIs):
 
 ```bash
-cd backend && python3 -m unittest discover -s tests -v
+python3 -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt
+cd backend && ../.venv/bin/python -m unittest discover -s tests -v
 # or inside the container
 docker compose exec backend python -m unittest discover -s tests
 ```
+
+The `qa/` directory holds the QA audit: `qa/IMPROVEMENT_PLAN.md` (findings and phased fixes), the reports behind it, and black-box suites (`qa/e2e/test_api.py`, `test_smoke.py`, `test_flows.py`) that run against the dev stack; see `qa/CONTEXT.md`.
 
 ## How an import works
 
