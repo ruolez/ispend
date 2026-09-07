@@ -24,7 +24,7 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
-from ratelimit import login_with_retry, submit_login
+from ratelimit import login_with_retry, press_enter_login, submit_login
 
 BAD_TEXT = re.compile(r"(\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|\$NaN|−NaN|\bInvalid Date\b)")
 TEXT_SCAN_JS = r"""
@@ -354,7 +354,7 @@ def test_f1_first_run(page, qapi):
     # Enter key submits and follows ?next
     page.fill("#password", QA[1])
     t0 = time.monotonic()
-    page.press("#password", "Enter")
+    press_enter_login(page)
     page.wait_for_url(re.compile(r"/transactions\.html"), timeout=15000)
     page.wait_for_selector("#tb-username", timeout=15000)
     F.timings.append({"label": "login -> transactions", "s": round(time.monotonic() - t0, 2)})
@@ -641,13 +641,14 @@ def test_f3_import(page, qapi):
     # change the Amount column role to Debit -> the file is re-parsed and the sign summary changes
     before_sign = st["sign"]["charges"] + st["sign"]["payments / income"]
     page.locator('.mapping-table select[data-col="2"]').select_option("debit")
+    # the editor debounces 350 ms before the PUT; wait for the re-rendered mapping line
     try:
-        page.wait_for_function("(prev) => { const t = Array.from(document.querySelectorAll('.signcheck .sc-item')).slice(0, 2).map((e) => e.textContent.trim()).join('|'); return t && t !== prev; }", arg="|".join(before_sign), timeout=10000)
+        page.wait_for_function("() => /debit/i.test((document.querySelector('.mapping summary') || {}).innerText || '')", timeout=10000)
     except PwTimeout:
         pass
     st2 = review_state(page)
     F.note(f"xlsx: Amount column -> Debit via the UI select; preview now {st2['sign']} summary={st2['summary']!r} mapping line={page.locator('.mapping summary').inner_text()!r}")
-    sid_x = [x for x in qapi.get("/api/statements") if x["status"] == "previewed"][0]["id"]
+    sid_x = [x for x in qapi.get("/api/statements") if x["status"] == "previewed" and x["original_filename"] == "generic.xlsx"][0]["id"]
     map_api = qapi.get(f"/api/statements/{sid_x}?limit=5")
     F.note(f"xlsx mapping via API after the UI change: amount={map_api['mapping'].get('amount')} debit={map_api['mapping'].get('debit')} summary={map_api['summary']['charges']} {map_api['summary']['payments']}")
     changed = st2["sign"]["charges"] + st2["sign"]["payments / income"] != before_sign
@@ -716,7 +717,7 @@ def test_f3_import(page, qapi):
     page.locator('[data-act="rows-all"][data-include="1"]').click()
     page.wait_for_timeout(1500)
     st2 = review_state(page)
-    rows_api = qapi.get(f"/api/statements/{[x for x in qapi.get('/api/statements') if x['status'] == 'previewed'][0]['id']}?limit=10")
+    rows_api = qapi.get(f"/api/statements/{[x for x in qapi.get('/api/statements') if x['status'] == 'previewed' and x['original_filename'] == 'chase_card.csv'][0]['id']}?limit=10")
     F.note(f"API after Include all: include flags={[r['include'] for r in rows_api['rows']]} summary.included={rows_api['summary']['included']}")
     F.check(not any(r["include"] for r in rows_api["rows"]) and rows_api["summary"]["included"] == 0, "Include all leaves duplicate rows excluded")
     F.check("0 to import" in st2["summary"] and st2["commit_disabled"] is True, f"still nothing to import: {st2['summary']!r}")
@@ -892,6 +893,7 @@ def test_f4_transactions(page, qapi):
 
     goto(page, "/transactions.html?range=all", wait_sel="#tx-body tr[data-id]", soft=F, label="transactions load (130 rows)")
     page.wait_for_selector("#tx-summary b", timeout=10000)
+    page.wait_for_timeout(400)
     sm = summary_numbers(page)
     F.note(f"summary: {sm}")
     F.eq(sm["count"], total_api["total"], "totals bar count = API total")

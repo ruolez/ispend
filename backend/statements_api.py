@@ -24,8 +24,21 @@ def _get(statement_id):
     )
 
 
+def _duplicate_of(st):
+    """An earlier, still-existing upload of the same file; the upload response carries it and the
+    polled detail keeps it so the preview can show 'same file was uploaded before'."""
+    if not st.get("file_sha256") or not st.get("user_id"):
+        return None
+    row = db.query(
+        """SELECT id FROM statements WHERE user_id = %s AND file_sha256 = %s AND id < %s AND status <> 'discarded'
+           ORDER BY id LIMIT 1""",
+        (st["user_id"], st["file_sha256"], st["id"]), one=True)
+    return row["id"] if row else None
+
+
 def _statement_json(st):
     out = row_json(st)
+    out["duplicate_of"] = _duplicate_of(st)
     stats = dict(st.get("stats") or {})
     out["header"] = stats.pop("header", None)
     out["sample"] = stats.pop("sample", None)

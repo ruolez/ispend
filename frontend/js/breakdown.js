@@ -92,7 +92,7 @@
       if (e.target.closest('a')) return;
       const r = e.target.closest('.bd-parent.has-kids'); if (r) toggle(r.dataset.id);
     };
-    host.onkeydown = (e) => { const r = e.target.closest('.bd-parent.has-kids'); if (!r) return; if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); toggle(r.dataset.id); } };
+    host.onkeydown = (e) => { if (e.target.closest('a')) return; const r = e.target.closest('.bd-parent.has-kids'); if (!r) return; if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); toggle(r.dataset.id); } };
     draw();
   }
 

@@ -77,12 +77,14 @@ const ui = (() => {
         b.textContent = a.label;
         b.addEventListener('click', async () => {
           if (!a.onClick) return handle.close(a.value);
+          if (b.disabled) return;
           b.classList.add('is-loading');
+          b.disabled = true; // a form Enter relays here through .click(); a disabled button ignores it
           try {
             const r = await a.onClick(handle);
             if (r !== false && a.keepOpen !== true) handle.close(r);
           } catch (err) { toast(err.message || String(err), { type: 'error' }); }
-          finally { b.classList.remove('is-loading'); }
+          finally { b.classList.remove('is-loading'); b.disabled = false; }
         });
         foot.appendChild(b);
       });
@@ -232,7 +234,7 @@ const ui = (() => {
       const it = items[Number(btn.dataset.i)];
       if (!it.href) e.preventDefault();
       pop.close('pick');
-      if (it.onClick) it.onClick();
+      if (it.onClick) Promise.resolve().then(() => it.onClick()).catch((err) => toast(err.message || String(err), { type: 'error' }));
     });
     el.setAttribute('aria-orientation', 'vertical');
     el.addEventListener('keydown', (e) => menuKeys(e, $$('[data-i]', el), (b) => b.textContent));

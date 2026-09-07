@@ -351,7 +351,12 @@ function readMappingFromDom(s) {
     if (!v) return;
     if (v === 'description') roles.description.push(i); else roles[v] = i;
   });
-  if ($('.mapping-table')) Object.assign(m, roles);
+  if ($('.mapping-table')) {
+    Object.assign(m, roles);
+    // separate Debit/Credit columns switch the sign mode; a single Amount column switches it back
+    if (roles.amount == null && (roles.debit != null || roles.credit != null)) m.sign = 'debit_credit';
+    else if (m.sign === 'debit_credit') m.sign = 'as_is';
+  }
   const df = $('[data-map="date_format"]'); if (df) m.date_format = df.value || null;
   const flip = $('[data-map="flip_sign"]:checked'); if (flip) m.flip_sign = flip.value === '1';
   const skip = $('[data-map="skip_rows"]'); if (skip) m.skip_rows = Math.max(0, Number(skip.value) || 0);
@@ -364,7 +369,7 @@ async function applyMapping(f, mapping, { bank_profile } = {}) {
   try {
     const body = { mapping };
     if (bank_profile !== undefined) body.bank_profile = bank_profile || null;
-    const res = await api(`/api/statements/${f.statementId}/mapping`, { method: 'PUT', body });
+    const res = await api(`/api/statements/${f.statementId}/mapping?limit=2000`, { method: 'PUT', body });
     if (res && res.status === 'parsing' && !res.rows) {
       // PDFs re-parse in the background (202): show the parsing card and poll until previewed.
       f.statement = { ...(f.statement || {}), status: 'parsing', rows: undefined };
@@ -426,7 +431,7 @@ async function onImportClick(e) {
 async function changeAccount(f, value, { quiet = false, reason = '' } = {}) {
   const id = value ? Number(value) : null;
   try {
-    f.statement = await api(`/api/statements/${f.statementId}/account`, { method: 'PUT', body: { account_id: id } });
+    f.statement = await api(`/api/statements/${f.statementId}/account?limit=2000`, { method: 'PUT', body: { account_id: id } });
     if (!f.statement.rows) await reloadStatement(f, { silent: true });
     rememberAccount(id);
     if (imp.step === 'review') renderReview();
@@ -474,7 +479,7 @@ async function aiExtract(f, button) {
 async function confirmSuggestions(f, button) {
   if (button) button.classList.add('is-loading');
   try {
-    const res = await api(`/api/statements/${f.statementId}/rows`, { method: 'PUT', body: { confirm_suggestions: true } });
+    const res = await api(`/api/statements/${f.statementId}/rows?limit=2000`, { method: 'PUT', body: { confirm_suggestions: true } });
     f.statement = { ...f.statement, ...res };
     renderReview();
     toast(`${fmtNumber(res.updated)} suggestion${res.updated === 1 ? '' : 's'} confirmed · they will be remembered for next time`, { type: 'success' });
@@ -489,7 +494,7 @@ async function pickRowCategory(f, anchor, rowId) {
       const same = rows.filter((r) => r.is_valid && r.merchant_name && r.merchant_name === row.merchant_name);
       const ids = (same.length > 1 ? same : [row]).map((r) => r.id);
       try {
-        const res = await api(`/api/statements/${f.statementId}/rows`, { method: 'PUT', body: { row_ids: ids, category_id: cat ? cat.id : null } });
+        const res = await api(`/api/statements/${f.statementId}/rows?limit=2000`, { method: 'PUT', body: { row_ids: ids, category_id: cat ? cat.id : null } });
         if (cat && !imp.cats.has(cat.id)) imp.cats.set(cat.id, cat);
         f.statement = { ...f.statement, ...res };
         renderReview();

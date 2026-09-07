@@ -1145,7 +1145,7 @@ class TestCategories:
         r = u1.delete(f"/api/categories/{src['id']}")
         assert r.status_code == 409
         assert r.json()["references"] == {"transactions": 1, "rules": 1, "merchants": 1}
-        assert "1 transactions, 1 rules, 1 remembered merchants" in r.json()["error"]
+        assert "1 transaction, 1 rule, 1 remembered merchant still use this category" in r.json()["error"]
         assert u1.get(f"/api/transactions/{t['id']}").json()["category_id"] == src["id"]
         r = u1.delete(f"/api/categories/{src['id']}?reassign_to={src['id']}")
         assert r.status_code == 404

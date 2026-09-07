@@ -3,7 +3,8 @@ const RANGES = ['this-month', 'last-month', 'last-90'];
 const MONTH_RE = /^month:\d{4}-\d{2}$/;
 const MONTHS_BACK = 24;
 /* state.period is a picker value ({preset} or {from,to}) shared with the other pages. */
-const state = { period: { preset: 'this-month' }, data: null, currency: 'USD', me: null, drill: null };
+const state = { period: { preset: 'this-month' }, data: null, currency: 'USD', me: null, drill: null, seq: 0, paintLegendDots: null };
+window.addEventListener('ispend:theme', () => { if (state.paintLegendDots) state.paintLegendDots(); });
 
 const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 const shiftYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); return ymOf(new Date(y, m - 1 + n, 1)); };
@@ -84,15 +85,19 @@ async function load() {
   $$('.chart-body').forEach((c) => c.classList.add('is-loading'));
   $('#recent-list').innerHTML = `<div class="list">${ui.skeletonList(6)}</div>`;
   $('#attention').innerHTML = `<div class="col gap-3">${ui.skeleton('100%', 56)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 14)}${ui.skeleton('100%', 14)}</div>`;
+  const seq = ++state.seq;
   let data;
   try {
     data = await api(`/api/reports/dashboard${dashboardQuery()}`);
   } catch (err) {
+    if (seq !== state.seq) return;
     $('#dash-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
     return;
   }
+  const flat = await store.categoriesFlat();
+  if (seq !== state.seq) return;
   state.data = data;
-  state.subCounts = new Map((await store.categoriesFlat()).filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
+  state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
   const hasAny = data.kpis.txn_count > 0 || data.monthly.some((m) => m.spent || m.income) || data.recent.length > 0;
   $('#dash-body').hidden = !hasAny;
   $('#dash-empty').hidden = hasAny;
@@ -233,6 +238,7 @@ async function renderDonut(data) {
   const head = $('#donut-head');
   let cats = data.top_categories;
   let parent = null;
+  const seq = state.seq;
   if (state.drill) {
     body.classList.add('is-loading');
     try {
@@ -248,7 +254,8 @@ async function renderDonut(data) {
       const t = cats.reduce((s, c) => s + c.total, 0);
       cats.forEach((c) => { c.pct = t ? c.total / t * 100 : 0; });
       cats.sort((a, b) => b.total - a.total);
-    } catch (err) { body.classList.remove('is-loading'); body.innerHTML = ui.errorBox(err.message); return; }
+    } catch (err) { if (seq !== state.seq) return; body.classList.remove('is-loading'); charts.destroyChart($('#ch-donut')); body.innerHTML = ui.errorBox(err.message); return; }
+    if (seq !== state.seq) return;
   }
   body.classList.remove('is-loading');
   head.innerHTML = state.drill
@@ -276,7 +283,7 @@ async function renderDonut(data) {
   legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) pickCategory(cats[Number(b.dataset.i)]); };
   legend.onmouseover = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; chart.setActiveElements([{ datasetIndex: 0, index: Number(b.dataset.i) }]); chart.update(); };
   legend.onmouseleave = () => { chart.setActiveElements([]); chart.update(); };
-  window.addEventListener('ispend:theme', () => { legend.querySelectorAll('.dot').forEach((d, i) => { if (cats[i]) d.style.setProperty('--c', colorOf(cats[i])); }); });
+  state.paintLegendDots = () => { legend.querySelectorAll('.dot').forEach((d, i) => { if (cats[i]) d.style.setProperty('--c', colorOf(cats[i])); }); };
 }
 /* First click on a top-level category drills into its subcategories; a leaf (or a second click) opens transactions. */
 function pickCategory(c) {
@@ -347,12 +354,14 @@ async function loadBreakdown(range) {
   const host = $('#breakdown'); if (!host) return;
   $('#bd-label').textContent = range.label;
   host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div>`;
+  const seq = state.seq;
   try {
     const [cur, prev, categories] = await Promise.all([
       api(`/api/reports/by-category${toQuery({ from: range.start, to: range.end, level: 'sub' })}`),
       range.prev_start ? api(`/api/reports/by-category${toQuery({ from: range.prev_start, to: range.prev_end, level: 'sub' })}`) : Promise.resolve({ categories: [] }),
       store.categoriesFlat(),
     ]);
+    if (seq !== state.seq) return;
     renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency: state.currency, range, categories, storageKey: 'ispend.breakdown.dashboard' });
-  } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
+  } catch (err) { if (seq === state.seq) host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

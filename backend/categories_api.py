@@ -116,6 +116,12 @@ def _clean_icon(value):
     return value if ICON_NAME.match(value) else None
 
 
+def _count(n, noun):
+    if not n:
+        return None
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
 def _sync_transfer_flags(category_ids, new_kind, old_kind):
     """Rows filed under these categories follow a kind change to or from transfer; paired legs keep theirs."""
     if new_kind == "transfer":
@@ -241,9 +247,8 @@ def delete_category(cat_id):
     reassign = to_int(request.args.get("reassign_to"), "reassign_to")
     in_use = refs["transactions"] or refs["rules"] or refs["merchants"]
     if in_use and not reassign:
-        parts = [f"{refs['transactions']} transactions" if refs["transactions"] else None,
-                 f"{refs['rules']} rules" if refs["rules"] else None,
-                 f"{refs['merchants']} remembered merchants" if refs["merchants"] else None]
+        parts = [_count(refs["transactions"], "transaction"), _count(refs["rules"], "rule"),
+                 _count(refs["merchants"], "remembered merchant")]
         msg = ", ".join(p for p in parts if p) + " still use this category. Merge it into another category instead."
         return jsonify({"error": msg, "references": dict(refs)}), 409
     target = None

@@ -216,8 +216,11 @@ async function openModelList() {
   const input = $('#or-model');
   if (!input) return;
   if (!state.models) {
-    state.models = [];
-    try { state.models = await api('/api/settings/openrouter/models'); } catch (err) { toast(`Could not load model list: ${err.message}`, { type: 'error' }); return; }
+    if (state.modelsLoading) return;
+    state.modelsLoading = true;
+    try { state.models = await api('/api/settings/openrouter/models'); }
+    catch (err) { toast(`Could not load model list: ${err.message}`, { type: 'error' }); return; }
+    finally { state.modelsLoading = false; }
   }
   const q = input.value.trim().toLowerCase();
   const rows = state.models.filter((m) => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)).slice(0, 60);
@@ -379,7 +382,7 @@ async function onAction(e) {
       { divider: true },
       { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); loadAccounts(); } },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => {
-        const body = acct.txn_count ? `This deletes the account and its ${fmtNumber(acct.txn_count)} transactions. This cannot be undone.` : 'This account has no transactions.';
+        const body = acct.txn_count ? `This deletes the account and its ${plural(acct.txn_count, 'transaction')}. This cannot be undone.` : 'This account has no transactions.';
         if (!(await ui.confirm({ title: `Delete ${acct.name}?`, body, confirmText: 'Delete', danger: true }))) return;
         await api(`/api/accounts/${acct.id}?force=true`, { method: 'DELETE' }); store.invalidate('accounts'); toast('Account deleted'); loadAccounts();
       } },

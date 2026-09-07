@@ -38,7 +38,6 @@ initNav('transactions').then(async () => {
   $('#f-q').addEventListener('input', debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250));
   $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
   $('#f-clear').addEventListener('click', clearFilters);
-  $('#f-range').addEventListener('click', () => dateRangePicker({ anchor: $('#f-range'), value: tx.filters.range, onChange: (v) => { tx.filters.range = v; periodSet(v); applyFilters(); } }));
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   $('#f-status').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); });
@@ -57,7 +56,7 @@ initNav('transactions').then(async () => {
   await reload();
   const q = qs();
   if (q.open) openDrawer(Number(q.open));
-});
+}).catch((err) => { $('#tx-body').innerHTML = `<tr><td colspan="7">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`; });
 
 function setupObserver() {
   const wrap = $('#tx-wrap');
@@ -66,7 +65,8 @@ function setupObserver() {
   if (tx.observer && tx.observerRoot === root) return;
   if (tx.observer) tx.observer.disconnect();
   tx.observerRoot = root;
-  tx.observer = new IntersectionObserver((entries) => { if (entries.some((x) => x.isIntersecting)) loadMore(); }, { root, rootMargin: '400px' });
+  // an observation taken while the skeleton was showing must not load page 2 right after page 1 renders
+  tx.observer = new IntersectionObserver((entries) => { if (entries.some((x) => x.isIntersecting && x.time >= (tx.renderedAt || 0))) loadMore(); }, { root, rootMargin: '400px' });
   tx.observer.observe($('#tx-sentinel'));
 }
 
@@ -173,6 +173,7 @@ function paintDensity() { $('#btn-density').innerHTML = icon(Theme.density() ===
 
 /* ---------- loading ---------- */
 async function reload() {
+  tx.seq += 1; tx.loading = false; // a reload supersedes any load still in flight
   tx.items = []; tx.byId.clear(); tx.cursor = null; tx.done = false; tx.selection.clear(); tx.focus = -1;
   $('#tx-body').innerHTML = ui.skeletonRows(8, 7);
   $('#tx-foot').innerHTML = '';
@@ -192,7 +193,7 @@ async function loadMore(first = false) {
     tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
     const startIdx = tx.items.length;
     r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
-    if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); }
+    if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); tx.renderedAt = performance.now(); }
     if (!tx.items.length) {
       $('#tx-body').innerHTML = `<tr><td colspan="7">${hasFilters() ? ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } }) : ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } })}</td></tr>`;
     } else {
@@ -203,7 +204,17 @@ async function loadMore(first = false) {
     if (seq !== tx.seq) return;
     if (first) $('#tx-body').innerHTML = `<tr><td colspan="7">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`;
     else $('#tx-foot').innerHTML = `<div class="tx-foot-msg">${ui.errorBox(err.message, { retry: 'reload' })}</div>`;
-  } finally { tx.loading = false; }
+  } finally { if (seq === tx.seq) tx.loading = false; }
+}
+/* Totals and facets for the current filters without re-rendering the list (after edits that move money). */
+async function refreshTotals() {
+  const seq = tx.seq;
+  try {
+    const r = await api('/api/transactions' + toQuery(queryParams({ limit: 1 })));
+    if (seq !== tx.seq) return;
+    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
+    paintSummary();
+  } catch { /* the summary refreshes with the next reload */ }
 }
 function paintSummary() {
   const curs = tx.currencies && tx.currencies.length ? tx.currencies : (tx.items.length ? [currencyOf(tx.items[0])] : []);
@@ -397,14 +408,16 @@ async function updateItem(id, body, msg) {
     rerenderRow(id);
     if (msg) toast(msg, { type: 'success' });
     afterChange();
+    if ('is_transfer' in body || 'is_excluded' in body) refreshTotals();
     return updated;
-  } catch (err) { toast(err.message, { type: 'error' }); throw err; }
+  } catch (err) { toast(err.message, { type: 'error' }); return null; }
 }
 async function bulk(ids, action, extra = {}) {
   try {
     const r = await api('/api/transactions/bulk', { method: 'POST', body: { ids, action, ...extra } });
-    if (action === 'delete') { removeRows(ids); tx.total -= ids.length; paintSummary(); }
-    else await refreshItems(ids);
+    if (action === 'delete') { removeRows(ids); tx.total -= ids.length; paintSummary(); refreshTotals(); }
+    else if (ids.length > 20) { await reload(); }
+    else { await refreshItems(ids); refreshTotals(); }
     const labels = { accept_suggestion: 'Suggestion accepted', reject_suggestion: 'Suggestion rejected', set_transfer: 'Marked as transfer', unset_transfer: 'Unmarked as transfer', exclude: 'Excluded from reports', include: 'Included in reports', delete: 'Deleted', categorize: 'Categorized', uncategorize: 'Category cleared' };
     toast(`${labels[action] || 'Updated'}${ids.length > 1 ? ` · ${fmtNumber(r.updated)} rows` : ''}`, { type: 'success' });
     afterChange();
@@ -466,6 +479,7 @@ async function openDrawer(id, { focusNotes } = {}) {
     saving = (async () => {
       try {
         const u = await updateItem(it.id, { notes: v }, 'Note saved');
+        if (!u) return;
         it.notes = u.notes || '';
         if (draft != null && draft.trim() === (it.notes || '').trim()) draft = null;
         const ta2 = d.el.querySelector('#txd-notes');
@@ -524,7 +538,7 @@ function onDrawerClick(e, it, d) {
     case 'accept': return bulk([it.id], 'accept_suggestion').then(() => refreshDrawer(it, d));
     case 'reject': return bulk([it.id], 'reject_suggestion').then(() => refreshDrawer(it, d));
     case 'rule': return openRuleModal(it.id);
-    case 'rename': { const name = d.el.querySelector('#txd-merchant').value.trim(); if (!name || name === it.merchant_name) return; return updateItem(it.id, { merchant_name: name, rename_all: true }, `Renamed to ${name}`).then(() => { it.merchant_name = name; d.setTitle(name); tx.items.filter((x) => x.merchant_key === it.merchant_key).forEach((x) => { x.merchant_name = name; rerenderRow(x.id); }); }); }
+    case 'rename': { const name = d.el.querySelector('#txd-merchant').value.trim(); if (!name || name === it.merchant_name) return; return updateItem(it.id, { merchant_name: name, rename_all: true }, `Renamed to ${name}`).then((u) => { if (!u) return; it.merchant_name = name; d.setTitle(name); tx.items.filter((x) => x.merchant_key === it.merchant_key).forEach((x) => { x.merchant_name = name; rerenderRow(x.id); }); }); }
     case 'delete': return deleteItems([it.id]).then(() => { if (!tx.byId.has(it.id)) d.close(); });
     default:
   }
@@ -534,7 +548,8 @@ async function onDrawerChange(e, it, d) {
   if (!cb) return;
   const key = cb.dataset.dflag;
   try {
-    await updateItem(it.id, { [key]: cb.checked }, key === 'is_transfer' ? (cb.checked ? 'Marked as transfer' : 'Unmarked as transfer') : (cb.checked ? 'Excluded from reports' : 'Included in reports'));
+    const u = await updateItem(it.id, { [key]: cb.checked }, key === 'is_transfer' ? (cb.checked ? 'Marked as transfer' : 'Unmarked as transfer') : (cb.checked ? 'Excluded from reports' : 'Included in reports'));
+    if (!u) { cb.checked = !cb.checked; return; }
     await refreshDrawer(it, d);
   } catch { cb.checked = !cb.checked; }
 }

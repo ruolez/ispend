@@ -365,7 +365,7 @@ function openMerge(cat) {
       if (!target) throw new Error('Choose a category to merge into');
       const r = await api(`/api/categories/${cat.id}/merge`, { method: 'POST', body: { into: target.id } });
       store.invalidate('categories');
-      toast(`Merged into ${target.name} (${fmtNumber(r.moved)} transactions moved)`, { type: 'success' });
+      toast(`Merged into ${target.name} (${plural(r.moved, 'transaction')} moved)`, { type: 'success' });
       if (state.selected === cat.id) state.selected = target.id;
       await load();
     } }],
@@ -382,7 +382,7 @@ function openMerge(cat) {
 async function deleteCategory(cat) {
   const n = cat.depth === 0 ? countOf(state.tree.find((p) => p.id === cat.id) || cat) : (cat.txn_count || 0);
   if (n > 0) {
-    const ok = await ui.confirm({ title: `${cat.name} is in use`, body: `${fmtNumber(n)} transactions use this category. Merge it into another category instead so nothing becomes uncategorized.`, confirmText: 'Merge instead' });
+    const ok = await ui.confirm({ title: `${cat.name} is in use`, body: `${plural(n, 'transaction')} ${n === 1 ? 'uses' : 'use'} this category. Merge it into another category instead so nothing becomes uncategorized.`, confirmText: 'Merge instead' });
     if (ok) openMerge(cat);
     return;
   }

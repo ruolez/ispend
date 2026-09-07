@@ -1,5 +1,5 @@
 /* Insights: recurring charges, anomalies and optional AI-written monthly insights. */
-const state = { month: null, data: null, currency: 'USD', me: null, cats: new Map(), generating: false };
+const state = { month: null, data: null, currency: 'USD', me: null, cats: new Map(), generating: false, seq: 0 };
 const KIND = { unusual_amount: { label: 'Unusual amount', icon: 'trending-up' }, new_merchant: { label: 'New merchant', icon: 'sparkles' }, duplicate_charge: { label: 'Possible duplicate', icon: 'copy' } };
 
 initNav('insights').then(async (me) => {
@@ -25,8 +25,12 @@ async function load() {
   $('#recurring').innerHTML = `<div class="card-body">${ui.skeletonList(5)}</div>`;
   $('#anomalies').innerHTML = ui.skeletonList(2);
   $('#ai-panel').innerHTML = `<div class="col gap-3">${ui.skeleton('90%', 14)}${ui.skeleton('100%', 14)}${ui.skeleton('70%', 14)}</div>`;
-  try { state.data = await api(`/api/insights${toQuery({ month: state.month })}`); }
-  catch (err) { $('#ins-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); return; }
+  const seq = ++state.seq;
+  let data;
+  try { data = await api(`/api/insights${toQuery({ month: state.month })}`); }
+  catch (err) { if (seq === state.seq) $('#ins-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); return; }
+  if (seq !== state.seq) return;
+  state.data = data;
   renderStats(); renderRecurring(); renderAnomalies(); renderAI();
 }
 
@@ -81,7 +85,7 @@ function renderAI() {
   host.setAttribute('aria-busy', state.generating ? 'true' : 'false');
   if (ai.status === 'disabled') {
     const admin = state.me.role === 'admin';
-    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add an OpenRouter key and turn on Monthly insights to get a written read on your spending each month.' : 'Ask an admin to enable AI insights in Settings.', action: admin ? { label: 'Open AI settings', href: '/settings.html#ai' } : undefined });
+    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add an OpenRouter key and turn on Monthly insights to get a written read on your spending each month.' : 'Add your own OpenRouter key (or use one shared by your admin) and turn on Monthly insights in Settings › AI.', action: { label: 'Open AI settings', href: '/settings.html#ai' } });
     return;
   }
   if (state.generating) {

@@ -58,9 +58,14 @@ const charts = (() => {
   }
 
   /* makeChart(canvas, (theme) => config). Registered charts rebuild on theme change. */
+  /* Canvases replaced by innerHTML re-renders leave Chart instances behind; drop them. */
+  function prune() {
+    registry.forEach((r, c) => { if (!c.isConnected) { r.chart.destroy(); registry.delete(c); } });
+  }
   function makeChart(canvas, build) {
     if (typeof Chart === 'undefined') return null;
     applyChartDefaults();
+    prune();
     destroyChart(canvas);
     const chart = new Chart(canvas.getContext('2d'), build(theme()));
     registry.set(canvas, { chart, build });
@@ -72,6 +77,7 @@ const charts = (() => {
   }
   function rerenderAll() {
     applyChartDefaults();
+    prune();
     registry.forEach(({ chart, build }) => {
       const cfg = build(theme());
       chart.data = cfg.data;

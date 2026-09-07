@@ -2,6 +2,7 @@
 const TABS = ['category', 'trend', 'merchants', 'compare', 'cashflow'];
 const state = { parent: null, tab: 'category', range: { preset: 'this-month' }, accounts: new Set(), months: 12, pct: false, month: null, sort: { key: 'total', dir: 'desc' }, trendSel: null, currency: 'USD', cache: {}, accountsList: [], transfers: false, flow: 'spending' };
 const acctQuery = () => ({ ...(state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {}), ...(state.transfers ? { include_transfers: 1 } : {}), ...(state.flow === 'income' ? { flow: 'income' } : {}) });
+state.seq = 0;
 const isInc = () => state.flow === 'income';
 const flowWord = () => (isInc() ? 'income' : 'spending');
 
@@ -111,11 +112,13 @@ async function loadCategory(force) {
   }
   $$('#panel-category [data-act="pct"]').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'pct') === state.pct));
   const rq = rangeToQuery(state.range);
+  const seq = ++state.seq;
   try {
     const [monthly, byCat] = await Promise.all([
       cached(`monthly-${state.months}-${state.parent || ''}`, `/api/reports/monthly${toQuery({ months: state.months, parent_id: state.parent || null, ...acctQuery() })}`, force),
       cached(`bycat-${JSON.stringify(rq)}`, `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery() })}`, force),
     ]);
+    if (seq !== state.seq) return;
     renderStack(monthly);
     renderCatTable(byCat);
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
@@ -171,8 +174,10 @@ function wireRowLinks(tb) {
 async function loadTrend(force) {
   const host = $('#panel-trend');
   if (!host.querySelector('#ch-trend')) host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2>Category trend</h2><div class="card-actions"><span class="hint">Pick up to 4 categories</span></div></header><div class="card-body" style="padding-bottom:0"><div class="trend-chips" id="trend-chips"></div></div><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-trend"></canvas></div></section>`;
+  const seq = ++state.seq;
   try {
     const data = await cached(`monthly-${state.months}`, `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery() })}`, force);
+    if (seq !== state.seq) return;
     renderTrend(data);
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
@@ -199,8 +204,10 @@ async function loadMerchants(force) {
   const host = $('#panel-merchants');
   if (!host.querySelector('#merch-table') || host.dataset.flow !== state.flow) { host.dataset.flow = state.flow; host.innerHTML = `<section class="card"><header class="card-head"><h2>${isInc() ? 'Income sources' : 'Top merchants'} · <span id="merch-range-label" class="text-3 fw-500"></span></h2></header><div class="tbl-wrap" style="border:0;box-shadow:none;border-radius:0 0 var(--r-lg) var(--r-lg)"><table class="tbl report-tbl"><thead><tr><th class="sortable" data-sort="merchant_name">${isInc() ? 'Source' : 'Merchant'}</th><th>Category</th><th class="right sortable col-count" data-sort="count">${isInc() ? 'Deposits' : 'Visits'}</th><th class="right sortable col-avg" data-sort="avg">Avg</th><th class="right sortable" data-sort="total" aria-sort="descending">Total</th><th>Share</th><th class="spark-cell">6 months</th></tr></thead><tbody id="merch-table">${ui.skeletonRows(8, 7)}</tbody></table></div></section>`; }
   const rq = rangeToQuery(state.range);
+  const seq = ++state.seq;
   try {
     const [res, flat] = await Promise.all([cached(`merch-${JSON.stringify(rq)}`, `/api/reports/top-merchants${toQuery({ ...rq, limit: 50, ...acctQuery() })}`, force), store.categoriesFlat()]);
+    if (seq !== state.seq) return;
     renderMerchants(res, new Map(flat.map((c) => [c.id, c])));
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
@@ -237,7 +244,8 @@ async function loadCompare(force) {
   $('#cmp-vs').value = state.vs || prevMonthOf(state.month);
   $('#cmp-month').onchange = (e) => { state.month = e.target.value || currentMonth(); sync(); loadCompare(true); };
   $('#cmp-vs').onchange = (e) => { state.vs = e.target.value || null; sync(); loadCompare(true); };
-  try { const data = await cached(`mom-${state.month}-${state.vs || ''}`, `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery() })}`, force); renderCompare(data); }
+  const seq = ++state.seq;
+  try { const data = await cached(`mom-${state.month}-${state.vs || ''}`, `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery() })}`, force); if (seq !== state.seq) return; renderCompare(data); }
   catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
 function deltaHtml(delta, pct) {
@@ -272,8 +280,10 @@ async function loadCashflow(force) {
   if (!host.querySelector('#ch-cash')) host.innerHTML = `<div class="stat-grid" id="cash-kpis"></div>
     <section class="card chart-card"><header class="card-head"><h2>Income vs spending</h2><div class="card-actions"><span class="hint">Click a month to see its transactions</span></div></header><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-cash"></canvas></div><footer class="chart-legend" id="ch-cash-legend"></footer></section>
     <section class="card mt-4"><div class="tbl-wrap" style="border:0;box-shadow:none"><table class="tbl report-tbl"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
+  const seq = ++state.seq;
   try {
     const rows = await cached(`cash-${state.months}`, `/api/reports/trends${toQuery({ months: state.months, ...acctQuery() })}`, force);
+    if (seq !== state.seq) return;
     renderCashflow(rows);
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

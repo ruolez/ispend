@@ -67,3 +67,20 @@ class ElectDateFormatTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MappingSignModeTest(unittest.TestCase):
+    def test_debit_or_credit_columns_without_amount_switch_to_debit_credit(self):
+        from importer.models import Mapping
+        m = Mapping.from_dict({"date": 0, "description": [1], "amount": None, "debit": 2, "sign": "as_is"})
+        self.assertEqual((m.sign, m.debit, m.amount), ("debit_credit", 2, None))
+
+    def test_single_amount_column_switches_back(self):
+        from importer.models import Mapping
+        m = Mapping.from_dict({"date": 0, "amount": 2, "debit": None, "credit": None, "sign": "debit_credit"})
+        self.assertEqual((m.sign, m.amount), ("as_is", 2))
+
+    def test_explicit_modes_are_kept_when_consistent(self):
+        from importer.models import Mapping
+        self.assertEqual(Mapping.from_dict({"amount": 2, "sign": "flip"}).sign, "flip")
+        self.assertEqual(Mapping.from_dict({"debit": 2, "credit": 3, "sign": "debit_credit"}).sign, "debit_credit")

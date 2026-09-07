@@ -2,7 +2,7 @@
 const SKIP_KEY = 'ispend.review.skipped';
 const rv = {
   mode: 'merchant', groups: [], remaining: 0, remainingItems: 0, done: 0, focus: -1,
-  cats: new Map(), catsFlat: [], settings: null, skipped: new Set(), loading: false,
+  cats: new Map(), catsFlat: [], settings: null, skipped: new Set(), loading: false, seq: 0,
   pairs: [], pairCount: 0, paired: 0, accounts: new Map(),
 };
 const MODES = ['merchant', 'single', 'transfers'];
@@ -31,7 +31,7 @@ initNav('review').then(async () => {
   registerShortcuts();
   paintMode();
   await load();
-});
+}).catch((err) => { $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); });
 
 async function loadRefs() {
   const [flat, accts] = await Promise.all([store.categoriesFlat(), store.accounts().catch(() => [])]);
@@ -64,10 +64,12 @@ function announce(t) { const l = $('#rv-live'); l.textContent = ''; setTimeout((
 /* ---------- data ---------- */
 async function load() {
   if (rv.mode === 'transfers') return loadTransfers();
+  const seq = ++rv.seq;
   rv.loading = true;
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-2">${ui.skeleton('60%', 12)}</div><div class="mt-3">${ui.skeleton('100%', 32)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-2">${ui.skeleton('55%', 12)}</div></div>`;
   try {
     const r = await api(`/api/review?mode=${rv.mode}&limit=100`);
+    if (seq !== rv.seq) return;
     if (rv.mode === 'merchant') {
       rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
       rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
@@ -75,7 +77,7 @@ async function load() {
       rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
       rv.remaining = r.remaining; rv.remainingItems = r.remaining;
     }
-  } catch (err) { $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
+  } catch (err) { if (seq !== rv.seq) return; $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
   rv.loading = false;
   rv.focus = -1;
   render();
@@ -86,10 +88,14 @@ function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.key; }
 
 /* ---------- transfers mode ---------- */
 async function loadTransfers() {
+  const seq = ++rv.seq;
   rv.loading = true;
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-3">${ui.skeleton('100%', 44)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-3">${ui.skeleton('100%', 44)}</div></div>`;
-  try { rv.pairs = await api('/api/transactions/transfer-candidates'); }
-  catch (err) { $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
+  let pairs;
+  try { pairs = await api('/api/transactions/transfer-candidates'); }
+  catch (err) { if (seq !== rv.seq) return; $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
+  if (seq !== rv.seq) return;
+  rv.pairs = pairs;
   rv.loading = false;
   rv.pairCount = rv.pairs.filter((p) => !rv.skipped.has(pairKey(p))).length;
   paintPairCount();

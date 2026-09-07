@@ -46,6 +46,10 @@ class Mapping:
                 setattr(m, key, int(v))
         if m.sign not in SIGN_MODES:
             m.sign = "as_is"
+        if m.amount is None and (m.debit is not None or m.credit is not None):
+            m.sign = "debit_credit"
+        elif m.sign == "debit_credit" and m.debit is None and m.credit is None and m.amount is not None:
+            m.sign = "as_is"
         m.has_header = bool(m.has_header)
         m.flip_sign = bool(m.flip_sign)
         m.day_first = bool(m.day_first)

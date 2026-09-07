@@ -47,3 +47,23 @@ def submit_login(page, navigate=True, attempts=ATTEMPTS, wait=WAIT_S):
             raise AssertionError(f"login did not navigate: {text or page.url}")
         return
     raise AssertionError("login stayed rate-limited")
+
+
+def press_enter_login(page, attempts=ATTEMPTS, wait=WAIT_S):
+    """Submit the login form with Enter in #password; wait out the rate limit like submit_login."""
+    from playwright.sync_api import TimeoutError as PwTimeout
+
+    for _ in range(attempts):
+        page.press("#password", "Enter")
+        try:
+            page.wait_for_url(lambda url: "/login.html" not in url, timeout=8000)
+            return
+        except PwTimeout:
+            pass
+        err = page.locator("#login-error")
+        text = err.inner_text() if err.count() else ""
+        if RATE_LIMIT_TEXT in text:
+            time.sleep(wait)
+            continue
+        raise AssertionError(f"login did not navigate: {text or page.url}")
+    raise AssertionError("login stayed rate-limited")
