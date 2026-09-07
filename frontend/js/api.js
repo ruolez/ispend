@@ -49,6 +49,22 @@ function apiUpload(path, formData, { onProgress } = {}) {
   });
 }
 
+/* Everything a signed-in user leaves in this browser, except device preferences. Called on sign-out,
+   on login, and whenever the signed-in user differs from the one who used this browser last. */
+const DEVICE_KEYS = ['ispend.theme', 'ispend.density', 'ispend.sidebar'];
+function clearUserState() {
+  [localStorage, sessionStorage].forEach((storage) => {
+    try {
+      const doomed = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && k.startsWith('ispend.') && !DEVICE_KEYS.includes(k)) doomed.push(k);
+      }
+      doomed.forEach((k) => storage.removeItem(k));
+    } catch { /* storage unavailable */ }
+  });
+}
+
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

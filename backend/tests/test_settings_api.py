@@ -101,12 +101,20 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(res.get_json()["error"], "You cannot delete your own account")
         self.assertEqual([c for c in self.x.calls if c[0].startswith("UPDATE users") or c[0].startswith("DELETE")], [])
 
+    def test_unknown_user_ids_are_404(self):
+        for method, path, body in (("delete", "/api/users/5", None), ("put", "/api/users/5/password", {"password": "a" * 10})):
+            res = self._call(method, path, body, uid=1, role="admin")
+            self.assertEqual((res.status_code, res.get_json()), (404, {"error": "User not found"}), path)
+        self.assertEqual([c for c in self.x.calls if "users" in c[0]], [])
+
     def test_deactivate_other_user(self):
+        self.q.routes.append(("FROM users WHERE id", {"id": 5}))
         res = self._call("delete", "/api/users/5", uid=1, role="admin")
         self.assertEqual(res.status_code, 200)
         self.assertEqual([p for _s, p in self.x.sql("UPDATE users SET is_active = FALSE")], [(5,)])
 
     def test_permanent_delete_removes_the_users_settings_rows(self):
+        self.q.routes.append(("FROM users WHERE id", {"id": 5}))
         res = self._call("delete", "/api/users/5?permanent=true", uid=1, role="admin")
         self.assertEqual(res.status_code, 200)
         self.assertEqual([p for _s, p in self.x.sql("DELETE FROM users")], [(5,)])

@@ -74,7 +74,7 @@ Cache is memory + sessionStorage, stale-while-revalidate. After mutating categor
 ```js
 const m = ui.modal({ title, html, size:'lg'|'xl', width, dismissible, actions:[{ label, primary, danger, onClick: async (m) => {…} /* throw → error toast; return false → keep open */ }], onClose });
 m.close(); m.el; m.body; m.setTitle(t);
-const ok = await ui.confirm({ title, body, confirmText, cancelText, danger });
+const ok = await ui.confirm({ title, body, confirmText, cancelText, danger }); // body is escaped; pass html: for markup
 const d = ui.drawer({ title, html, foot, width, onClose }); d.setBody(html); d.setFoot(html); d.setTitle(t); d.setDirty(true); d.close();   // one drawer at a time
 const p = ui.popover(anchorEl, contentEl, { placement:'bottom-start'|'bottom-end', matchWidth, onClose }); p.position(); p.close();
 ui.menu(anchorEl, [{ label, icon, onClick, href, checked, danger, disabled, shortcut }, { divider:true }, { label, header:true }]);

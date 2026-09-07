@@ -330,7 +330,7 @@ function openCategoryModal(parent) {
   let color = parent ? parent.color : SLOTS[(state.tree.length) % 12];
   let iconName = parent ? (parent.icon || 'tag') : 'tag';
   const html = `<form id="cat-form">
-    <div class="field"><label for="cf-name">${isSub ? 'Subcategory name' : 'Name'}</label><input id="cf-name" class="input" required autofocus placeholder="${isSub ? `e.g. ${parent.name} › Something` : 'e.g. Kids'}"></div>
+    <div class="field"><label for="cf-name">${isSub ? 'Subcategory name' : 'Name'}</label><input id="cf-name" class="input" required autofocus placeholder="${isSub ? `e.g. ${esc(parent.name)} › Something` : 'e.g. Kids'}"></div>
     ${isSub ? `<div class="hint mb-3">Inside <b>${esc(parent.name)}</b>. Inherits its color unless you pick another.</div>` : `<div class="field"><label for="cf-kind">Kind</label><select id="cf-kind" class="select"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (excluded from spending)</option></select></div>`}
     <div class="field"><label>Color</label><div class="swatches" id="cf-colors">${SLOTS.map((s) => `<button type="button" class="swatch ${color === s ? 'active' : ''}" data-color="${s}" style="--c:var(--${s})" aria-label="${s}"></button>`).join('')}</div></div>
     <div class="field"><label>Icon</label><div class="icon-grid" id="cf-icons" style="max-height:150px;overflow-y:auto">${CATEGORY_ICONS.map((n) => `<button type="button" class="${iconName === n ? 'active' : ''}" data-icon="${esc(n)}" title="${esc(n)}">${icon(n)}</button>`).join('')}</div></div>
@@ -382,7 +382,7 @@ function openMerge(cat) {
 async function deleteCategory(cat) {
   const n = cat.depth === 0 ? countOf(state.tree.find((p) => p.id === cat.id) || cat) : (cat.txn_count || 0);
   if (n > 0) {
-    const ok = await ui.confirm({ title: `${esc(cat.name)} is in use`, body: `${fmtNumber(n)} transactions use this category. Merge it into another category instead so nothing becomes uncategorized.`, confirmText: 'Merge instead' });
+    const ok = await ui.confirm({ title: `${cat.name} is in use`, body: `${fmtNumber(n)} transactions use this category. Merge it into another category instead so nothing becomes uncategorized.`, confirmText: 'Merge instead' });
     if (ok) openMerge(cat);
     return;
   }

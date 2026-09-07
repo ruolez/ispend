@@ -79,9 +79,16 @@ def parse_statement(statement_id, mapping=None, profile_key=None):
         if mapping is None:
             _auto_flip(st, result)
         _stage(st, result, ocr_path)
-    except Exception as e:
+    except ImportError_ as e:
+        log.info("parse rejected statement %s: %s", statement_id, e)
+        _set_error(statement_id, str(e))
+    except Exception:
         log.exception("parse failed for statement %s", statement_id)
-        _set_error(statement_id, f"{e}")
+        _set_error(statement_id, UNREADABLE_MESSAGE)
+
+
+UNREADABLE_MESSAGE = ("This file does not look like a statement iSpend can read. Export a CSV, Excel or PDF "
+                      "statement from your bank and try again, or pick the columns with the mapping editor.")
 
 
 AUTO_FLIP_WARNING = ("Amounts were flipped automatically: this looks like a card export that lists charges as "
@@ -558,6 +565,40 @@ def recover_interrupted():
             pass
 
 
+def _append_warning(statement_id, message, status=None):
+    db.execute(
+        """UPDATE statements SET warnings = warnings || %s::jsonb, status = COALESCE(%s, status), updated_at = now()
+           WHERE id = %s""",
+        (json.dumps([message[:500]]), status, statement_id),
+    )
+
+
+def ai_extract_async(statement_id, user_id, replace=False):
+    """AI page reading can outlast the request budget on long statements: mark the statement as
+    parsing and finish in the background; the preview polls like a re-parse."""
+    import jobs
+
+    st = _load(statement_id)
+    if not st or st["user_id"] != user_id:
+        raise ImportError_("Statement not found", 404)
+    if st["status"] not in ("previewed", "error"):
+        raise ImportError_("Only statements in preview can be read with AI", 409)
+    if st["file_kind"] != "pdf":
+        raise ImportError_("AI reading is for PDF statements", 409)
+    db.execute("UPDATE statements SET status = 'parsing', error_message = NULL, updated_at = now() WHERE id = %s",
+               (statement_id,))
+    jobs.spawn(_ai_extract_job, statement_id, user_id, replace)
+    return _load(statement_id)
+
+
+def _ai_extract_job(statement_id, user_id, replace):
+    try:
+        ai_extract_statement(statement_id, user_id, replace=replace)
+    except Exception as e:
+        log.exception("AI extraction failed for statement %s", statement_id)
+        _append_warning(statement_id, f"AI reading failed: {e}", status="previewed")
+
+
 def ai_extract_statement(statement_id, user_id, replace=False):
     """Stage rows read by the AI model. New rows are added next to parsed ones (matched on date+amount)
     unless replace=True. Returns {"added", "total", "calls"}."""
@@ -568,7 +609,7 @@ def ai_extract_statement(statement_id, user_id, replace=False):
     st = _load(statement_id)
     if not st or st["user_id"] != user_id:
         raise ImportError_("Statement not found")
-    if st["status"] not in ("previewed", "error"):
+    if st["status"] not in ("previewed", "error", "parsing"):
         raise ImportError_("Only statements in preview can be read with AI")
     if st["file_kind"] != "pdf":
         raise ImportError_("AI reading is for PDF statements")
@@ -583,6 +624,7 @@ def ai_extract_statement(statement_id, user_id, replace=False):
     keep = [] if replace else existing
     fresh = [r for r in ai_rows if replace or (r.txn_date, r.amount) not in have]
     if not fresh and not replace:
+        _append_warning(statement_id, f"AI found no additional transactions ({calls} model calls).", status="previewed")
         return {"added": 0, "total": len(existing), "calls": calls}
     # rebuild the preview from the kept parsed rows plus the AI rows
     from importer.models import ParsedRow

@@ -157,3 +157,15 @@ class PasswordPolicyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreferenceValidationTest(unittest.TestCase):
+    def test_known_keys_are_validated_and_null_clears(self):
+        clean = auth.clean_preferences({"theme": "dark", "density": None, "currency": "", "default_account_id": "12",
+                                        "week_start": 1, "evil": "x"})
+        self.assertEqual(clean, {"theme": "dark", "density": None, "currency": "", "default_account_id": 12, "week_start": 1})
+
+    def test_bad_values_raise(self):
+        for body in ({"theme": "x" * 10000}, {"density": "cozy"}, {"currency": "EUR"}, {"theme": 5}):
+            with self.assertRaises(ValueError, msg=body):
+                auth.clean_preferences(body)

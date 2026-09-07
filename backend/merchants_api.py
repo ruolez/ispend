@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request, session
 import categorizer
 import db
 from auth import login_required
-from util import api_error, audit, record_events, rows_json
+from util import api_error, audit, json_body, record_events, rows_json, to_int
 
 bp = Blueprint("merchants", __name__, url_prefix="/api/merchants")
 
@@ -33,8 +33,8 @@ def list_merchants():
 @login_required
 def update_merchant(merchant_key):
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    category_id = data.get("category_id")
+    data = json_body()
+    category_id = to_int(data.get("category_id"), "Category")
     if category_id is None:
         return api_error("category_id is required")
     if not db.query("SELECT 1 FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):

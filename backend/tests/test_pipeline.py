@@ -167,3 +167,19 @@ class RowShimTest(unittest.TestCase):
             "rows_total": 3, "rows_valid": 3, "rows_invalid": 0, "dupes_existing": 0, "dupes_in_file": 1,
             "predicted": {"rule": 0, "merchant": 0, "builtin": 0, "none": 3},
         })
+
+
+class ParseFailureMessageTest(unittest.TestCase):
+    def _run(self, exc):
+        FAKE.calls.clear()
+        with mock.patch.object(pipeline, "_load", return_value={"id": 5}), \
+                mock.patch.object(pipeline, "_parse_file", side_effect=exc), self.assertLogs(pipeline.log):
+            pipeline.parse_statement(5)
+        errors = [p for kind, sql, p in FAKE.calls if kind == "execute" and "status = 'error'" in sql]
+        return errors[0][0]
+
+    def test_internal_exceptions_become_a_plain_language_message(self):
+        self.assertEqual(self._run(KeyError("Amount")), pipeline.UNREADABLE_MESSAGE)
+
+    def test_import_errors_keep_their_own_message(self):
+        self.assertEqual(self._run(pipeline.ImportError_("The workbook has no data rows")), "The workbook has no data rows")

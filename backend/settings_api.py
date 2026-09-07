@@ -9,7 +9,7 @@ import db
 import openrouter
 import seed_categories
 from auth import MIN_PASSWORD_LEN, admin_required, login_required, password_problem
-from util import api_error, audit
+from util import api_error, audit, json_body
 
 bp = Blueprint("settings", __name__, url_prefix="/api")
 
@@ -49,7 +49,7 @@ def put_settings():
     """Saves the current user's keys. Admins may pass shared=true to also publish the key and
     model for every user who has not configured their own."""
     uid = _uid()
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     shared = bool(data.get("shared")) and _is_admin()
     for key, value in data.items():
         if key not in SETTING_KEYS:
@@ -94,7 +94,7 @@ def openrouter_models():
 @bp.post("/settings/openrouter/test")
 @login_required
 def openrouter_test():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     key = (data.get("api_key") or "").strip()
     if not key or key == MASK:
         key = None
@@ -122,7 +122,7 @@ def list_users():
 @bp.post("/users")
 @admin_required
 def create_user():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     role = data.get("role") if data.get("role") in ("admin", "user") else "user"
@@ -144,7 +144,7 @@ def create_user():
 @bp.put("/users/<int:user_id>")
 @admin_required
 def update_user(user_id):
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     row = db.query("SELECT id FROM users WHERE id = %s", (user_id,), one=True)
     if not row:
         return api_error("User not found", 404)
@@ -167,6 +167,8 @@ def update_user(user_id):
 def delete_user(user_id):
     if user_id == session["user_id"]:
         return api_error("You cannot delete your own account")
+    if not db.query("SELECT id FROM users WHERE id = %s", (user_id,), one=True):
+        return api_error("User not found", 404)
     if request.args.get("permanent") == "true":
         with db.transaction():
             db.execute("DELETE FROM users WHERE id = %s", (user_id,), commit=False)
@@ -182,11 +184,13 @@ def delete_user(user_id):
 @bp.put("/users/<int:user_id>/password")
 @admin_required
 def reset_password(user_id):
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     password = data.get("password") or ""
     problem = password_problem(password)
     if problem:
         return api_error(problem)
+    if not db.query("SELECT id FROM users WHERE id = %s", (user_id,), one=True):
+        return api_error("User not found", 404)
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (generate_password_hash(password), user_id))
     audit("user.password_reset", {"id": user_id})
     return jsonify({"ok": True})

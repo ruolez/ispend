@@ -23,6 +23,7 @@ const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Setting
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_SETTINGS];
 const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'import'];
 const SIDEBAR_KEY = 'ispend.sidebar';
+const UID_KEY = 'ispend.uid';
 
 function sidebarMode() {
   try { const v = localStorage.getItem(SIDEBAR_KEY); if (v) return v; } catch { /* ignore */ }
@@ -133,6 +134,9 @@ async function initNav(activePage) {
     return new Promise(() => {}); // never resolve: page must not proceed
   }
   window.currentUser = me;
+  try {
+    if (localStorage.getItem(UID_KEY) !== String(me.id)) { clearUserState(); localStorage.setItem(UID_KEY, String(me.id)); }
+  } catch { /* storage unavailable */ }
   $('#tb-avatar').textContent = initials(me.username);
   $('#tb-username').textContent = me.username;
   const prefs = me.preferences || {};
@@ -169,7 +173,11 @@ function openUserMenu(anchor) {
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
     { label: 'Settings', icon: 'settings', href: '/settings.html' },
     { divider: true },
-    { label: 'Sign out', icon: 'log-out', onClick: async () => { await api('/api/auth/logout', { method: 'POST' }); location.href = '/login.html'; } },
+    { label: 'Sign out', icon: 'log-out', onClick: async () => {
+      try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* the cookie is cleared server-side on the next request anyway */ }
+      clearUserState();
+      location.href = '/login.html';
+    } },
   ]);
 }
 function setThemePref(mode) {

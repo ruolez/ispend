@@ -1,5 +1,6 @@
 import logging
 
+import psycopg2
 from flask import Flask, jsonify
 from werkzeug.exceptions import HTTPException
 
@@ -61,6 +62,12 @@ def create_app():
     @app.errorhandler(404)
     def not_found(_e):
         return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(ValueError)
+    @app.errorhandler(psycopg2.DataError)
+    def bad_value(e):
+        app.logger.info("Rejected request value: %s", str(e).strip().splitlines()[0] if str(e) else type(e).__name__)
+        return jsonify({"error": "Invalid value in request"}), 400
 
     @app.errorhandler(Exception)
     def unhandled(e):

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request, session
 import db
 import seed_categories
 from auth import login_required
-from util import api_error, audit, parse_int_list
+from util import api_error, audit, json_body, parse_int_list, to_int
 
 bp = Blueprint("categories", __name__, url_prefix="/api/categories")
 
@@ -63,12 +63,12 @@ def list_categories():
 @bp.post("")
 @login_required
 def create_category():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     name = (data.get("name") or "").strip()
     if not name:
         return api_error("Name is required")
     uid = session["user_id"]
-    parent_id = data.get("parent_id")
+    parent_id = to_int(data.get("parent_id"), "Parent category")
     parent = None
     if parent_id:
         parent = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (parent_id, uid), one=True)
@@ -76,13 +76,15 @@ def create_category():
             return api_error("Parent category not found", 404)
         if parent["parent_id"]:
             return api_error("Only two levels of categories are supported")
-    kind = data.get("kind") or (parent["kind"] if parent else "expense")
+    kind = parent["kind"] if parent else (data.get("kind") or "expense")
     if kind not in KINDS:
         return api_error("Invalid kind")
     color = data.get("color") or (parent["color"] if parent else _next_color(uid))
     if color not in COLOR_SLOTS:
         return api_error("Invalid color slot")
-    icon = (data.get("icon") or (parent["icon"] if parent else "tag") or "tag").strip()
+    icon = _clean_icon(data.get("icon") or (parent["icon"] if parent else "tag"))
+    if not icon:
+        return api_error("Invalid icon name")
     dup = db.query(
         "SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
         (uid, parent_id or 0, name), one=True,
@@ -105,6 +107,15 @@ def create_category():
     return jsonify(cat), 201
 
 
+ICON_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def _clean_icon(value):
+    """Icon names are looked up on the client; only plain kebab-case identifiers are stored."""
+    value = str(value or "").strip()
+    return value if ICON_NAME.match(value) else None
+
+
 def _next_color(uid):
     used = db.query("SELECT color, COUNT(*) AS n FROM categories WHERE user_id = %s AND parent_id IS NULL GROUP BY color", (uid,))
     counts = {r["color"]: r["n"] for r in used}
@@ -118,27 +129,30 @@ def update_category(cat_id):
     cat = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
     if not cat:
         return api_error("Category not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     name = (data.get("name") or cat["name"]).strip()
     if not name:
         return api_error("Name is required")
     color = data.get("color") or cat["color"]
     if color not in COLOR_SLOTS:
         return api_error("Invalid color slot")
-    icon = (data.get("icon") or cat["icon"] or "tag").strip()
+    icon = _clean_icon(data.get("icon") or cat["icon"] or "tag")
+    if not icon:
+        return api_error("Invalid icon name")
     kind = data.get("kind") or cat["kind"]
     if kind not in KINDS:
         return api_error("Invalid kind")
-    parent_id = data.get("parent_id", cat["parent_id"])
+    parent_id = to_int(data.get("parent_id", cat["parent_id"]), "Parent category")
     if parent_id == cat_id:
         return api_error("A category cannot be its own parent")
     if parent_id:
-        parent = db.query("SELECT id, parent_id FROM categories WHERE id = %s AND user_id = %s", (parent_id, uid), one=True)
+        parent = db.query("SELECT id, parent_id, kind FROM categories WHERE id = %s AND user_id = %s", (parent_id, uid), one=True)
         if not parent or parent["parent_id"]:
             return api_error("Invalid parent category")
         has_children = db.query("SELECT 1 FROM categories WHERE parent_id = %s LIMIT 1", (cat_id,), one=True)
         if has_children:
             return api_error("A category with subcategories cannot be nested")
+        kind = parent["kind"]
     dup = db.query(
         """SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s
            AND lower(name) = lower(%s) AND id <> %s""",
@@ -161,7 +175,7 @@ def update_category(cat_id):
 @bp.put("/reorder")
 @login_required
 def reorder():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     ids = parse_int_list(data.get("ids"))
     uid = session["user_id"]
     with db.transaction():
@@ -174,8 +188,8 @@ def reorder():
 @login_required
 def merge(cat_id):
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    into = data.get("into")
+    data = json_body()
+    into = to_int(data.get("into"), "Target category")
     src = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
     dst = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (into, uid), one=True) if into else None
     if not src or not dst or src["id"] == dst["id"]:
@@ -207,7 +221,7 @@ def delete_category(cat_id):
                   (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %s AND category_id = ANY(%s)) AS merchants""",
         (uid, ids, uid, ids, uid, ids), one=True,
     )
-    reassign = request.args.get("reassign_to")
+    reassign = to_int(request.args.get("reassign_to"), "reassign_to")
     in_use = refs["transactions"] or refs["rules"] or refs["merchants"]
     if in_use and not reassign:
         parts = [f"{refs['transactions']} transactions" if refs["transactions"] else None,

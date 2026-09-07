@@ -5,6 +5,16 @@ paint();
 themeBtn.addEventListener('click', () => Theme.toggle());
 window.addEventListener('ispend:theme', paint);
 
+/* Only same-origin paths may be followed after login ("//evil.com" and "/\\evil.com" both resolve off-site). */
+function safeNext(next) {
+  if (!next) return '/index.html';
+  try {
+    const u = new URL(next, location.origin);
+    if (u.origin !== location.origin || u.pathname.endsWith('/login.html')) return '/index.html';
+    return u.pathname + u.search + u.hash;
+  } catch { return '/index.html'; }
+}
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('login-btn');
@@ -19,9 +29,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   }
   btn.classList.add('is-loading');
   try {
-    await api('/api/auth/login', { method: 'POST', body: { username, password } });
-    const next = new URLSearchParams(location.search).get('next');
-    location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/index.html';
+    const me = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+    clearUserState();
+    const theme = me && me.preferences && me.preferences.theme;
+    if (theme && !Theme.hasStored()) Theme.set(theme);
+    location.href = safeNext(new URLSearchParams(location.search).get('next'));
   } catch (err) {
     errEl.innerHTML = `${icon('alert-triangle')}<div>${esc(err.message)}</div>`;
     errEl.classList.add('show');

@@ -24,6 +24,8 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
+from ratelimit import login_with_retry, submit_login
+
 BAD_TEXT = re.compile(r"(\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|\$NaN|−NaN|\bInvalid Date\b)")
 TEXT_SCAN_JS = r"""
 (pattern) => {
@@ -135,7 +137,7 @@ class Api:
 
     def __init__(self, creds):
         self.s = requests.Session()
-        r = self.s.post(f"{BASE}/api/auth/login", json={"username": creds[0], "password": creds[1]})
+        r = login_with_retry(lambda: self.s.post(f"{BASE}/api/auth/login", json={"username": creds[0], "password": creds[1]}))
         assert r.ok, f"login {creds[0]} failed: {r.status_code} {r.text[:200]}"
         self.me = r.json()
 
@@ -238,7 +240,7 @@ def ui_login(page, creds, expect_path="/index.html"):
     page.goto(f"{BASE}/login.html")
     page.fill("#username", creds[0])
     page.fill("#password", creds[1])
-    page.press("#password", "Enter")
+    submit_login(page)
     page.wait_for_url(re.compile(re.escape(expect_path)), timeout=15000)
     page.wait_for_function("() => !!window.currentUser", timeout=15000)
 
@@ -340,8 +342,7 @@ def test_f1_first_run(page, qapi):
     # wrong password
     page.fill("#username", QA[0])
     page.fill("#password", "nope-nope")
-    page.click("#login-btn")
-    page.wait_for_timeout(500)
+    submit_login(page, navigate=False)
     F.check("Invalid username or password" in err.inner_text(), f"wrong-password message: {err.inner_text()!r}")
     F.check(page.evaluate("document.activeElement.id") == "password", "focus returns to password after a failed login")
     shot(page, "F1-login-wrong-password")
@@ -1990,9 +1991,9 @@ def test_f10_settings(page, qapi, browser):
     F.check("Password updated" in t, "success toast")
     F.eq(page.locator("#me-cur").input_value(), "", "form reset after success")
     shot(page, "F10-password-changed")
-    r = requests.post(f"{BASE}/api/auth/login", json={"username": QA[0], "password": "newpass123"})
+    r = login_with_retry(lambda: requests.post(f"{BASE}/api/auth/login", json={"username": QA[0], "password": "newpass123"}))
     F.check(r.ok, "re-login with the new password works")
-    r2 = requests.post(f"{BASE}/api/auth/login", json={"username": QA[0], "password": QA[1]})
+    r2 = login_with_retry(lambda: requests.post(f"{BASE}/api/auth/login", json={"username": QA[0], "password": QA[1]}))
     F.check(r2.status_code == 401, "old password rejected")
     qapi.put("/api/auth/me/password", {"current_password": "newpass123", "password": QA[1]})
     F.finish()

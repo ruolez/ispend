@@ -4,7 +4,7 @@ import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
-from util import api_error, audit, parse_int_list, record_events, rows_json
+from util import api_error, audit, json_body, parse_int_list, record_events, rows_json
 
 bp = Blueprint("rules", __name__, url_prefix="/api/rules")
 
@@ -105,7 +105,7 @@ def list_rules():
 @login_required
 def create_rule():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     try:
         clean = rules_mod.validate(data)
         _validate_refs(clean, uid)
@@ -114,18 +114,19 @@ def create_rule():
     if "priority" not in data:
         top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE user_id = %s", (uid,), one=True)
         clean["priority"] = (top["p"] if top else 0) + 10
-    row = db.execute(
-        """INSERT INTO rules (user_id, name, priority, is_active, match_type, match_field, pattern, case_sensitive,
-               amount_min, amount_max, account_id, category_id, set_transfer, set_excluded)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
-        (uid, clean["name"], clean["priority"], clean["is_active"], clean["match_type"], clean["match_field"],
-         clean["pattern"], clean["case_sensitive"], clean["amount_min"], clean["amount_max"], clean["account_id"],
-         clean["category_id"], clean["set_transfer"], clean["set_excluded"]),
-        returning=True,
-    )
-    applied = 0
-    if data.get("apply_existing"):
-        applied = apply_rules(uid, [dict(row)], only_uncategorized=bool(data.get("only_uncategorized", True)))
+    with db.transaction():
+        row = db.execute(
+            """INSERT INTO rules (user_id, name, priority, is_active, match_type, match_field, pattern, case_sensitive,
+                   amount_min, amount_max, account_id, category_id, set_transfer, set_excluded)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            (uid, clean["name"], clean["priority"], clean["is_active"], clean["match_type"], clean["match_field"],
+             clean["pattern"], clean["case_sensitive"], clean["amount_min"], clean["amount_max"], clean["account_id"],
+             clean["category_id"], clean["set_transfer"], clean["set_excluded"]),
+            returning=True,
+        )
+        applied = 0
+        if data.get("apply_existing"):
+            applied = apply_rules(uid, [dict(row)], only_uncategorized=bool(data.get("only_uncategorized", True)))
     audit("rule.create", {"id": row["id"], "applied": applied})
     return jsonify({"id": row["id"], "applied": applied}), 201
 
@@ -134,7 +135,7 @@ def create_rule():
 @login_required
 def reorder():
     uid = session["user_id"]
-    ids = parse_int_list((request.get_json(silent=True) or {}).get("ids"))
+    ids = parse_int_list(json_body().get("ids"))
     with db.transaction():
         for i, rid in enumerate(ids):
             db.execute("UPDATE rules SET priority = %s, updated_at = now() WHERE id = %s AND user_id = %s",
@@ -147,7 +148,7 @@ def reorder():
 @login_required
 def preview():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     try:
         clean = rules_mod.validate(data, require_target=False)
     except ValueError as e:
@@ -174,7 +175,7 @@ def preview():
 @login_required
 def run_all():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     rows = db.query("SELECT * FROM rules WHERE user_id = %s AND is_active ORDER BY priority, id", (uid,)) or []
     updated = apply_rules(uid, [dict(r) for r in rows], only_uncategorized=bool(data.get("only_uncategorized", True)))
     audit("rule.run_all", {"updated": updated})
@@ -197,7 +198,7 @@ def update_rule(rule_id):
     existing = _own_rule(rule_id, uid)
     if not existing:
         return api_error("Rule not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     merged = {**dict(existing), **{k: v for k, v in data.items() if k not in ("apply_existing", "only_uncategorized")}}
     try:
         clean = rules_mod.validate(merged)
@@ -239,7 +240,7 @@ def apply_one(rule_id):
     row = _own_rule(rule_id, uid)
     if not row:
         return api_error("Rule not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     updated = apply_rules(uid, [dict(row)], only_uncategorized=bool(data.get("only_uncategorized", True)))
     audit("rule.apply", {"id": rule_id, "updated": updated})
     return jsonify({"updated": updated})

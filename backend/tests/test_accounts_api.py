@@ -105,3 +105,36 @@ class AccountsApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NullTolerantValidationTest(unittest.TestCase):
+    EXISTING = {"id": 4, "user_id": 1, "name": "Chequing", "institution": "td", "account_type": "checking",
+                "currency": "CAD", "last4": "1234", "color": "c3", "is_active": True}
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(accounts_api.bp)
+        self.q = _stubs.Router([("FROM accounts WHERE id", self.EXISTING)])
+        self.x = _stubs.Router(default=1)
+
+    def _put(self, body):
+        c = self.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = 1
+        with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(accounts_api, "db", FAKE):
+            return c.put("/api/accounts/4", data=json.dumps(body), content_type="application/json")
+
+    def test_null_name_is_a_validation_error_not_a_crash(self):
+        res = self._put({"name": None})
+        self.assertEqual((res.status_code, res.get_json()), (400, {"error": "Account name is required"}))
+
+    def test_null_is_active_keeps_the_stored_value(self):
+        res = self._put({"is_active": None, "institution": None, "last4": None, "color": None})
+        self.assertEqual(res.status_code, 200)
+        (_sql, params), = self.x.sql("UPDATE accounts SET")
+        self.assertEqual(params, ("Chequing", None, "checking", "CAD", None, "c3", True, 4))
+
+    def test_unknown_color_slot_is_rejected(self):
+        self.assertEqual(self._put({"color": "red"}).get_json(), {"error": "Invalid color slot"})

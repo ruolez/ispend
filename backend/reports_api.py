@@ -6,7 +6,7 @@ from flask import Blueprint, Response, jsonify, request, session
 import db
 import reports
 from auth import login_required
-from util import api_error, audit, csv_safe, parse_int_list
+from util import api_error, audit, csv_safe, json_body, parse_int_list
 
 bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
@@ -164,7 +164,7 @@ def recurring():
 @bp.post("/recurring/dismiss")
 @login_required
 def dismiss_recurring():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     key = (data.get("merchant_key") or "").strip()
     if not key:
         return api_error("merchant_key is required")

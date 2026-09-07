@@ -14,7 +14,7 @@ import config
 import db
 import transfers
 from auth import login_required
-from util import api_error, audit, csv_safe, parse_int_list, record_event, record_events, row_json, rows_json, to_int
+from util import api_error, audit, csv_safe, json_body, parse_int_list, record_event, record_events, row_json, rows_json, to_int
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
 
@@ -76,12 +76,16 @@ def _parse_date(value):
 
 
 def _parse_decimal(value):
+    """Finite Decimal within Postgres numeric(14,2) reach, else None."""
     if value in (None, ""):
         return None
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+    if not d.is_finite() or abs(d) >= Decimal("1e12"):
+        return None
+    return d
 
 
 def build_filters(args, user_id):
@@ -100,7 +104,8 @@ def build_filters(args, user_id):
             params.extend([cat_ids, cat_ids])
         if "none" in raw_cats:
             parts.append("t.category_id IS NULL")
-        sql += " AND (" + " OR ".join(parts) + ")"
+        if parts:
+            sql += " AND (" + " OR ".join(parts) + ")"
     d_from = _parse_date(args.get("from"))
     d_to = _parse_date(args.get("to"))
     rng = args.get("range")
@@ -291,7 +296,7 @@ def export_csv():
 @login_required
 def transfer_candidates():
     try:
-        days = int(request.args.get("days") or 4)
+        days = min(max(int(request.args.get("days") or 4), 0), 365)
     except ValueError:
         days = 4
     return jsonify(transfers.candidates(session["user_id"], days=days))
@@ -300,11 +305,13 @@ def transfer_candidates():
 @bp.post("/pair")
 @login_required
 def pair_transfer():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
+    a_id = to_int(data.get("a_id"), "a_id", required=True)
+    b_id = to_int(data.get("b_id"), "b_id", required=True)
     try:
-        out = transfers.pair(session["user_id"], int(data.get("a_id")), int(data.get("b_id")))
-    except (TypeError, ValueError) as e:
-        return api_error(str(e) or "a_id and b_id are required")
+        out = transfers.pair(session["user_id"], a_id, b_id)
+    except ValueError as e:
+        return api_error(str(e))
     except LookupError as e:
         return api_error(str(e), 404)
     audit("transactions.pair", out)
@@ -314,8 +321,12 @@ def pair_transfer():
 @bp.post("/auto-pair")
 @login_required
 def auto_pair():
-    data = request.get_json(silent=True) or {}
-    paired = transfers.auto_pair(session["user_id"], min_confidence=float(data.get("min_confidence") or 0.9))
+    data = json_body()
+    try:
+        min_confidence = min(max(float(data.get("min_confidence") or 0.9), 0.0), 1.0)
+    except (TypeError, ValueError):
+        return api_error("min_confidence must be a number between 0 and 1")
+    paired = transfers.auto_pair(session["user_id"], min_confidence=min_confidence)
     audit("transactions.auto_pair", {"paired": paired})
     return jsonify({"paired": paired})
 
@@ -329,7 +340,7 @@ def suggest():
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return jsonify([])
-    limit = min(int(request.args.get("limit") or 8), 20)
+    limit = min(max(to_int(request.args.get("limit"), "limit") or 8, 1), 20)
     like = f"%{q}%"
     rows = db.query(
         """WITH hits AS (
@@ -413,9 +424,9 @@ def get_events(txn_id):
 @login_required
 def create_transaction():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    account = db.query("SELECT id, currency FROM accounts WHERE id = %s AND user_id = %s",
-                       (data.get("account_id"), uid), one=True)
+    data = json_body()
+    account_id = to_int(data.get("account_id"), "Account")
+    account = db.query("SELECT id, currency FROM accounts WHERE id = %s AND user_id = %s", (account_id, uid), one=True)
     if not account:
         return api_error("Account not found", 404)
     txn_date = _parse_date(str(data.get("txn_date") or ""))
@@ -435,22 +446,23 @@ def create_transaction():
     if category_id is not None and not db.query(
             "SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
         return api_error("Category not found", 404)
-    row = db.execute(
-        """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw, description_clean,
-               merchant_key, merchant_name, category_id, category_status, category_source, category_confidence,
-               fingerprint, occurrence, notes, raw)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (uid, account["id"], txn_date, amount, account["currency"], description, clean, key, name,
-         category_id, "confirmed" if category_id else "none", "manual" if category_id else None,
-         1.0 if category_id else None, fp, occurrence, (data.get("notes") or "").strip() or None, '{"manual": true}'),
-        returning=True,
-    )
-    record_event(row["id"], "imported", {"manual": True}, uid)
-    if category_id:
-        record_event(row["id"], "manual", {"category_id": category_id}, uid)
-        if data.get("learn", True):
-            categorizer.learn(uid, key, category_id, display_name=name)
-    audit("transaction.create", {"id": row["id"]})
+    with db.transaction():
+        row = db.execute(
+            """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw, description_clean,
+                   merchant_key, merchant_name, category_id, category_status, category_source, category_confidence,
+                   fingerprint, occurrence, notes, raw)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (uid, account["id"], txn_date, amount, account["currency"], description, clean, key, name,
+             category_id, "confirmed" if category_id else "none", "manual" if category_id else None,
+             1.0 if category_id else None, fp, occurrence, str(data.get("notes") or "").strip() or None, '{"manual": true}'),
+            returning=True,
+        )
+        record_event(row["id"], "imported", {"manual": True}, uid)
+        if category_id:
+            record_event(row["id"], "manual", {"category_id": category_id}, uid)
+            if data.get("learn", True):
+                categorizer.learn(uid, key, category_id, display_name=name)
+        audit("transaction.create", {"id": row["id"]})
     return jsonify(row_json(_get_own(row["id"], uid))), 201
 
 
@@ -461,10 +473,10 @@ def update_transaction(txn_id):
     row = _get_own(txn_id, uid)
     if not row:
         return api_error("Transaction not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     learn = bool(data.get("learn", True))
     if "category_id" in data:
-        category_id = data["category_id"]
+        category_id = to_int(data["category_id"], "Category")
         if category_id is not None:
             cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
             if not cat:
@@ -484,7 +496,7 @@ def update_transaction(txn_id):
                            (name, uid, row["merchant_key"]))
             else:
                 db.execute("UPDATE transactions SET merchant_name = %s, updated_at = now() WHERE id = %s", (name, txn_id))
-    if "is_transfer" in data:
+    if data.get("is_transfer") is not None:
         if data["is_transfer"]:
             transfers_cat = transfers._transfer_category_id(uid, set())
             db.execute(
@@ -498,7 +510,7 @@ def update_transaction(txn_id):
             record_event(txn_id, "transfer", {"is_transfer": True}, uid)
         else:
             transfers.unpair(uid, txn_id)
-    if "is_excluded" in data and not data.get("is_transfer"):
+    if data.get("is_excluded") is not None and not data.get("is_transfer"):
         db.execute("UPDATE transactions SET is_excluded = %s, updated_at = now() WHERE id = %s",
                    (bool(data["is_excluded"]), txn_id))
         record_event(txn_id, "excluded", {"is_excluded": bool(data["is_excluded"])}, uid)
@@ -567,7 +579,7 @@ def unpair_transfer(txn_id):
 @login_required
 def bulk():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     ids = parse_int_list(data.get("ids"))
     action = data.get("action")
     if not ids:
@@ -578,7 +590,7 @@ def bulk():
         return api_error("No matching transactions", 404)
     updated = 0
     if action == "categorize":
-        category_id = data.get("category_id")
+        category_id = to_int(data.get("category_id"), "Category")
         if category_id is None:
             return api_error("category_id is required")
         cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)

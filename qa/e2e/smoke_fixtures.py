@@ -9,6 +9,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from helpers import Recorder
+from ratelimit import login_with_retry
 
 BASE_URL = os.environ.get("ISPEND_BASE_URL", "http://localhost:5559")
 QA_DIR = pathlib.Path(__file__).resolve().parents[1]
@@ -61,7 +62,7 @@ def api_login(context, persona):
     if persona in (None, "anon"):
         return None
     user, pw_ = PERSONAS[persona]
-    r = context.request.post(f"{BASE_URL}/api/auth/login", data={"username": user, "password": pw_})
+    r = login_with_retry(lambda: context.request.post(f"{BASE_URL}/api/auth/login", data={"username": user, "password": pw_}))
     assert r.ok, f"login as {persona} failed: {r.status} {r.text()[:200]}"
     return r.json()
 

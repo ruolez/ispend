@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, session
 
 import db
 from auth import login_required
-from util import api_error, audit, rows_json
+from util import api_error, audit, json_body, rows_json
 
 bp = Blueprint("accounts", __name__, url_prefix="/api/accounts")
 
@@ -27,22 +27,31 @@ WHERE a.user_id = %s
 """
 
 
+COLOR_SLOTS = {f"c{i}" for i in range(1, 13)}
+
+
+def _field(data, key, existing):
+    """The submitted value when the key is present (null counts as submitted), else the stored one."""
+    return data.get(key) if key in data else (existing or {}).get(key)
+
+
 def _validate(data, existing=None):
-    name = (data.get("name") if "name" in data else (existing or {}).get("name") or "").strip()
+    name = str(_field(data, "name", existing) or "").strip()
     if not name:
         raise ValueError("Account name is required")
     account_type = data.get("account_type") or (existing or {}).get("account_type") or "checking"
     if account_type not in ACCOUNT_TYPES:
         raise ValueError("Invalid account type")
-    currency = (data.get("currency") or (existing or {}).get("currency") or "USD").upper()
+    currency = str(data.get("currency") or (existing or {}).get("currency") or "USD").upper()
     if currency not in CURRENCIES:
         raise ValueError("Currency must be USD or CAD")
-    last4 = (data.get("last4") if "last4" in data else (existing or {}).get("last4")) or ""
-    last4 = "".join(ch for ch in str(last4) if ch.isdigit())[-4:] or None
+    last4 = "".join(ch for ch in str(_field(data, "last4", existing) or "") if ch.isdigit())[-4:] or None
     color = data.get("color") or (existing or {}).get("color") or "c1"
-    institution = (data.get("institution") if "institution" in data else (existing or {}).get("institution")) or None
+    if color not in COLOR_SLOTS:
+        raise ValueError("Invalid color slot")
+    institution = str(_field(data, "institution", existing) or "").strip()[:100] or None
     return {
-        "name": name, "account_type": account_type, "currency": currency,
+        "name": name[:200], "account_type": account_type, "currency": currency,
         "last4": last4, "color": color, "institution": institution,
     }
 
@@ -67,7 +76,7 @@ def institutions():
 @bp.post("")
 @login_required
 def create_account():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     try:
         f = _validate(data)
     except ValueError as e:
@@ -93,12 +102,12 @@ def update_account(account_id):
                         (account_id, session["user_id"]), one=True)
     if not existing:
         return api_error("Account not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     try:
         f = _validate(data, existing)
     except ValueError as e:
         return api_error(str(e))
-    is_active = bool(data.get("is_active", existing["is_active"]))
+    is_active = existing["is_active"] if data.get("is_active") is None else bool(data["is_active"])
     db.execute(
         """UPDATE accounts SET name=%s, institution=%s, account_type=%s, currency=%s, last4=%s, color=%s,
                                is_active=%s, updated_at=now() WHERE id=%s""",
@@ -123,8 +132,9 @@ def delete_account(account_id):
     import importer
     statements = db.query("SELECT * FROM statements WHERE account_id = %s AND user_id = %s",
                           (account_id, session["user_id"])) or []
-    for st in statements:
-        importer.discard_statement(st, delete_transactions=True)
-    db.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
+    with db.transaction():
+        for st in statements:
+            importer.discard_statement(st, delete_transactions=True)
+        db.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
     audit("account.delete", {"id": account_id, "transactions": count, "statements": len(statements)})
     return jsonify({"ok": True, "deleted_transactions": count, "deleted_statements": len(statements)})

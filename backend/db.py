@@ -27,11 +27,16 @@ def close_db(_exc=None):
         db.close()
 
 
+def _commit_now(commit):
+    """Statements inside a transaction() block commit together at its end."""
+    return commit and not g.get("in_tx")
+
+
 def query(sql, params=None, one=False, commit=True):
     with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
         rows = None if cur.description is None else cur.fetchall()
-    if commit:
+    if _commit_now(commit):
         get_db().commit()
     if rows is None:
         return None
@@ -43,7 +48,7 @@ def execute(sql, params=None, returning=False, commit=True):
         cur.execute(sql, params)
         row = cur.fetchone() if returning else None
         count = cur.rowcount
-    if commit:
+    if _commit_now(commit):
         get_db().commit()
     return row if returning else count
 
@@ -55,21 +60,27 @@ def execute_values(sql, rows, template=None, commit=True, page_size=500, fetch=F
         return [] if fetch else None
     with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         out = psycopg2.extras.execute_values(cur, sql, rows, template=template, page_size=page_size, fetch=fetch)
-    if commit:
+    if _commit_now(commit):
         get_db().commit()
     return [dict(r) for r in out] if fetch else None
 
 
 @contextmanager
 def transaction():
-    """Group several query()/execute(commit=False) calls into one commit."""
+    """Group every query()/execute() in the block (callees included) into one commit; nests as a no-op."""
     conn = get_db()
+    if g.get("in_tx"):
+        yield conn
+        return
+    g.in_tx = True
     try:
         yield conn
         conn.commit()
     except Exception:
         conn.rollback()
         raise
+    finally:
+        g.in_tx = False
 
 
 def get_setting(key, default=None):

@@ -9,7 +9,7 @@ import openrouter
 import reports
 from auth import login_required
 from openrouter import OpenRouterError
-from util import api_error, audit, parse_int_list, row_json
+from util import api_error, audit, json_body, parse_int_list, row_json
 
 bp = Blueprint("ai", __name__, url_prefix="/api")
 
@@ -23,7 +23,7 @@ def _uid():
 @bp.post("/ai/categorize")
 @login_required
 def categorize():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     if not openrouter.enabled("categorize", _uid()):
         return api_error("AI categorization is not enabled. Add an OpenRouter key and model in Settings.", 502)
     ids = parse_int_list(data.get("ids"))
@@ -79,7 +79,7 @@ def status():
 # ---------- Insights ----------
 
 def _period():
-    y, m = reports.parse_month(request.args.get("month") or (request.get_json(silent=True) or {}).get("month"))
+    y, m = reports.parse_month(request.args.get("month") or json_body().get("month"))
     start, end = reports.month_bounds(y, m)
     return start, end
 
@@ -110,7 +110,7 @@ def get_insights():
 @login_required
 def generate_insights():
     uid = _uid()
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     y, m = reports.parse_month(data.get("month"))
     start, end = reports.month_bounds(y, m)
     try:

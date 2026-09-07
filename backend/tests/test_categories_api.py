@@ -148,3 +148,40 @@ class SeedFindTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CreateInheritsParentKindTest(unittest.TestCase):
+    PARENT = {**CAT, "id": 9, "name": "Income", "slug": "income", "kind": "income", "color": "c5", "icon": "wallet"}
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(categories_api.bp)
+        self.q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", self.PARENT),
+                                ("COALESCE(MAX(sort_order)", {"n": 0}),
+                                ("FROM categories WHERE id = %s", {"id": 10, "kind": "income"})])
+        self.x = _stubs.Router(default={"id": 10})
+
+    def _post(self, body):
+        c = self.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = 1
+        with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
+            return c.post("/api/categories", data=json.dumps(body), content_type="application/json")
+
+    def test_child_takes_the_parents_kind_even_when_another_is_sent(self):
+        res = self._post({"name": "Bonus", "parent_id": 9, "kind": "expense"})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        (_sql, params), = self.x.sql("INSERT INTO categories")
+        self.assertEqual(params[4], "income")
+
+    def test_non_integer_parent_is_400(self):
+        res = self._post({"name": "Bonus", "parent_id": "abc"})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn(b"Parent category must be an integer", res.get_data())
+
+    def test_icon_names_are_plain_identifiers(self):
+        self.assertEqual(self._post({"name": "X", "icon": "__proto__"}).get_json(), {"error": "Invalid icon name"})
+        self.assertEqual(self._post({"name": "X", "icon": "<img>"}).get_json(), {"error": "Invalid icon name"})
+        self.assertEqual(self._post({"name": "X", "icon": "shopping-cart"}).status_code, 201)

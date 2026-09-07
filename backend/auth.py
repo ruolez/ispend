@@ -5,13 +5,33 @@ from flask import Blueprint, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from util import api_error, audit, json_body
+from util import api_error, audit, json_body, to_int
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start"}
+PREFERENCE_CHOICES = {"theme": ("system", "light", "dark"), "density": ("comfortable", "compact"), "currency": ("", "USD", "CAD")}
 MIN_PASSWORD_LEN = 10
 _DUMMY_HASH = generate_password_hash("not-a-real-password")
+
+
+def clean_preferences(data):
+    """Known keys only, each validated; None clears a preference. ValueError carries the message."""
+    out = {}
+    for key, value in data.items():
+        if key not in PREFERENCE_KEYS:
+            continue
+        if value is None:
+            out[key] = None
+        elif key in PREFERENCE_CHOICES:
+            if not isinstance(value, str) or value not in PREFERENCE_CHOICES[key]:
+                raise ValueError(f"Invalid {key}")
+            out[key] = value
+        elif key == "default_account_id":
+            out[key] = to_int(value, "default_account_id")
+        elif key == "week_start":
+            out[key] = to_int(value, "week_start", lo=0, hi=6)
+    return out
 
 
 def password_problem(password, label="Password"):
@@ -109,7 +129,10 @@ def me():
 @login_required
 def update_preferences():
     data = json_body()
-    clean = {k: v for k, v in data.items() if k in PREFERENCE_KEYS}
+    try:
+        clean = clean_preferences(data)
+    except ValueError as e:
+        return api_error(str(e))
     user = db.query("SELECT preferences FROM users WHERE id = %s", (session["user_id"],), one=True)
     prefs = {**(user["preferences"] or {}), **clean}
     db.execute("UPDATE users SET preferences = %s WHERE id = %s", (json.dumps(prefs), session["user_id"]))

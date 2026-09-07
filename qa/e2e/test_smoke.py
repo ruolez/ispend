@@ -10,6 +10,7 @@ import time
 import pytest
 from playwright.sync_api import TimeoutError as PwTimeout
 
+from ratelimit import login_with_retry, submit_login
 from smoke_fixtures import PERSONAS, SHOTS, THEMES, VIEWPORTS, record
 from smoke_fixtures import _results_sink, base_url, browser, make_context, pw  # noqa: F401  (pytest fixtures)
 from helpers import (
@@ -465,7 +466,7 @@ def test_auth_login_next_and_wrong_password(make_context):
     page.goto("/login.html?next=%2Freports.html%3Ftab%3Dtrend", wait_until="load")
     page.fill("#username", "qa_tester")
     page.fill("#password", "wrong-password")
-    page.click("#login-btn")
+    submit_login(page, navigate=False)
     page.locator("#login-error.show").wait_for(state="visible", timeout=5000)
     err_text = page.locator("#login-error").inner_text().strip()
     role = page.locator("#login-error").get_attribute("role")
@@ -474,8 +475,7 @@ def test_auth_login_next_and_wrong_password(make_context):
     still_visible = page.locator("#login-error.show").is_visible()
     toasts = page.locator(".toast").count()
     page.fill("#password", PERSONAS["qa_tester"][1])
-    with page.expect_navigation(timeout=8000):
-        page.click("#login-btn")
+    submit_login(page)
     wait_loaded(page)
     detail = {"error_text": err_text, "role": role, "focus_after_error": focused, "error_persists_3s": still_visible, "toasts": toasts,
               "landed": page.url, "console": unexpected_console(rec, ["/api/auth/login"]), "pageerrors": rec.pageerrors,
@@ -501,7 +501,7 @@ def test_auth_logout_back_and_storage_residue(make_context, base_url):
     ctx, page, rec = make_context("anon", "light", "1440")
     # admin's real account names, via API in a separate request context (read-only)
     api = ctx.request
-    r = api.post(f"{base_url}/api/auth/login", data={"username": "admin", "password": "admin"})
+    r = login_with_retry(lambda: api.post(f"{base_url}/api/auth/login", data={"username": "admin", "password": "admin"}))
     assert r.ok
     admin_accounts = [a["name"] for a in api.get(f"{base_url}/api/accounts?all=1").json()]
     api.post(f"{base_url}/api/auth/logout")
@@ -509,8 +509,7 @@ def test_auth_logout_back_and_storage_residue(make_context, base_url):
     page.goto("/login.html", wait_until="load")
     page.fill("#username", "admin")
     page.fill("#password", "admin")
-    with page.expect_navigation(timeout=8000):
-        page.click("#login-btn")
+    submit_login(page)
     page.goto("/transactions.html?range=all", wait_until="domcontentloaded")
     wait_loaded(page)
     rows_admin = page.locator("#tx-body tr[data-id]").count()
@@ -537,8 +536,7 @@ def test_auth_logout_back_and_storage_residue(make_context, base_url):
         page.goto("/login.html?next=%2Ftransactions.html", wait_until="load")
     page.fill("#username", "qa_tester")
     page.fill("#password", PERSONAS["qa_tester"][1])
-    with page.expect_navigation(timeout=8000):
-        page.click("#login-btn")
+    submit_login(page)
     if "/transactions.html" not in page.url:
         page.goto("/transactions.html", wait_until="domcontentloaded")
     wait_loaded(page)

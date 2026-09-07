@@ -10,6 +10,8 @@ import time
 import pytest
 import requests
 
+from ratelimit import login_with_retry
+
 BASE = os.environ.get("ISPEND_BASE_URL", "http://localhost:5559")
 ADMIN = ("admin", "admin")
 QA_USERS = {"qa_api1": "qa-api1-pass", "qa_api2": "qa-api2-pass"}
@@ -30,12 +32,7 @@ class Api(requests.Session):
         return super().request(method, url, **kwargs)
 
     def login(self, username, password):
-        """nginx rate-limits /api/auth/login per IP (10/min, burst 20); wait out a 429 instead of failing."""
-        for _attempt in range(12):
-            r = self.post("/api/auth/login", json={"username": username, "password": password})
-            if r.status_code != 429:
-                break
-            time.sleep(7)
+        r = login_with_retry(lambda: self.post("/api/auth/login", json={"username": username, "password": password}))
         self.username = username
         return r
 

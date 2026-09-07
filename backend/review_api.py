@@ -6,9 +6,13 @@ import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
-from util import api_error, audit, parse_int_list, record_events, rows_json
+from util import api_error, audit, json_body, parse_int_list, record_events, rows_json, to_int
 
 log = logging.getLogger(__name__)
+
+class ResolveError(ValueError):
+    """A rejected create_rule payload; rolls the resolve back and surfaces the message as 400."""
+
 
 bp = Blueprint("review", __name__, url_prefix="/api/review")
 
@@ -41,10 +45,10 @@ def queue():
     except ValueError:
         limit = 50
     extra, params = "", [uid]
-    account_id = request.args.get("account_id")
-    if account_id and account_id.isdigit():
+    account_id = to_int(request.args.get("account_id"), "account_id")
+    if account_id:
         extra += " AND t.account_id = %s"
-        params.append(int(account_id))
+        params.append(account_id)
     if mode == "single":
         items = db.query(
             f"""SELECT t.* FROM transactions t WHERE {QUEUE_WHERE}{extra}
@@ -95,7 +99,7 @@ def queue():
 @login_required
 def resolve():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     ids = parse_int_list(data.get("ids"))
     if not ids:
         return api_error("ids are required")
@@ -103,7 +107,7 @@ def resolve():
         "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])]
     if not own:
         return api_error("No matching transactions", 404)
-    category_id = data.get("category_id")
+    category_id = to_int(data.get("category_id"), "Category")
     mark_transfer = bool(data.get("mark_transfer"))
     learn = bool(data.get("learn", True))
     if category_id is not None:
@@ -111,6 +115,16 @@ def resolve():
             return api_error("Category not found", 404)
     elif not mark_transfer:
         return api_error("Choose a category or mark as transfer")
+    try:
+        with db.transaction():
+            updated, rule_id = _resolve(uid, own, category_id, mark_transfer, learn, data.get("create_rule"))
+    except ResolveError as e:
+        return api_error(str(e))
+    audit("review.resolve", {"count": updated, "category_id": category_id, "rule_id": rule_id, "transfer": mark_transfer})
+    return jsonify({"updated": updated, "rule_id": rule_id})
+
+
+def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
     updated = 0
     if mark_transfer:
         if category_id is None:
@@ -136,8 +150,7 @@ def resolve():
         updated = categorizer.apply_manual(uid, own, category_id, learn_memory=learn)
 
     rule_id = None
-    create_rule = data.get("create_rule")
-    if isinstance(create_rule, dict) and (create_rule.get("pattern") or "").strip():
+    if isinstance(create_rule, dict) and str(create_rule.get("pattern") or "").strip():
         try:
             clean = rules_mod.validate({
                 "name": create_rule.get("name"),
@@ -149,7 +162,7 @@ def resolve():
                 "account_id": create_rule.get("account_id"),
             })
         except ValueError as e:
-            return api_error(str(e))
+            raise ResolveError(str(e))
         top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE user_id = %s", (uid,), one=True)
         row = db.execute(
             """INSERT INTO rules (user_id, name, priority, match_type, match_field, pattern, case_sensitive,
@@ -162,15 +175,14 @@ def resolve():
         )
         rule_id = row["id"]
         db.execute("UPDATE transactions SET category_rule_id = %s WHERE id = ANY(%s)", (rule_id, own))
-    audit("review.resolve", {"count": updated, "category_id": category_id, "rule_id": rule_id, "transfer": mark_transfer})
-    return jsonify({"updated": updated, "rule_id": rule_id})
+    return updated, rule_id
 
 
 @bp.post("/suggest")
 @login_required
 def suggest():
     uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     ids = parse_int_list(data.get("ids"))
     try:
         import openrouter

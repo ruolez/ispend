@@ -94,7 +94,7 @@ function renderFileList() {
     let status = '';
     if (f.error) status = `<span class="badge badge-danger">Failed</span><span class="text-3 fs-sm">${esc(f.error)}</span><button type="button" class="btn btn-ghost btn-xs" data-act="remove-file" data-lid="${f.lid}">Remove</button>`;
     else if (f.statement && f.statement.status === 'previewed') status = `<span class="badge badge-success">Ready</span>`;
-    else if (f.statement && f.statement.status === 'error') status = `<span class="badge badge-danger">Failed</span><button type="button" class="btn btn-ghost btn-xs" data-act="remove-file" data-lid="${f.lid}">Remove</button>`;
+    else if (f.statement && f.statement.status === 'error') status = `<span class="badge badge-danger">Failed</span>${f.statement.error_message ? `<span class="text-3 fs-sm">${esc(f.statement.error_message)}</span>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="remove-file" data-lid="${f.lid}">Remove</button>`;
     else if (f.statementId) status = `<span class="badge badge-info"><span class="spinner"></span>${f.kind === 'pdf' ? 'Reading PDF' : 'Parsing'}</span>`;
     else status = `<span class="badge badge-neutral"><span class="spinner"></span>Uploading</span>`;
     return `<div class="file-row" data-lid="${f.lid}">
@@ -465,10 +465,11 @@ async function setRows(f, body) {
 async function aiExtract(f, button) {
   if (button) button.classList.add('is-loading');
   try {
-    const r = await api(`/api/statements/${f.statementId}/ai-extract`, { method: 'POST', body: {} });
-    f.statement = { ...f.statement, ...r };
+    await api(`/api/statements/${f.statementId}/ai-extract`, { method: 'POST', body: {} });
+    f.statement = { ...f.statement, status: 'parsing', rows: undefined };
     renderReview();
-    toast(r.added ? `AI added ${fmtNumber(r.added)} transaction${r.added === 1 ? '' : 's'} · review dates and signs before importing` : 'AI found no additional transactions', { type: r.added ? 'success' : 'info', duration: 7000 });
+    schedulePoll();
+    toast('Reading the statement with AI · this can take a few minutes; rows it finds appear in the preview with a note', { type: 'info', duration: 7000 });
   } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
   finally { if (button) button.classList.remove('is-loading'); }
 }
@@ -502,7 +503,7 @@ async function pickRowCategory(f, anchor, rowId) {
 async function undoImport(statementId, button) {
   const res = imp.results.find((r) => r.statementId === statementId);
   const n = res ? res.imported : null;
-  const ok = await ui.confirm({ title: 'Undo this import?', body: `This deletes the ${n != null ? `<b>${fmtNumber(n)}</b> ` : ''}transactions just imported from “${esc(res ? res.name : 'this file')}” and removes the file. Reports update immediately. You can import the file again later.`, confirmText: 'Undo import', danger: true });
+  const ok = await ui.confirm({ title: 'Undo this import?', html: `<p>This deletes the ${n != null ? `<b>${fmtNumber(n)}</b> ` : ''}transactions just imported from “${esc(res ? res.name : 'this file')}” and removes the file. Reports update immediately. You can import the file again later.</p>`, confirmText: 'Undo import', danger: true });
   if (!ok) return;
   if (button) button.classList.add('is-loading');
   try {
@@ -521,7 +522,7 @@ async function reparse(f) {
   } catch (err) { toast(err.message, { type: 'error' }); }
 }
 async function discard(f) {
-  const ok = await ui.confirm({ title: 'Discard this file?', body: `“${esc(f.name)}” will be removed without importing anything.`, confirmText: 'Discard', danger: true });
+  const ok = await ui.confirm({ title: 'Discard this file?', body: `“${f.name}” will be removed without importing anything.`, confirmText: 'Discard', danger: true });
   if (!ok) return;
   try { await api(`/api/statements/${f.statementId}`, { method: 'DELETE' }); } catch (err) { toast(err.message, { type: 'error' }); return; }
   imp.files = imp.files.filter((x) => x.lid !== f.lid);

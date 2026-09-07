@@ -1858,6 +1858,8 @@ class TestRobustness:
         assert u1.delete(f"/api/categories/{cid}").status_code == 200
         assert u1.delete(f"/api/categories/{r.json()['id']}").status_code == 200
         r = u1.post("/api/rules", json={"pattern": big, "category_id": probe_ids["cat"], "name": big})
+        assert (r.status_code, r.json()) == (400, {"error": "Pattern must be at most 200 characters"})
+        r = u1.post("/api/rules", json={"pattern": "x" * 200, "category_id": probe_ids["cat"], "name": big})
         assert r.status_code == 201 and len(u1.get(f"/api/rules/{r.json()['id']}").json()["name"]) == 200
         u1.delete(f"/api/rules/{r.json()['id']}")
         r = u1.post("/api/rules/preview", json={"match_type": "regex", "pattern": "(a+)+$" + "a" * 50})
@@ -1868,7 +1870,7 @@ class TestRobustness:
             r = u1.delete(f"/api/merchants/{key}")
             assert r.status_code in (200, 404), key
         r = u1.put("/api/auth/me/preferences", json={"theme": big, "currency": emoji})
-        assert r.status_code == 200
+        assert r.status_code == 400, "unknown theme/currency values are rejected, never stored"
         u1.put("/api/auth/me/preferences", json={"theme": "light", "currency": ""})
         u1.delete(f"/api/transactions/{t['id']}")
         u1.put(f"/api/transactions/{probe_ids['txn']}", json={"notes": None, "merchant_name": "QA Probe Txn"})

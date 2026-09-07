@@ -99,12 +99,13 @@ const ui = (() => {
     return handle;
   }
 
-  function confirm({ title = 'Are you sure?', body = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) {
+  /* `body` is plain text (escaped); pass `html` instead for markup you built with esc() yourself. */
+  function confirm({ title = 'Are you sure?', body = '', html = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) {
     return new Promise((resolve) => {
       let result = false;
       modal({
         title,
-        html: typeof body === 'string' ? `<p>${body}</p>` : body,
+        html: html || `<p>${esc(body)}</p>`,
         onClose: () => resolve(result),
         actions: [
           { label: cancelText, onClick: () => { result = false; } },

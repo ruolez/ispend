@@ -62,7 +62,7 @@ def parse_month(value, fallback=None):
     try:
         y, m = value.split("-")
         y, m = int(y), int(m)
-        if 1 <= m <= 12:
+        if 1 <= m <= 12 and 1970 <= y <= 9999:
             return y, m
     except (AttributeError, ValueError):
         pass

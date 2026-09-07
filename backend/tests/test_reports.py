@@ -178,3 +178,14 @@ class CompareMonthsTest(unittest.TestCase):
     def test_same_month_falls_back_to_previous(self):
         out, _ = self._run(vs="2026-07")
         self.assertEqual(out["previous_month"], "2026-06")
+
+
+class ParseMonthBoundsTest(unittest.TestCase):
+    def test_out_of_range_years_fall_back_to_the_reference_month(self):
+        import reports
+        from datetime import date as _date
+        ref = _date(2026, 9, 7)
+        self.assertEqual(reports.parse_month("99999-01", fallback=ref), (2026, 9))
+        self.assertEqual(reports.parse_month("0000-05", fallback=ref), (2026, 9))
+        self.assertEqual(reports.parse_month("2024-13", fallback=ref), (2026, 9))
+        self.assertEqual(reports.parse_month("2024-02", fallback=ref), (2024, 2))

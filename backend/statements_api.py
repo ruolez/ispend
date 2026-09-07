@@ -7,7 +7,7 @@ import db
 import importer
 import jobs
 from auth import login_required
-from util import api_error, audit, parse_int_list, row_json, rows_json
+from util import api_error, audit, json_body, parse_int_list, row_json, rows_json, to_int
 
 bp = Blueprint("statements", __name__, url_prefix="/api/statements")
 
@@ -66,8 +66,8 @@ def _suggest_account(st):
 def _detail(st):
     out = _statement_json(st)
     if st["status"] in ("previewed", "committing"):
-        offset = max(int(request.args.get("offset") or 0), 0)
-        limit = min(int(request.args.get("limit") or ROW_LIMIT_DEFAULT), ROW_LIMIT_MAX)
+        offset = max(to_int(request.args.get("offset"), "offset") or 0, 0)
+        limit = min(max(to_int(request.args.get("limit"), "limit") or ROW_LIMIT_DEFAULT, 1), ROW_LIMIT_MAX)
         rows = db.query(
             """SELECT r.id, r.row_index, r.txn_date, r.posted_date, r.description, r.amount, r.balance, r.merchant_name,
                       r.occurrence, r.duplicate_of, r.in_file_duplicate, r.is_valid, r.include, r.category_id, r.category_source, r.problems,
@@ -137,10 +137,11 @@ def list_statements():
     if status:
         sql += " AND s.status = ANY(%s)"
         params.append(status.split(","))
-    if request.args.get("account_id"):
+    account_id = to_int(request.args.get("account_id"), "account_id")
+    if account_id:
         sql += " AND s.account_id = %s"
-        params.append(int(request.args["account_id"]))
-    limit = min(int(request.args.get("limit") or 200), 1000)
+        params.append(account_id)
+    limit = min(max(to_int(request.args.get("limit"), "limit") or 200, 1), 1000)
     sql += " ORDER BY s.created_at DESC LIMIT %s"
     params.append(limit)
     rows = db.query(sql, params)
@@ -153,9 +154,9 @@ def upload():
     f = request.files.get("file")
     if f is None:
         return api_error("No file uploaded (field name 'file')")
-    account_id = request.form.get("account_id") or None
+    account_id = to_int(request.form.get("account_id"), "account_id")
     if account_id:
-        acct = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s", (int(account_id), session["user_id"]), one=True)
+        acct = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s", (account_id, session["user_id"]), one=True)
         if not acct:
             return api_error("Account not found", 404)
         account_id = acct["id"]
@@ -185,7 +186,7 @@ def put_mapping(statement_id):
     st = _get(statement_id)
     if not st:
         return api_error("Statement not found", 404)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     mapping = data.get("mapping")
     if not isinstance(mapping, dict):
         return api_error("mapping object is required")
@@ -209,8 +210,8 @@ def put_account(statement_id):
     st = _get(statement_id)
     if not st:
         return api_error("Statement not found", 404)
-    data = request.get_json(silent=True) or {}
-    account_id = data.get("account_id")
+    data = json_body()
+    account_id = to_int(data.get("account_id"), "Account")
     if account_id:
         acct = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s", (account_id, session["user_id"]), one=True)
         if not acct:
@@ -230,7 +231,7 @@ def put_rows(statement_id):
         return api_error("Statement not found", 404)
     if st["status"] != "previewed":
         return api_error("Rows can only be changed while previewing", 409)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     if data.get("confirm_suggestions"):
         # built-in hints become the user's own choice: confirmed at commit and learned into memory
         n = db.execute(
@@ -243,7 +244,7 @@ def put_rows(statement_id):
         ids = parse_int_list(data.get("row_ids"))
         if not ids:
             return api_error("row_ids is required")
-        cid = data.get("category_id")
+        cid = to_int(data.get("category_id"), "Category")
         if cid is not None:
             cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (cid, session["user_id"]), one=True)
             if not cat:
@@ -281,12 +282,12 @@ def commit(statement_id):
     st = _get(statement_id)
     if not st:
         return api_error("Statement not found", 404)
-    data = request.get_json(silent=True) or {}
-    account_id = data.get("account_id") or st.get("account_id")
+    data = json_body()
+    account_id = to_int(data.get("account_id"), "Account") or st.get("account_id")
     if not account_id:
         return api_error("Choose an account to import into")
     try:
-        result = importer.commit_statement(statement_id, int(account_id))
+        result = importer.commit_statement(statement_id, account_id)
     except importer.ImportError_ as e:
         return api_error(str(e), e.status)
     audit("statement.commit", {"id": statement_id, **result})
@@ -302,7 +303,7 @@ def reparse(statement_id):
     if st["status"] not in ("error", "previewed", "uploaded"):
         return api_error("Statement cannot be re-parsed in its current state", 409)
     db.execute("UPDATE statements SET status = 'parsing', error_message = NULL, updated_at = now() WHERE id = %s", (statement_id,))
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     mapping = st.get("mapping") if data.get("keep_mapping") else None
     profile_key = data.get("bank_profile") or (st.get("bank_profile") if data.get("keep_mapping") else None)
     jobs.spawn(importer.parse_statement, statement_id, mapping, profile_key)
@@ -358,15 +359,13 @@ def ai_extract(statement_id):
         return api_error("Statement not found", 404)
     if not openrouter.configured(session["user_id"]):
         return api_error("Add an OpenRouter key and model in Settings → AI first", 409)
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     try:
-        result = importer.ai_extract_statement(statement_id, session["user_id"], replace=bool(data.get("replace")))
-    except openrouter.OpenRouterError as e:
-        return api_error(f"AI reading failed: {e}", 502)
+        st = importer.ai_extract_async(statement_id, session["user_id"], replace=bool(data.get("replace")))
     except importer.ImportError_ as e:
-        return api_error(str(e), 409)
-    audit("statement.ai_extract", {"id": statement_id, **result})
-    return jsonify({**result, **_detail(_get(statement_id))})
+        return api_error(str(e), e.status)
+    audit("statement.ai_extract", {"id": statement_id, "replace": bool(data.get("replace"))})
+    return jsonify({"id": statement_id, "status": st["status"]}), 202
 
 
 @bp.get("/<int:statement_id>/file")

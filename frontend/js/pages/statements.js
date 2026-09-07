@@ -111,7 +111,7 @@ async function reparseStatement(s) {
 }
 
 async function deleteStatement(s) {
-  const ok = await ui.confirm({ title: 'Delete statement?', body: `“${esc(s.original_filename)}” and its preview rows will be removed. Nothing was imported from it.`, confirmText: 'Delete', danger: true });
+  const ok = await ui.confirm({ title: 'Delete statement?', body: `“${s.original_filename}” and its preview rows will be removed. Nothing was imported from it.`, confirmText: 'Delete', danger: true });
   if (!ok) return;
   try { await api(`/api/statements/${s.id}`, { method: 'DELETE' }); toast('Statement deleted', { type: 'success' }); loadStatements({ quiet: true }); }
   catch (err) { toast(err.message, { type: 'error' }); }
@@ -119,7 +119,7 @@ async function deleteStatement(s) {
 
 async function rollbackStatement(s) {
   const n = s.txn_count || (s.stats || {}).imported || 0;
-  const ok = await ui.confirm({ title: 'Roll back this import?', body: `This deletes the <b>${fmtNumber(n)}</b> transactions imported from “${esc(s.original_filename)}”, including any categories or notes you added to them. The file itself is removed too.`, confirmText: `Delete ${fmtNumber(n)} transactions`, danger: true });
+  const ok = await ui.confirm({ title: 'Roll back this import?', html: `<p>This deletes the <b>${fmtNumber(n)}</b> transactions imported from “${esc(s.original_filename)}”, including any categories or notes you added to them. The file itself is removed too.</p>`, confirmText: `Delete ${fmtNumber(n)} transactions`, danger: true });
   if (!ok) return;
   try {
     const r = await api(`/api/statements/${s.id}?with_transactions=true`, { method: 'DELETE' });
@@ -133,7 +133,7 @@ async function rollbackStatement(s) {
 async function flipStatement(s) {
   const ok = await ui.confirm({
     title: 'Flip charges and payments?',
-    body: `Every transaction imported from <b>${esc(s.original_filename)}</b> will have its sign reversed: charges become payments and payments become charges. Use this when a card export listed purchases as positive amounts. You can flip again to undo.`,
+    html: `<p>Every transaction imported from <b>${esc(s.original_filename)}</b> will have its sign reversed: charges become payments and payments become charges. Use this when a card export listed purchases as positive amounts. You can flip again to undo.</p>`,
     confirmText: 'Flip signs',
   });
   if (!ok) return;

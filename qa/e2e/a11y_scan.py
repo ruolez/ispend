@@ -118,7 +118,8 @@ def run_axe(page):
 
 
 def login(context, user):
-    r = context.request.post(f'{BASE}/api/auth/login', data=json.dumps(USERS[user]), headers={'Content-Type': 'application/json'})
+    from ratelimit import login_with_retry
+    r = login_with_retry(lambda: context.request.post(f'{BASE}/api/auth/login', data=json.dumps(USERS[user]), headers={'Content-Type': 'application/json'}))
     assert r.ok, f'login {user} failed: {r.status} {r.text()}'
 
 
