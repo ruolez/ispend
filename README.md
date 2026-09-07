@@ -3,7 +3,7 @@
 Self-hosted personal finance analyzer. Upload bank and credit-card statements (CSV, Excel, PDF, even scanned PDFs), let iSpend extract and categorize every charge, and see where the money goes: spending by category, monthly trends, top merchants, recurring subscriptions, anomalies and optional AI-written insights.
 
 - **Import anything**: CSV / XLSX / XLS exports and PDF statements. Text PDFs are parsed directly; scanned PDFs go through OCR (Tesseract via OCRmyPDF) automatically.
-- **Bank aware**: built-in profiles for Chase, American Express, Capital One, Bank of America, Citi, Discover, Wells Fargo, RBC, TD, BMO and Scotiabank, plus a generic column detector with a mapping editor for anything else.
+- **Bank aware**: built-in profiles for Chase, American Express, Capital One, Bank of America, Citi, Discover, PNC, Wells Fargo, RBC, TD, BMO and Scotiabank, plus a generic column detector with a mapping editor for anything else.
 - **Learns as you go**: rules (contains / starts with / equals / regex, amount ranges, per account) run first, then remembered merchant choices, then optional AI suggestions. Everything you confirm is remembered for the next import.
 - **Review queue**: unknown charges grouped by merchant so one decision categorizes dozens of rows, with "always do this" creating a rule.
 - **Duplicate safe**: overlapping statements and re-uploads are detected before anything is written.

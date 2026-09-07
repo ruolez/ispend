@@ -57,6 +57,59 @@ class AmexTest(unittest.TestCase):
         ])
 
 
+class PncTest(unittest.TestCase):
+    """PNC prints the amount before the description; sections decide the sign; the summary sentence
+    under each heading and the Daily Balance Detail table must not become rows."""
+
+    PERIOD = (date(2024, 7, 21), date(2024, 8, 20))
+
+    def lines(self, texts):
+        return [pdf_lines.Line(text=t, top=i * 12.0, x0=40.0 if not t.startswith(" ") else 90.0, x1=500.0, page=1,
+                               words=[]) for i, t in enumerate(texts)]
+
+    def rows(self, texts):
+        rows = pdf_lines.rows_to_transactions(self.lines(texts), bank_profiles.get("pnc"), self.PERIOD)
+        return [(r.txn_date, r.amount, r.description, r.problems) for r in rows]
+
+    def test_checking_sections_set_signs_and_balance_table_is_ignored(self):
+        got = self.rows([
+            "Deposits and Other Additions There were 2 Deposits and Other Additions totaling $2,600.00.",
+            "Date Amount Description",
+            "08/02 2,500.00 Direct Deposit - Payroll ACME CORP",
+            "08/03 100.00 Mobile Deposit",
+            "Banking/Debit Card Withdrawals and Purchases",
+            "There were 2 Debit Card/Bank card PIN POS purchases totaling $110.77.",
+            "08/09 84.12 3767 Debit Card Purchase Giant Eagle #0012",
+            "   Pittsburgh PA",
+            "08/12 26.65 3767 Debit Card Purchase Uptown Mart",
+            "Online and Electronic Banking Deductions",
+            "08/05 450.00 Online Transfer To Savings XXXXXX1234",
+            "Daily Balance Detail",
+            "Date Balance Date Balance",
+            "08/02 3,435.14 08/05 2,985.14",
+        ])
+        self.assertEqual(got, [
+            (date(2024, 8, 2), Decimal("2500.00"), "Direct Deposit - Payroll ACME CORP", []),
+            (date(2024, 8, 3), Decimal("100.00"), "Mobile Deposit", []),
+            (date(2024, 8, 9), Decimal("-84.12"), "3767 Debit Card Purchase Giant Eagle #0012 Pittsburgh PA", []),
+            (date(2024, 8, 12), Decimal("-26.65"), "3767 Debit Card Purchase Uptown Mart", []),
+            (date(2024, 8, 5), Decimal("-450.00"), "Online Transfer To Savings XXXXXX1234", []),
+        ])
+
+    def test_credit_card_lines_end_with_amount_and_trailing_minus_marks_a_payment(self):
+        got = self.rows([
+            "Transactions and Fees",
+            "08/05 8412000123 SHELL OIL 12345678 EVANSTON IL 52.10",
+            "08/06 8412000456 PAYMENT - THANK YOU 450.00-",
+            "2024 totals year-to-date",
+            "Total fees charged in 2024 $0.00",
+        ])
+        self.assertEqual(got, [
+            (date(2024, 8, 5), Decimal("-52.10"), "8412000123 SHELL OIL 12345678 EVANSTON IL", []),
+            (date(2024, 8, 6), Decimal("450.00"), "8412000456 PAYMENT - THANK YOU", []),
+        ])
+
+
 class RbcTest(unittest.TestCase):
     def test_withdrawal_deposit_columns_inferred_from_x_position(self):
         profile, period, rows = run("words_rbc.json")

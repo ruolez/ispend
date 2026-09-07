@@ -105,6 +105,23 @@ First Bank Card,Transaction Type,Date Posted,Transaction Amount,Description
 "08/02/2024","3200.00","*","","PAYROLL DEPOSIT ACME"
 "08/05/2024","-96.40","*","","SOBEYS #123 HALIFAX NS"
 """,
+    "pnc_checking.csv": """Date,Description,Withdrawals,Deposits,Category,Balance
+"08/12/2024","ATM WITHDRAWAL          PNC BANK ATM 5TH AVE        PITTSBURGH  PA","$100.00","","ATM/Cash","$2,801.02"
+"08/09/2024","DEBIT CARD PURCHASE   XXXXX4291 GIANT EAGLE #0012       PITTSBURGH  PA","$84.12","","Groceries","$2,901.02"
+"08/05/2024","ONLINE TRANSFER TO SAVINGS XXXXXX1234","$450.00","","Transfers","$2,985.14"
+"08/02/2024","DIRECT DEPOSIT        ACME CORP PAYROLL","","$2,500.00","Paychecks","$3,435.14"
+"08/01/2024","RECURRING DEBIT CARD  XXXXX3815 NETFLIX.COM               NETFLIX.COM CA","$15.49","","Entertainment","$935.14"
+""",
+    "pnc_classic.csv": """Date,Description,Withdrawals,Deposits,Balance
+08/12/2024,ATM WITHDRAWAL PNC BANK ATM 5TH AVE PITTSBURGH PA,100.00,,2801.02
+08/09/2024,DEBIT CARD PURCHASE XXXXX4291 GIANT EAGLE #0012 PITTSBURGH PA,84.12,,2901.02
+08/02/2024,DIRECT DEPOSIT ACME CORP PAYROLL,,2500.00,2985.14
+""",
+    "pnc_activity.csv": """Transaction Date,Transaction Description,Amount,Balance
+2024-08-12,ATM WITHDRAWAL PNC BANK ATM 5TH AVE PITTSBURGH PA,-$100.00,$2801.02
+2024-08-09,DEBIT CARD PURCHASE XXXXX4291 GIANT EAGLE #0012 PITTSBURGH PA,-$84.12,$2901.02
+2024-08-02,DIRECT DEPOSIT ACME CORP PAYROLL,$2500.00,$2985.14
+""",
     "generic_headerless.csv": """2024-08-01,Coffee shop,-4.50,995.50
 2024-08-02,Salary,3000.00,3995.50
 2024-08-03,Grocery store,-120.00,3875.50

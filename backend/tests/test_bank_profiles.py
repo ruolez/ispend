@@ -10,6 +10,7 @@ EXPECTED = {
     "capital_one_360.csv": "capital_one", "bofa_checking.csv": "bofa", "bofa_card.csv": "bofa", "citi.csv": "citi",
     "discover.csv": "discover", "wells_fargo.csv": "wells_fargo", "rbc.csv": "rbc", "td.csv": "td",
     "bmo_chequing.csv": "bmo", "bmo_card.csv": "bmo", "scotiabank.csv": "wells_fargo",
+    "pnc_checking.csv": "pnc", "pnc_classic.csv": "pnc", "pnc_activity.csv": "pnc",
     "generic_headerless.csv": None, "generic_semicolon.csv": None, "generic_positive_charges.csv": None,
 }
 
@@ -32,7 +33,7 @@ class DetectCsvTest(unittest.TestCase):
     def test_registry_has_all_banks_and_labels_sorted(self):
         keys = {p.key for p in bank_profiles.all_profiles()}
         self.assertEqual(keys, {"chase", "amex", "capital_one", "bofa", "citi", "discover", "wells_fargo", "rbc", "td",
-                                "bmo", "scotiabank"})
+                                "bmo", "scotiabank", "pnc"})
         labels = [p.label for p in bank_profiles.all_profiles()]
         self.assertEqual(labels, sorted(labels))
 
@@ -51,6 +52,7 @@ class DetectPdfTest(unittest.TestCase):
             "TD Canada Trust": "td",
             "Bank of Montreal BMO": "bmo",
             "Scotiabank  scotiabank.com": "scotiabank",
+            "Virtual Wallet Spend Statement PNC Bank": "pnc",
         }
         self.assertEqual({t: bank_profiles.detect_pdf(t)[0].key for t in cases}, cases)
 
@@ -77,6 +79,7 @@ class PdfStopTest(unittest.TestCase):
         "scotiabank": ("Aug 5 SHELL OIL 52.10", "Closing Balance 1,000.00"),
         "chase": ("08/05 SHELL OIL 52.10", "Year-to-date totals"),
         "amex": ("08/05/24 SHELL OIL $52.10", "Total Fees in 2024 $0.00"),
+        "pnc": ("08/05 52.10 SHELL OIL", "Daily Balance Detail"),
     }
 
     def test_every_profile_defines_pdf_stop_and_it_ends_the_table(self):

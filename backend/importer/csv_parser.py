@@ -1,6 +1,7 @@
 """CSV/XLSX table parsing into ParsedRows. Pure except for bank_profiles/generic imports."""
 import csv
 import io
+import re
 from decimal import Decimal
 
 from importer import generic
@@ -57,7 +58,7 @@ def parse_table(rows, mapping):
             problems.append(f"Unparseable date '{date_text}'")
         posted_text = _cell(row, mapping.posted_date)
         posted = parse_date(posted_text, mapping.date_format, mapping.day_first) if posted_text else None
-        description = " ".join(p for p in (_cell(row, i) for i in mapping.description) if p).strip()
+        description = re.sub(r"\s+", " ", " ".join(p for p in (_cell(row, i) for i in mapping.description) if p)).strip()
         amount = None
         if mapping.sign == "debit_credit":
             debit = parse_amount(_cell(row, mapping.debit))

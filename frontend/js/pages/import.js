@@ -69,7 +69,7 @@ function renderUpload() {
       <div class="dropzone-icon">${icon('upload')}</div>
       <div class="dropzone-title">Drop statements here, or <span class="text-accent">browse</span></div>
       <div class="dropzone-sub">CSV, Excel (.xlsx/.xls) or PDF · several files at once · up to 25 MB each</div>
-      <div class="dropzone-banks"><span class="chip">Chase</span><span class="chip">Amex</span><span class="chip">Capital One</span><span class="chip">Bank of America</span><span class="chip">Citi</span><span class="chip">Discover</span><span class="chip">Wells Fargo</span><span class="chip">RBC</span><span class="chip">TD</span><span class="chip">BMO</span><span class="chip">Scotiabank</span><span class="chip">+ any CSV</span></div>
+      <div class="dropzone-banks"><span class="chip">Chase</span><span class="chip">Amex</span><span class="chip">Capital One</span><span class="chip">Bank of America</span><span class="chip">Citi</span><span class="chip">Discover</span><span class="chip">PNC</span><span class="chip">Wells Fargo</span><span class="chip">RBC</span><span class="chip">TD</span><span class="chip">BMO</span><span class="chip">Scotiabank</span><span class="chip">+ any CSV</span></div>
     </label>
     <div class="row mt-3" style="gap:10px;flex-wrap:wrap">
       <span class="text-3 fs-base">Import into</span>
