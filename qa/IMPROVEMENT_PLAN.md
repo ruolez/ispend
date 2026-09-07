@@ -30,7 +30,7 @@ Executed in this order, each step committed separately (`git log --oneline` from
 | Phase 6 | A-1 … A-9; from A-10 the toast `aria-live` and empty action headers (rest open) |
 | Phase 7 | U-1, U-2, U-3, U-4, U-5, U-6, U-7; U-8: favicon, duplicate rules, dead component rules (utility classes kept on purpose) |
 | Phase 8 | P-1, P-2, P-3 |
-| Phase 9 | T-1 (376/376), T-2 (flows 12/12; smoke: auth, theme and probe tests green, page matrix not re-run after the last CSS pass) |
+| Phase 9 | T-1 (`test_api.py` 376/376), T-2 (`test_flows.py` 12/12, `test_smoke.py` 121/121) |
 
 Gates at the end of the day: backend unit suite 337 green (host or container), `test_api.py` 376/376, `test_flows.py` 12/12, `a11y_scan.py` 0 overflow and 0 serious/critical axe violations (156 moderate `region` nodes remain: skip link and popover roots sit outside landmarks), `css_audit.py` every text pair ≥ 4.5:1 (remaining failures are decorative borders, the sort caret and disabled buttons).
 
