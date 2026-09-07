@@ -453,7 +453,7 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, layers, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

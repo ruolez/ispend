@@ -6,8 +6,16 @@
   var root = document.documentElement;
   var mql = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
+  function cookie(name) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  /* localStorage first; a fresh browser falls back to the theme cookie the server sets at login,
+     so a saved dark preference paints dark on the very first request. */
   function read(key, fallback) {
-    try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+    try { var v = localStorage.getItem(key); if (v) return v; } catch (e) { /* private mode */ }
+    if (key === THEME_KEY) { var c = cookie('ispend_theme'); if (c === 'light' || c === 'dark' || c === 'system') return c; }
+    return fallback;
   }
   function write(key, value) {
     try { localStorage.setItem(key, value); } catch (e) { /* private mode */ }

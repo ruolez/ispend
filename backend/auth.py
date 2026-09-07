@@ -4,6 +4,7 @@ from functools import wraps
 from flask import Blueprint, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import config
 import db
 from util import api_error, audit, json_body, to_int
 
@@ -81,6 +82,19 @@ def current_user_id():
     return session["user_id"]
 
 
+THEME_COOKIE = "ispend_theme"
+
+
+def with_theme_cookie(response, theme):
+    """A readable (non-HttpOnly) cookie lets the head script paint the saved theme before /api/auth/me."""
+    if theme in ("light", "dark", "system"):
+        response.set_cookie(THEME_COOKIE, theme, max_age=60 * 60 * 24 * 365, samesite="Lax",
+                            secure=config.SESSION_COOKIE_SECURE, httponly=False)
+    else:
+        response.delete_cookie(THEME_COOKIE, samesite="Lax", secure=config.SESSION_COOKIE_SECURE)
+    return response
+
+
 def _me_payload(user):
     return {
         "id": user["id"],
@@ -106,13 +120,13 @@ def login():
     session["username"] = user["username"]
     session["role"] = user["role"]
     audit("auth.login")
-    return jsonify(_me_payload(user))
+    return with_theme_cookie(jsonify(_me_payload(user)), (user.get("preferences") or {}).get("theme"))
 
 
 @bp.post("/logout")
 def logout():
     session.clear()
-    return jsonify({"ok": True})
+    return with_theme_cookie(jsonify({"ok": True}), None)
 
 
 @bp.get("/me")
@@ -136,7 +150,8 @@ def update_preferences():
     user = db.query("SELECT preferences FROM users WHERE id = %s", (session["user_id"],), one=True)
     prefs = {**(user["preferences"] or {}), **clean}
     db.execute("UPDATE users SET preferences = %s WHERE id = %s", (json.dumps(prefs), session["user_id"]))
-    return jsonify(prefs)
+    response = jsonify(prefs)
+    return with_theme_cookie(response, prefs.get("theme")) if "theme" in clean else response
 
 
 @bp.put("/me/password")

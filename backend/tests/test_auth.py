@@ -169,3 +169,22 @@ class PreferenceValidationTest(unittest.TestCase):
         for body in ({"theme": "x" * 10000}, {"density": "cozy"}, {"currency": "EUR"}, {"theme": 5}):
             with self.assertRaises(ValueError, msg=body):
                 auth.clean_preferences(body)
+
+
+class ThemeCookieTest(unittest.TestCase):
+    def test_login_sets_a_readable_theme_cookie_from_preferences(self):
+        app = build_app()
+        user = {"id": 3, "username": "amy", "role": "user", "is_active": True, "password_hash": HASH, "preferences": {"theme": "dark"}}
+        q = _stubs.Router([("FROM users WHERE username", user)])
+        c = app.test_client()
+        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(util, "db", FAKE), mock.patch.object(auth, "db", FAKE):
+            res = c.post("/api/auth/login", data=json.dumps({"username": "amy", "password": "correct-horse-battery"}), content_type="application/json")
+        cookie = next(h for h in res.headers.getlist("Set-Cookie") if h.startswith("ispend_theme="))
+        self.assertIn("ispend_theme=dark", cookie)
+        self.assertNotIn("HttpOnly", cookie)
+
+    def test_logout_clears_the_theme_cookie(self):
+        app = build_app()
+        res = app.test_client().post("/api/auth/logout")
+        cookie = next(h for h in res.headers.getlist("Set-Cookie") if h.startswith("ispend_theme="))
+        self.assertIn("Max-Age=0", cookie)

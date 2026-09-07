@@ -97,8 +97,26 @@ async function initNav(activePage) {
   ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; document.body.appendChild(d); } });
 
   // Wiring
-  const openMobile = () => document.body.classList.add('sidebar-open');
-  const closeMobile = () => document.body.classList.remove('sidebar-open');
+  // The off-canvas sidebar is a layer like a modal: Escape closes it, focus stays inside, and returns to the opener.
+  let mobileLayer = null;
+  let untrapMobile = null;
+  function openMobile(e) {
+    if (mobileLayer) return;
+    document.body.classList.add('sidebar-open');
+    const sb = $('#sidebar');
+    untrapMobile = ui.trapFocus(sb);
+    mobileLayer = { close: closeMobile, onEsc: true, opener: e && e.currentTarget };
+    ui.pushLayer(mobileLayer);
+    const first = sb.querySelector('a[href], button'); if (first) first.focus();
+  }
+  function closeMobile() {
+    if (!document.body.classList.contains('sidebar-open')) return;
+    document.body.classList.remove('sidebar-open');
+    if (untrapMobile) { untrapMobile(); untrapMobile = null; }
+    const opener = mobileLayer && mobileLayer.opener;
+    if (mobileLayer) { ui.popLayer(mobileLayer); mobileLayer = null; }
+    if (opener && opener.offsetParent) opener.focus();
+  }
   $('#tb-menu').addEventListener('click', openMobile);
   $('#bn-more').addEventListener('click', openMobile);
   $('#sidebar-backdrop').addEventListener('click', closeMobile);
