@@ -89,6 +89,8 @@ server {
         proxy_pass http://backend:5000;
     }
 
+    location = /favicon.ico { access_log off; return 204; }
+
     location / {
         try_files $uri $uri/ =404;
         autoindex off;

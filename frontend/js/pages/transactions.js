@@ -105,10 +105,15 @@ function queryParams(extra = {}) {
 }
 function hasFilters() {
   const f = tx.filters;
-  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || (f.range && f.range.preset !== 'this-month');
+  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || (f.range && !['this-month', 'all'].includes(f.range.preset));
+}
+function emptyListHtml() {
+  if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
+  if (tx.filters.range && tx.filters.range.preset === 'this-month') return ui.emptyState({ icon: 'calendar', title: 'No transactions this month', body: 'Import a statement, or show all time to see older transactions.', action: { label: 'Show all time', act: 'show-all' } });
+  return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
 }
 function clearFilters() {
-  tx.filters = { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' };
+  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' }; // clearing shows everything, not just this month
   $('#f-q').value = '';
   applyFilters();
 }
@@ -117,7 +122,7 @@ function toggleSort(key) {
   const cur = tx.filters.sort;
   if (key === 'date') tx.filters.sort = cur === '-date' ? 'date' : '-date';
   else if (key === 'amount') tx.filters.sort = cur === '-amount' ? 'amount' : '-amount';
-  else if (key === 'merchant') tx.filters.sort = 'merchant';
+  else if (key === 'merchant') tx.filters.sort = cur === 'merchant' ? '-merchant' : 'merchant';
   applyFilters();
 }
 
@@ -169,7 +174,7 @@ function openCategoryFilter() {
   });
   ui.multiFilter($('#f-categories'), { title: 'Categories', options: opts, selected, searchable: true, onChange: (set) => { tx.filters.cat = Array.from(set); applyFilters(); } });
 }
-function paintDensity() { $('#btn-density').innerHTML = icon(Theme.density() === 'compact' ? 'list' : 'menu'); $('#btn-density').title = Theme.density() === 'compact' ? 'Comfortable rows' : 'Compact rows'; }
+function paintDensity() { const t = Theme.density() === 'compact' ? 'Comfortable rows' : 'Compact rows'; $('#btn-density').innerHTML = icon(Theme.density() === 'compact' ? 'list' : 'menu'); $('#btn-density').title = t; $('#btn-density').setAttribute('aria-label', t); }
 
 /* ---------- loading ---------- */
 async function reload() {
@@ -195,7 +200,7 @@ async function loadMore(first = false) {
     r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
     if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); tx.renderedAt = performance.now(); }
     if (!tx.items.length) {
-      $('#tx-body').innerHTML = `<tr><td colspan="7">${hasFilters() ? ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } }) : ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } })}</td></tr>`;
+      $('#tx-body').innerHTML = `<tr><td colspan="7">${emptyListHtml()}</td></tr>`;
     } else {
       $('#tx-body').insertAdjacentHTML('beforeend', r.items.map((it, i) => rowHtml(it, startIdx + i)).join(''));
     }
@@ -222,7 +227,7 @@ function paintSummary() {
   const mixed = curs.length > 1;
   $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span>${tx.filters.flow !== 'in' ? `<span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span>` : ''}${tx.filters.flow !== 'out' ? `<span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span>` : ''}${!tx.filters.flow ? `<span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>` : ''}${tx.skipped.count ? `<span class="text-3" title="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
-$('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); });
+$('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); if (e.target.closest('[data-act="show-all"]')) { tx.filters.range = { preset: 'all' }; periodSet(tx.filters.range); applyFilters(); } });
 
 /* ---------- rows ---------- */
 function catCellHtml(it) {
@@ -232,7 +237,7 @@ function catCellHtml(it) {
   const color = c.color || c.parent_color || 'c1';
   if (it.category_status === 'suggested') {
     return `<div class="catcell"><button type="button" class="catchip catchip--suggested" data-cat-pick="${it.id}" title="Suggested by ${it.category_source === 'ai' ? 'AI' : 'iSpend'}${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}%` : ''} — click to change">${icon('sparkles')}<span class="catchip-label">${esc(c.name)}</span></button>
-      <span class="sugg-act"><button type="button" class="btn btn-icon btn-ghost btn-xs btn-accept" data-accept="${it.id}" title="Accept suggestion">${icon('check')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs btn-reject" data-reject="${it.id}" title="Reject suggestion">${icon('x')}</button></span></div>`;
+      <span class="sugg-act"><button type="button" class="btn btn-icon btn-ghost btn-xs btn-accept" data-accept="${it.id}" title="Accept suggestion" aria-label="Accept suggestion">${icon('check')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs btn-reject" data-reject="${it.id}" title="Reject suggestion" aria-label="Reject suggestion">${icon('x')}</button></span></div>`;
   }
   return `<div class="catcell"><button type="button" class="catchip" data-cat-pick="${it.id}" title="${esc(c.path)} — click to change"><i class="dot" style="--c:var(--${esc(color)})"></i><span class="catchip-label">${esc(c.name)}</span></button></div>`;
 }
@@ -247,7 +252,7 @@ function rowHtml(it, idx) {
     <td class="col-cat">${catCellHtml(it)}</td>
     <td class="col-acct">${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="truncate">${esc(a.name)}</span></span>` : ''}</td>
     <td class="col-amt right"><span class="amt ${amtCls}">${fmtMoney(it.amount, cur, { sign: 'always' })}</span></td>
-    <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-open="${it.id}" title="Details">${icon('eye')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-menu="${it.id}" title="More">${icon('more-horizontal')}</button></div></td>
+    <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-open="${it.id}" title="Details" aria-label="Details">${icon('eye')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-menu="${it.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }
 function rerenderRow(id) {
@@ -518,7 +523,7 @@ function drawerHtml(it) {
     <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button></div></div>
     <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" title="Rename this merchant everywhere">Rename all</button></div>
       <div class="txd-raw mt-2" title="Original statement text">${esc(it.description_raw)}</div></div>
-    <div class="txd-section"><div class="section-label">Notes</div><textarea class="textarea" id="txd-notes" rows="2" placeholder="Add a note…">${esc(it.notes || '')}</textarea></div>
+    <div class="txd-section"><div class="section-label">Notes</div><textarea class="textarea" id="txd-notes" rows="2" aria-label="Notes" placeholder="Add a note…">${esc(it.notes || '')}</textarea></div>
     <div class="txd-section txd-flags">
       <label class="switch"><span>Transfer between my accounts</span><input type="checkbox" data-dflag="is_transfer" ${it.is_transfer ? 'checked' : ''}><span class="switch-track"></span></label>
       <label class="switch"><span>Exclude from spending reports</span><input type="checkbox" data-dflag="is_excluded" ${it.is_excluded ? 'checked' : ''} ${it.is_transfer ? 'disabled' : ''}><span class="switch-track"></span></label>

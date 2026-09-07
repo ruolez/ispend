@@ -125,12 +125,12 @@ const ui = (() => {
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <div class="drawer-backdrop"></div>
-      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ${width ? `style="width:min(${width}px,100vw)"` : ''}>
+      <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ${width ? `style="width:min(${width}px,100vw)"` : ''}>
         <header class="drawer-head"><h2 id="drawer-title">${esc(title)}</h2>
           <button class="btn btn-icon btn-ghost btn-sm drawer-close" aria-label="Close">${icon('x')}</button></header>
         <div class="drawer-body"></div>
         <footer class="drawer-foot" ${foot ? '' : 'hidden'}></footer>
-      </aside>`;
+      </div>`;
     const el = wrap.querySelector('.drawer');
     const body = el.querySelector('.drawer-body');
     const footEl = el.querySelector('.drawer-foot');
@@ -271,8 +271,8 @@ const ui = (() => {
       return `<div class="menu-head"><span class="menu-label">${esc(title || 'Filter')}</span><span class="menu-head-actions"><span class="menu-count">${nSel ? `${nSel} selected` : ''}</span><button type="button" class="btn btn-ghost btn-xs" data-act="all">All</button><button type="button" class="btn btn-ghost btn-xs" data-act="clear">None</button></span></div>
         ${searchable || options.length > 8 ? `<div class="menu-search"><input class="input input-sm" placeholder="Filter…" value="${esc(q)}"></div>` : ''}
         <div class="menu-opts">${rows.map((o) => `
-          <button type="button" class="menu-item ${o.indent ? 'menu-item--child' : ''}" role="menuitemcheckbox" aria-checked="${selected.has(o.value)}" data-v="${esc(o.value)}" ${o.indent ? `style="padding-left:${10 + 18 * o.indent}px"` : ''}>
-            <input type="checkbox" class="check" tabindex="-1" ${selected.has(o.value) ? 'checked' : ''}>
+          <button type="button" class="menu-item ${o.indent ? 'menu-item--child' : ''}" role="checkbox" aria-checked="${selected.has(o.value)}" data-v="${esc(o.value)}" ${o.indent ? `style="padding-left:${10 + 18 * o.indent}px"` : ''}>
+            <span class="check-fake" aria-hidden="true"></span>
             ${o.color ? `<i class="dot" style="--c:var(--${esc(o.color)})"></i>` : ''}
             <span class="grow truncate">${esc(o.label)}</span>${o.count != null ? `<span class="menu-count">${fmtNumber(o.count)}</span>` : ''}
           </button>`).join('') || '<div class="palette-empty">No matches</div>'}</div>
@@ -281,8 +281,8 @@ const ui = (() => {
       // "All" selects the rows currently shown (search-filtered), so "type Din, All" selects the Dining group.
     };
     el.innerHTML = render();
-    el.setAttribute('role', 'menu');
-    if (title) el.setAttribute('aria-label', title);
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', title || 'Filter');
     const prevFocus = document.activeElement;
     const pop = popover(anchor, el, { onClose: () => { if (prevFocus && prevFocus.focus) prevFocus.focus(); } });
     el.addEventListener('keydown', (e) => {
@@ -302,7 +302,7 @@ const ui = (() => {
       if (b) {
         const v = b.dataset.v;
         if (selected.has(v)) selected.delete(v); else selected.add(v);
-        b.setAttribute('aria-checked', selected.has(v)); b.querySelector('input').checked = selected.has(v);
+        b.setAttribute('aria-checked', selected.has(v));
         onChange && onChange(selected);
       } else if (act) {
         const q = (el.querySelector('input.input') || {}).value || '';
@@ -373,6 +373,7 @@ const ui = (() => {
   /* ---------- Toasts ---------- */
   function toastFn(message, { type = 'info', action, duration } = {}) {
     const host = root('toast-root');
+    host.setAttribute('aria-live', 'polite');
     while (host.children.length >= 3) host.firstChild.remove();
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;

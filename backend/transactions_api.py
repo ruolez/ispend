@@ -31,6 +31,7 @@ SORTS = {
     "-amount": ("t.amount DESC, t.id DESC", "<"),
     "amount": ("t.amount ASC, t.id ASC", ">"),
     "merchant": ("t.merchant_name ASC, t.id ASC", ">"),
+    "-merchant": ("t.merchant_name DESC, t.id DESC", "<"),
 }
 
 
@@ -163,7 +164,7 @@ def build_filters(args, user_id):
 
 
 def encode_cursor(row, sort):
-    key = row["amount"] if "amount" in sort else (row["merchant_name"] if sort == "merchant" else row["txn_date"])
+    key = row["amount"] if "amount" in sort else (row["merchant_name"] if "merchant" in sort else row["txn_date"])
     return base64.urlsafe_b64encode(f"{key}|{row['id']}".encode()).decode()
 
 
@@ -176,7 +177,7 @@ def decode_cursor(cursor, sort):
         return None
     if "amount" in sort:
         value = _parse_decimal(value)
-    elif sort != "merchant":
+    elif "merchant" not in sort:
         value = _parse_date(value)
     if value is None:
         return None
@@ -189,7 +190,7 @@ def cursor_clause(sort, cursor):
     if not decoded:
         return "", []
     value, txn_id = decoded
-    col = "t.amount" if "amount" in sort else ("t.merchant_name" if sort == "merchant" else "t.txn_date")
+    col = "t.amount" if "amount" in sort else ("t.merchant_name" if "merchant" in sort else "t.txn_date")
     op = SORTS[sort][1]
     return f" AND ({col}, t.id) {op} (%s, %s)", [value, txn_id]
 

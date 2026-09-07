@@ -13,7 +13,6 @@
 .trend-chips .chip { cursor: pointer; }
 .trend-chips .chip .dot { margin-right: 2px; }
 .trend-chips .chip.active { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text-1); }
-.compare-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .compare-row input[type="month"] { width: 170px; }
 .delta { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
 .delta--up { color: var(--danger); }

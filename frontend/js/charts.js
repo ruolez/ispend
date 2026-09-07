@@ -149,7 +149,7 @@ const charts = (() => {
     return makeChart(canvas, () => ({
       type: 'line',
       data: { labels: values.map((_, i) => i), datasets: [{ data: values, borderColor: hex, borderWidth: 1.5, fill: true, backgroundColor: (c) => gradientFill(c.chart.ctx, hex, { from: 0.25 }), pointRadius: 0, tension: 0.35 }] },
-      options: { animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
+      options: { responsive: false, animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
     }));
   }
 

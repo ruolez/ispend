@@ -29,7 +29,6 @@
 .rv-row.is-excluded { opacity: .5; }
 .rv-row .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-row .desc small { color: var(--text-4); font-family: var(--mono); font-size: var(--fs-xs); margin-left: 6px; }
-.rv-done { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--success-soft); color: var(--success); border-radius: var(--r-md); font-size: var(--fs-base); }
 .rv-single .rv-name { font-size: var(--fs-md); }
 @media (max-width: 640px) {
   .rv-actions .btn kbd { display: none; }

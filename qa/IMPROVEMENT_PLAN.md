@@ -15,6 +15,31 @@ This document is the single entry point. It is written so that a fresh session c
 
 After de-duplication (the cache leak, double date picker, mobile overflow, CSV injection, non-integer 500s, merchant sort and favicon were each found by 2–3 audits) there are **~135 distinct findings: 1 P0, 8 P1, ~50 P2, ~75 P3**.
 
+## Status (updated 2026-09-07, end of day)
+
+Executed in this order, each step committed separately (`git log --oneline` from `2f4ecd2` onwards):
+
+| Done | Items |
+|---|---|
+| Phase 0 | H-1, H-2, H-3 |
+| Phase 1 | S-1, S-2, S-3, S-4, S-5, S-6, S-7, S-8, S-9, S-10 (S-11 Docker hardening still open) |
+| Phase 2 | D-1 (flags only on confirmed categories; trigger fires on status), D-2, D-3, D-4 (switch removed, duplicates always skipped), D-5, D-6, D-7, D-8, D-9, D-10, D-11, D-12, D-13 |
+| Phase 3 | R-1 … R-9 |
+| Phase 4 | F-1 … F-11 (F-12 batch open except the items below) |
+| Phase 5 | M-1 … M-5 (M-6 open) |
+| Phase 6 | A-1 … A-9; from A-10 the toast `aria-live` and empty action headers (rest open) |
+| Phase 7 | U-1, U-2, U-3, U-4, U-5, U-6, U-7; U-8: favicon, duplicate rules, dead component rules (utility classes kept on purpose) |
+| Phase 8 | P-1, P-2, P-3 |
+| Phase 9 | T-1 (376/376), T-2 (flows 12/12, smoke auth + probes green) |
+
+Gates at the end of the day: backend unit suite 337 green (host or container), `test_api.py` 376/376, `test_flows.py` 12/12, `a11y_scan.py` 0 overflow and 0 serious/critical axe violations (156 moderate `region` nodes remain: skip link and popover roots sit outside landmarks), `css_audit.py` every text pair ≥ 4.5:1 (remaining failures are decorative borders, the sort caret and disabled buttons).
+
+Behaviour decisions taken while executing (flag if you disagree): new passwords need 10 characters; Review "Always do this" is off by default; duplicates in an import preview are always skipped (no switch); nginx rate-limits `/api/auth/login` to 10/min per IP with burst 20 (the suites wait out 429s via `qa/e2e/ratelimit.py`); `Clear filters` on Transactions shows all time.
+
+Still open: S-11, D-14, F-12 (most), M-6, A-10 (most), the `region` axe rule, T-3 (OCR fixture), T-4, T-5, T-6, U-8 remaining dark-theme whites in the AI mark.
+
+---
+
 ## What is healthy (verified, no action needed)
 
 - Per-user data isolation on every `<int:id>` route, bulk, pair/unpair, merge, file download: all 404/403 for foreign ids (api-tests, 87 routes gated).

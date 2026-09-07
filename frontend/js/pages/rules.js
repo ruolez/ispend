@@ -39,7 +39,7 @@ initNav('rules').then(async (me) => {
 
 async function load() {
   $('#rules-error').innerHTML = '';
-  if (!state.rules.length) $('#rule-list').innerHTML = `<div class="rules-empty">${ui.skeletonList(5)}</div>`;
+  if (!state.rules.length) $('#rule-list').innerHTML = `<li class="rules-empty">${ui.skeletonList(5)}</li>`;
   try {
     const [rules, flat, accounts] = await Promise.all([api('/api/rules'), store.categoriesFlat(), store.accounts()]);
     state.rules = rules; state.cats = new Map(flat.map((c) => [c.id, c])); state.accounts = accounts;
@@ -83,14 +83,14 @@ function ruleHtml(r, i) {
     <span class="rule-on"><label class="switch switch-sm" title="${r.is_active ? 'Enabled' : 'Disabled'}"><input type="checkbox" data-field="is_active" ${r.is_active ? 'checked' : ''} aria-label="Enabled"><span class="switch-track"></span></label></span>
     <div class="rule-actions">
       <button type="button" class="btn btn-ghost btn-xs" data-act="test" data-id="${r.id}" title="Show matching transactions">Test</button>
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${r.id}" title="More">${icon('more-horizontal')}</button>
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${r.id}" title="More" aria-label="More">${icon('more-horizontal')}</button>
     </div>
   </li>`;
 }
 function render() {
   const host = $('#rule-list');
   if (!state.rules.length) {
-    host.innerHTML = `<div class="rules-empty">${ui.emptyState({ icon: 'sliders', title: 'No rules yet', body: 'Create a rule here, or from any transaction with “Create rule from this”. Rules categorize charges automatically on every import.', action: { label: 'New rule', act: 'new-rule' } })}</div>`;
+    host.innerHTML = `<li class="rules-empty">${ui.emptyState({ icon: 'sliders', title: 'No rules yet', body: 'Create a rule here, or from any transaction with “Create rule from this”. Rules categorize charges automatically on every import.', action: { label: 'New rule', act: 'new-rule' } })}</li>`;
     return;
   }
   const q = state.q;
@@ -353,7 +353,7 @@ function merchantRow(m) {
     <td class="right num">${fmtNumber(m.txn_count)}</td>
     <td class="right num ${m.total > 0 ? 'amt--income' : ''}">${fmtMoney(m.total, state.currency)}</td>
     <td class="col-last text-3">${m.last_used_at ? fmtRelative(m.last_used_at) : '—'}</td>
-    <td class="col-actions"><div class="row-actions"><a class="btn btn-icon btn-ghost btn-xs" href="/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}" title="View transactions">${icon('list')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-mact="menu" title="More">${icon('more-horizontal')}</button></div></td>
+    <td class="col-actions"><div class="row-actions"><a class="btn btn-icon btn-ghost btn-xs" href="/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}" title="View transactions" aria-label="View transactions">${icon('list')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-mact="menu" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }
 function renderMerchants() {

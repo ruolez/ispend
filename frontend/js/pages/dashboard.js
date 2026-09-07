@@ -158,12 +158,13 @@ function renderKpis(data) {
     if (canvas && spark[d.key]) {
       const values = spark[d.key];
       const color = d.color;
+      canvas.width = 64; canvas.height = 26; // fixed-size sparkline: Chart.js must not grow it to the card
       charts.makeChart(canvas, (t) => {
         const hex = getComputedStyle(document.documentElement).getPropertyValue(color).trim() || t.accent;
         return {
           type: 'line',
           data: { labels: values.map((_, i) => i), datasets: [{ data: values, borderColor: hex, borderWidth: 1.5, fill: true, backgroundColor: (c) => charts.gradientFill(c.chart.ctx, hex, { from: 0.22 }), pointRadius: 0, tension: 0.35 }] },
-          options: { animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
+          options: { responsive: false, animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
         };
       });
     }

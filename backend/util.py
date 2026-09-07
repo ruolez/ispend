@@ -1,4 +1,5 @@
 import json
+import random
 import re
 from datetime import date, datetime
 from decimal import Decimal
@@ -55,6 +56,9 @@ def csv_safe(value):
     return value
 
 
+AUDIT_RETENTION_DAYS = 180
+
+
 def audit(action, detail=None, user_id=None):
     if user_id is None:
         user_id = session.get("user_id")
@@ -62,6 +66,8 @@ def audit(action, detail=None, user_id=None):
         "INSERT INTO audit_log (user_id, action, detail) VALUES (%s, %s, %s)",
         (user_id, action, json.dumps(detail, default=str) if detail is not None else None),
     )
+    if random.random() < 0.005:  # roughly one prune per 200 writes keeps the log bounded without a scheduler
+        db.execute("DELETE FROM audit_log WHERE created_at < now() - make_interval(days => %s)", (AUDIT_RETENTION_DAYS,))
 
 
 def money(v):

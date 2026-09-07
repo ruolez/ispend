@@ -61,9 +61,9 @@ function rowHtml(c, isChild) {
     <span class="cat-count ${count ? '' : 'is-zero'}">${fmtNumber(count)}</span>
     <span class="cat-total ${total ? '' : 'is-zero'}">${total ? fmtMoney(total, state.currency) : '—'}</span>
     <div class="cat-actions">
-      ${!isChild ? `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="add-sub" data-id="${c.id}" title="Add subcategory">${icon('plus')}</button>` : ''}
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="rename" data-id="${c.id}" title="Rename">${icon('pencil')}</button>
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${c.id}" title="More">${icon('more-horizontal')}</button>
+      ${!isChild ? `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="add-sub" data-id="${c.id}" title="Add subcategory" aria-label="Add subcategory">${icon('plus')}</button>` : ''}
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="rename" data-id="${c.id}" title="Rename" aria-label="Rename">${icon('pencil')}</button>
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${c.id}" title="More" aria-label="More">${icon('more-horizontal')}</button>
     </div>
   </div>`;
 }
@@ -215,6 +215,8 @@ async function loadSideTrend(cat) {
   }
   if (state.selected !== cat.id) return;
   const canvas = $('#side-chart'); if (!canvas) return;
+  try { await loadScript('/vendor/chart.umd.js'); } catch { canvas.closest('.chart-body').classList.remove('is-loading'); return; }
+  if (state.selected !== cat.id) return;
   canvas.closest('.chart-body').classList.remove('is-loading');
   charts.makeChart(canvas, (t) => ({
     type: 'bar',
@@ -266,7 +268,7 @@ function openStylePopover(anchor, cat, mode = 'color') {
     if (!sw && !ic) return;
     const body = sw ? { color: sw.dataset.color, propagate_color: isParent && (el.querySelector('#prop-color') || {}).checked !== false } : { icon: ic.dataset.icon };
     pop.close();
-    try { await api(`/api/categories/${cat.id}`, { method: 'PUT', body }); store.invalidate('categories'); await load(); }
+    try { await api(`/api/categories/${cat.id}`, { method: 'PUT', body }); store.invalidate('categories'); toast(sw ? 'Color updated' : 'Icon updated', { type: 'success' }); await load(); }
     catch (err) { toast(err.message, { type: 'error' }); }
   });
 }

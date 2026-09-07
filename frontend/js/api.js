@@ -65,6 +65,19 @@ function clearUserState() {
   });
 }
 
+/* Load a script once (e.g. Chart.js only when a page first needs a chart). */
+const _scripts = new Map();
+function loadScript(src) {
+  if (!_scripts.has(src)) {
+    _scripts.set(src, new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = () => resolve(); s.onerror = () => { _scripts.delete(src); reject(new Error(`Could not load ${src}`)); };
+      document.head.appendChild(s);
+    }));
+  }
+  return _scripts.get(src);
+}
+
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

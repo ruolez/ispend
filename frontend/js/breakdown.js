@@ -63,8 +63,8 @@
         const open = expanded.has(String(p.id));
         const hasKids = p.children.length > 0;
         const share = grand ? p.total / grand : 0;
-        const head = `<tr class="bd-row bd-parent ${hasKids ? 'has-kids' : ''}" data-id="${p.id == null ? 'none' : p.id}" ${hasKids ? `aria-expanded="${open}"` : ''} tabindex="0">
-          <td class="bd-name"><span class="bd-chev">${hasKids ? icon('chevron-right', 'ico-sm') : ''}</span><span class="cat-icon" style="--c:${color(p.color)}">${icon(p.icon || 'tag')}</span><a class="bd-link" href="${link(p.id)}">${esc(p.name)}</a>${hasKids ? `<span class="bd-kids text-4">${p.children.length}</span>` : ''}</td>
+        const head = `<tr class="bd-row bd-parent ${hasKids ? 'has-kids' : ''}" data-id="${p.id == null ? 'none' : p.id}">
+          <td class="bd-name">${hasKids ? `<button type="button" class="bd-toggle" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(p.name)}"><span class="bd-chev">${icon('chevron-right', 'ico-sm')}</span></button>` : '<span class="bd-chev"></span>'}<span class="cat-icon" style="--c:${color(p.color)}">${icon(p.icon || 'tag')}</span><a class="bd-link" href="${link(p.id)}">${esc(p.name)}</a>${hasKids ? `<span class="bd-kids text-4">${p.children.length}</span>` : ''}</td>
           <td class="bd-share"><span class="share-bar" style="--c:${color(p.color)}"><span style="width:${(share * 100).toFixed(1)}%"></span></span><span class="pct">${fmtPct(share)}</span></td>
           <td class="right num col-count">${fmtNumber(p.count)}</td>
           <td class="right col-delta">${deltaHtml(p.total, p.prev, cur, upIsGood)}</td>

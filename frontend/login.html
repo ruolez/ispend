@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f5f6f8">
   <title>Sign in · iSpend</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script src="/js/theme.js"></script>
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/app.css">
   <link rel="stylesheet" href="/css/pages/login.css">
 </head>
 <body>
-  <div class="login-wrap">
+  <main class="login-wrap">
     <div class="login-card">
       <div class="login-mark" id="login-mark"></div>
       <h1>Welcome back</h1>
@@ -24,13 +25,13 @@
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <input class="input" type="password" id="password" autocomplete="current-password" required>
+          <div class="input-group"><input class="input has-trailing" type="password" id="password" autocomplete="current-password" required><button type="button" class="btn btn-icon btn-ghost btn-sm trailing" id="login-pw-toggle" aria-label="Show password"></button></div>
         </div>
         <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
       </form>
       <div class="login-foot"><span>iSpend</span><button type="button" class="btn btn-ghost btn-xs" id="login-theme">Theme</button></div>
     </div>
-  </div>
+  </main>
   <script src="/js/api.js"></script>
   <script src="/js/format.js"></script>
   <script src="/js/icons.js"></script>

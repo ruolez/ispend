@@ -19,7 +19,7 @@ initNav('statements').then(async () => {
 
 async function loadStatements({ quiet } = {}) {
   const host = $('#statements-host');
-  if (!quiet) host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>File</th><th>Bank</th><th>Account</th><th>Period</th><th>Status</th><th class="right">Rows</th><th>Uploaded</th><th>By</th><th></th></tr></thead><tbody>${ui.skeletonRows(4, 9)}</tbody></table></div>`;
+  if (!quiet) host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>File</th><th>Bank</th><th>Account</th><th>Period</th><th>Status</th><th class="right">Rows</th><th>Uploaded</th><th>By</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(4, 9)}</tbody></table></div>`;
   try {
     const [rows, profiles] = await Promise.all([api('/api/statements'), store.get('institutions', '/api/accounts/institutions', { ttl: 600000 }).catch(() => [])]);
     stState.rows = rows; stState.profiles = profiles;
@@ -44,7 +44,7 @@ function renderStatements() {
     return;
   }
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements"><thead><tr>
-      <th>File</th><th class="hide-mobile">Bank</th><th>Account</th><th class="hide-mobile">Period</th><th>Status</th><th class="right hide-mobile">Rows</th><th class="hide-mobile">Uploaded</th><th class="hide-mobile">By</th><th class="col-actions"></th>
+      <th>File</th><th class="hide-mobile">Bank</th><th>Account</th><th class="hide-mobile">Period</th><th>Status</th><th class="right hide-mobile">Rows</th><th class="hide-mobile">Uploaded</th><th class="hide-mobile">By</th><th class="col-actions"><span class="sr-only">Actions</span></th>
     </tr></thead><tbody>${stState.rows.map(statementRow).join('')}</tbody></table></div>`;
 }
 

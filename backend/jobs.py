@@ -5,13 +5,16 @@ dedicated connection that is closed in `finally`. Threads are non-daemon so a
 worker recycle (graceful timeout) waits for a running parse/OCR to finish.
 """
 import logging
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
 
 import db
 
 log = logging.getLogger(__name__)
+
+# Two parses/OCR runs at a time per worker; further uploads queue instead of each taking a thread.
+_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="job")
 
 
 def spawn(fn, *args, **kwargs):
@@ -26,6 +29,4 @@ def spawn(fn, *args, **kwargs):
             finally:
                 db.close_db()
 
-    t = threading.Thread(target=runner, daemon=False, name=f"job-{fn.__name__}")
-    t.start()
-    return t
+    return _POOL.submit(runner)

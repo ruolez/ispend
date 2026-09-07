@@ -7,7 +7,7 @@
 .bd-row.bd-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .bd-name { display: flex; align-items: center; gap: 8px; min-width: 220px; }
 .bd-chev { width: 16px; display: inline-flex; color: var(--text-4); transition: transform var(--dur-2) var(--ease-out); }
-.bd-parent[aria-expanded="true"] .bd-chev { transform: rotate(90deg); }
+.bd-toggle[aria-expanded="true"] .bd-chev { transform: rotate(90deg); }
 .bd-indent { width: 16px; }
 .bd-kids { font-size: var(--fs-xs); margin-left: 2px; }
 .bd-link { color: inherit; }
@@ -24,3 +24,6 @@
 .bd-delta.is-good { color: var(--success); }
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
 @media (max-width: 768px) { .bd-share, .col-delta { display: none; } .bd-name { min-width: 0; } }
+
+.bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; color: inherit; cursor: pointer; }
+.bd-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

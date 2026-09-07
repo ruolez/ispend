@@ -1,4 +1,13 @@
 document.getElementById('login-mark').innerHTML = icon('activity');
+const pwToggle = document.getElementById('login-pw-toggle');
+pwToggle.innerHTML = icon('eye');
+pwToggle.addEventListener('click', () => {
+  const pw = document.getElementById('password');
+  pw.type = pw.type === 'password' ? 'text' : 'password';
+  pwToggle.innerHTML = icon(pw.type === 'password' ? 'eye' : 'eye-off');
+  pwToggle.setAttribute('aria-label', pw.type === 'password' ? 'Show password' : 'Hide password');
+  pw.focus();
+});
 const themeBtn = document.getElementById('login-theme');
 const paint = () => { themeBtn.innerHTML = `${icon(Theme.effective() === 'dark' ? 'sun' : 'moon', 'ico-sm')} ${Theme.effective() === 'dark' ? 'Light' : 'Dark'} mode`; };
 paint();

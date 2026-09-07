@@ -64,7 +64,7 @@ function catChip(id, source, rowId) {
 function renderUpload() {
   const host = $('#step-upload');
   host.innerHTML = `
-    <label class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose statement files">
+    <label class="dropzone" id="dropzone" tabindex="0" aria-label="Choose statement files">
       <input type="file" id="file-input" multiple accept="${ACCEPT.join(',')}">
       <div class="dropzone-icon">${icon('upload')}</div>
       <div class="dropzone-title">Drop statements here, or <span class="text-accent">browse</span></div>
@@ -73,7 +73,7 @@ function renderUpload() {
     </label>
     <div class="row mt-3" style="gap:10px;flex-wrap:wrap">
       <span class="text-3 fs-base">Import into</span>
-      <select class="select input-sm" id="upload-account" style="max-width:260px"><option value="">Choose during review</option>${imp.accounts.map((a) => `<option value="${a.id}" ${a.id === rememberedAccount() ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+      <select class="select input-sm" id="upload-account" aria-label="Import into account" style="max-width:260px"><option value="">Choose during review</option>${imp.accounts.map((a) => `<option value="${a.id}" ${a.id === rememberedAccount() ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
       <button type="button" class="btn btn-ghost btn-sm" data-act="new-account">${icon('plus', 'ico-sm')}New account</button>
     </div>
     <div class="file-list" id="file-list"></div>`;
@@ -83,6 +83,7 @@ function renderUpload() {
   dz.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
   dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file-input').click(); } });
   $('#file-input').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  $('#dropzone').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file-input').click(); } });
   renderFileList();
 }
 
@@ -293,9 +294,9 @@ function mappingEditor(s) {
   return `<div class="mapping mb-4"><details ${low ? 'open' : ''}><summary>${icon('chevron-right', 'ico-sm chev')}Column mapping<span class="text-3 fw-500 fs-sm">· ${m.date != null ? 'date' : '<span class="text-danger">no date</span>'}, ${(m.description || []).length ? 'description' : '<span class="text-danger">no description</span>'}, ${hasAmount ? 'amount' : m.debit != null || m.credit != null ? 'debit/credit' : '<span class="text-danger">no amount</span>'}</span></summary>
     <div class="mapping-body">
       <div class="mapping-controls">
-        <div class="field"><label>Date format</label><select class="select input-sm" data-map="date_format">${DATE_FORMATS.map(([v, l]) => `<option value="${v}" ${(m.date_format || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label for="map-date-format">Date format</label><select id="map-date-format" class="select input-sm" data-map="date_format">${DATE_FORMATS.map(([v, l]) => `<option value="${v}" ${(m.date_format || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>Amount sign</label><div class="radio-inline"><label><input type="radio" name="flip" class="check" data-map="flip_sign" value="0" ${!m.flip_sign ? 'checked' : ''}>Negative = charge</label><label><input type="radio" name="flip" class="check" data-map="flip_sign" value="1" ${m.flip_sign ? 'checked' : ''}>Positive = charge</label></div></div>
-        <div class="field"><label>Skip rows above header</label><input type="number" min="0" max="50" class="input input-sm" style="width:90px" data-map="skip_rows" value="${Number(m.skip_rows || 0)}"></div>
+        <div class="field"><label for="map-skip-rows">Skip rows above header</label><input type="number" id="map-skip-rows" min="0" max="50" class="input input-sm" style="width:90px" data-map="skip_rows" value="${Number(m.skip_rows || 0)}"></div>
         <label class="switch" style="margin-bottom:6px"><input type="checkbox" data-map="has_header" ${m.has_header !== false ? 'checked' : ''}><span class="switch-track"></span>First row is a header</label>
       </div>
       <div class="mapping-table"><table><thead><tr>${cols.map((i) => `<th class="${roleOf(i) ? 'is-mapped' : ''}"><select class="select input-sm" data-col="${i}" aria-label="Role for column ${i + 1}">${ROLE_OPTIONS.map(([v, l]) => `<option value="${v}" ${roleOf(i) === v ? 'selected' : ''}>${l}</option>`).join('')}</select><div class="colname" title="${esc(header[i] || '')}">${esc(header[i] || `Column ${i + 1}`)}</div></th>`).join('')}</tr></thead>

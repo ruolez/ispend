@@ -39,7 +39,7 @@ function showTab() {
 /* ---------- Accounts ---------- */
 async function loadAccounts() {
   const host = $('#accounts-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
   try {
     [state.accounts, state.institutions] = await Promise.all([api('/api/accounts?all=1'), api('/api/accounts/institutions').catch(() => [])]);
   } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-accounts' }); return; }
@@ -48,7 +48,7 @@ async function loadAccounts() {
     return;
   }
   const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k || '—';
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.accounts.map((a) => `<tr data-id="${a.id}" class="${a.is_active ? '' : 'text-3'}">
       <td><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1 fw-500">${esc(a.name)}</span>${a.last4 ? `<span class="text-4 mono">•${esc(a.last4)}</span>` : ''}${a.is_active ? '' : '<span class="badge badge-neutral">Archived</span>'}</span></td>
       <td data-label="Institution">${esc(instLabel(a.institution))}</td>
@@ -56,7 +56,7 @@ async function loadAccounts() {
       <td data-label="Currency">${esc(a.currency)}</td>
       <td class="right num" data-label="Transactions">${fmtNumber(a.txn_count)}</td>
       <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
-      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" title="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" title="More">${icon('more-horizontal')}</button></div></td>
+      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" title="Edit" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -286,7 +286,7 @@ function renderAppearance() {
     <div class="label mb-2">Density</div>
     <div class="radio-list mb-6" id="density-radios">${opt('density', 'comfortable', 'Comfortable', 'Roomier rows in tables', density !== 'compact')}${opt('density', 'compact', 'Compact', 'More rows on screen', density === 'compact')}</div>
     <div class="label mb-2">Display currency</div>
-    <div class="field" style="max-width:320px"><select id="pref-currency" class="select"><option value="" ${!prefCur ? 'selected' : ''}>Auto (from your accounts)</option><option value="USD" ${prefCur === 'USD' ? 'selected' : ''}>USD · US dollar</option><option value="CAD" ${prefCur === 'CAD' ? 'selected' : ''}>CAD · Canadian dollar</option></select><div class="hint">Used for dashboard, report and insight totals. Each transaction always shows its account's currency.</div></div>`;
+    <div class="field" style="max-width:320px"><select id="pref-currency" class="select" aria-label="Display currency"><option value="" ${!prefCur ? 'selected' : ''}>Auto (from your accounts)</option><option value="USD" ${prefCur === 'USD' ? 'selected' : ''}>USD · US dollar</option><option value="CAD" ${prefCur === 'CAD' ? 'selected' : ''}>CAD · Canadian dollar</option></select><div class="hint">Used for dashboard, report and insight totals. Each transaction always shows its account's currency.</div></div>`;
   host.querySelector('#theme-radios').addEventListener('change', (e) => { setThemePref(e.target.value); paintRadios(host.querySelector('#theme-radios')); });
   host.querySelector('#density-radios').addEventListener('change', (e) => { Theme.setDensity(e.target.value); api('/api/auth/me/preferences', { method: 'PUT', body: { density: e.target.value } }).catch(() => {}); paintRadios(host.querySelector('#density-radios')); });
   host.querySelector('#pref-currency').addEventListener('change', async (e) => {
@@ -302,16 +302,16 @@ function paintRadios(group) { $$('.radio-item', group).forEach((l) => l.classLis
 /* ---------- Users ---------- */
 async function loadUsers() {
   const host = $('#users-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
   try { state.users = await api('/api/users'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-users' }); return; }
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.users.map((u) => `<tr data-id="${u.id}">
       <td><span class="row gap-2"><span class="avatar">${esc(initials(u.username))}</span><span class="fw-500">${esc(u.username)}</span>${u.id === state.me.id ? '<span class="badge badge-accent">You</span>' : ''}</span></td>
       <td data-label="Role"><span class="badge ${u.role === 'admin' ? 'badge-info' : 'badge-neutral'}">${esc(u.role)}</span></td>
       <td data-label="Status"><span class="user-status"><i class="dot" style="--c:var(--${u.is_active ? 'success' : 'text-4'})"></i>${u.is_active ? 'Active' : 'Deactivated'}</span></td>
       <td class="right num" data-label="Accounts">${fmtNumber(u.account_count)}</td><td class="right num" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
       <td class="text-3" data-label="Created">${fmtDate(u.created_at, { year: true })}</td>
-      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" title="More">${icon('more-horizontal')}</button></div></td>
+      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 function openUserModal() {
@@ -380,7 +380,7 @@ async function onAction(e) {
       { label: 'Edit', icon: 'pencil', onClick: () => openAccountModal(acct) },
       { label: 'View transactions', icon: 'list', href: `/transactions.html?acct=${acct.id}` },
       { divider: true },
-      { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); loadAccounts(); } },
+      { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); toast(acct.is_active ? 'Account archived' : 'Account restored', { type: 'success' }); loadAccounts(); } },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => {
         const body = acct.txn_count ? `This deletes the account and its ${plural(acct.txn_count, 'transaction')}. This cannot be undone.` : 'This account has no transactions.';
         if (!(await ui.confirm({ title: `Delete ${acct.name}?`, body, confirmText: 'Delete', danger: true }))) return;
@@ -410,7 +410,7 @@ async function onAction(e) {
     case 'ai-refresh': return loadAIStatus();
     case 'ai-suggest': return suggestUncategorized(el);
     case 'reload-users': return loadUsers();
-    case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); return; }
+    case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); el.setAttribute('aria-label', i.type === 'password' ? 'Show key' : 'Hide key'); return; }
     case 'open-models': return $('#or-model').focus();
     case 'test-ai': return testAI();
     case 'save-ai': el.classList.add('is-loading'); try { await saveAI(); } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); } return;
