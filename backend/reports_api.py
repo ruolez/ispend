@@ -6,7 +6,7 @@ from flask import Blueprint, Response, jsonify, request, session
 import db
 import reports
 from auth import login_required
-from util import api_error, audit, parse_int_list
+from util import api_error, audit, csv_safe, parse_int_list
 
 bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
@@ -31,7 +31,7 @@ def _csv_response(rows, filename, columns=None):
         w = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
         w.writeheader()
         for r in rows:
-            w.writerow({k: ("" if v is None else v) for k, v in r.items()})
+            w.writerow({k: csv_safe("" if v is None else v) for k, v in r.items()})
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 

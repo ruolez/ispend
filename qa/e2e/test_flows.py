@@ -1977,7 +1977,7 @@ def test_f10_settings(page, qapi, browser):
     page.wait_for_timeout(600)
     short_msg = page.evaluate("document.getElementById('me-new').validationMessage")
     F.note(f"too-short password: toasts={toast_text_all(page)} browser validation={short_msg!r}")
-    F.check(bool(short_msg) or any("6 characters" in t for t in toast_text_all(page)), "too-short password blocked with feedback")
+    F.check(bool(short_msg) or any("10 characters" in t for t in toast_text_all(page)), "too-short password blocked with feedback")
     page.fill("#me-new", "newpass123")
     page.fill("#me-conf", "newpass124")
     page.click("#me-pw-form button[type=submit]")

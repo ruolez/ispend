@@ -1,14 +1,58 @@
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from flask import jsonify, session
+from flask import abort, jsonify, request, session
 
 import db
 
 
 def api_error(message, status=400):
     return jsonify({"error": message}), status
+
+
+def json_body():
+    """The request's JSON object, {} when there is no body; 400 for a non-object body."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        abort(400, "JSON object expected")
+    return data
+
+
+def to_int(value, name, lo=None, hi=None, required=False):
+    """int or None from a body/query value; 400 with a user-facing message when it is not one."""
+    if value is None or value == "":
+        if required:
+            abort(400, f"{name} is required")
+        return None
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        abort(400, f"{name} must be an integer")
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        abort(400, f"{name} must be an integer")
+    if lo is not None and out < lo:
+        abort(400, f"{name} must be at least {lo}")
+    if hi is not None and out > hi:
+        abort(400, f"{name} must be at most {hi}")
+    return out
+
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def csv_safe(value):
+    """Text cell safe to open in a spreadsheet: control characters dropped, formula prefixes quoted."""
+    if not isinstance(value, str):
+        return value
+    value = _CONTROL_CHARS.sub("", value)
+    if value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
 
 
 def audit(action, detail=None, user_id=None):

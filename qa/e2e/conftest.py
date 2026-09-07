@@ -30,7 +30,12 @@ class Api(requests.Session):
         return super().request(method, url, **kwargs)
 
     def login(self, username, password):
-        r = self.post("/api/auth/login", json={"username": username, "password": password})
+        """nginx rate-limits /api/auth/login per IP (10/min, burst 20); wait out a 429 instead of failing."""
+        for _attempt in range(12):
+            r = self.post("/api/auth/login", json={"username": username, "password": password})
+            if r.status_code != 429:
+                break
+            time.sleep(7)
         self.username = username
         return r
 

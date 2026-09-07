@@ -52,3 +52,39 @@ class RecordEventsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CsvSafeTest(unittest.TestCase):
+    def test_formula_prefixes_are_quoted_and_control_chars_dropped(self):
+        cases = {
+            '=HYPERLINK("http://evil","x")': "'=HYPERLINK(\"http://evil\",\"x\")",
+            "+1+cmd": "'+1+cmd", "-2+3": "'-2+3", "@SUM(A1)": "'@SUM(A1)",
+            "\t=1+1": "'=1+1", "\r\n=x": "\n=x",
+            "STARBUCKS\x00 #12": "STARBUCKS #12", "plain text": "plain text", "": "",
+        }
+        self.assertEqual({k: util.csv_safe(k) for k in cases}, cases)
+
+    def test_non_strings_pass_through(self):
+        self.assertEqual([util.csv_safe(v) for v in (Decimal("-12.50"), -3, None, date(2026, 1, 2))],
+                         [Decimal("-12.50"), -3, None, date(2026, 1, 2)])
+
+
+class ToIntTest(unittest.TestCase):
+    def _abort_message(self, *args, **kwargs):
+        from werkzeug.exceptions import HTTPException
+        try:
+            util.to_int(*args, **kwargs)
+        except HTTPException as e:
+            return e.code, e.description
+        return None
+
+    def test_accepts_ints_numeric_strings_and_blanks(self):
+        self.assertEqual([util.to_int(v, "Id") for v in (5, "7", 8.0, None, "")], [5, 7, 8, None, None])
+
+    def test_rejects_junk_bools_fractions_and_out_of_range(self):
+        self.assertEqual(self._abort_message("abc", "Category"), (400, "Category must be an integer"))
+        self.assertEqual(self._abort_message(True, "Category"), (400, "Category must be an integer"))
+        self.assertEqual(self._abort_message(1.5, "Category"), (400, "Category must be an integer"))
+        self.assertEqual(self._abort_message(None, "Account", required=True), (400, "Account is required"))
+        self.assertEqual(self._abort_message(0, "Limit", lo=1, hi=500), (400, "Limit must be at least 1"))
+        self.assertEqual(self._abort_message(501, "Limit", lo=1, hi=500), (400, "Limit must be at most 500"))

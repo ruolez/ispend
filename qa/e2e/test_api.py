@@ -153,9 +153,9 @@ class TestAuth:
         assert admin.get("/api/auth/me").json()["role"] == "admin"
 
     def test_admin_user_validation(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_short", "password": "12345"})
-        assert r.status_code == 400 and "6 characters" in r.json()["error"]
-        r = admin.post("/api/users", json={"username": "qa_api1", "password": "abcdefg"})
+        r = admin.post("/api/users", json={"username": "qa_short", "password": "123456789"})
+        assert r.status_code == 400 and "10 characters" in r.json()["error"]
+        r = admin.post("/api/users", json={"username": "qa_api1", "password": "abcdefghij"})
         assert (r.status_code, r.json()) == (400, {"error": "Username already exists"})
         r = admin.put("/api/users/999999", json={"role": "user"})
         assert (r.status_code, r.json()) == (404, {"error": "User not found"})
@@ -163,29 +163,69 @@ class TestAuth:
         assert r.status_code == 400
 
     def test_inactive_user_cannot_login_and_live_session_dies(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_api_inactive", "password": "inactive1"})
+        r = admin.post("/api/users", json={"username": "qa_api_inactive", "password": "inactive-pass1"})
         assert r.status_code == 201
         uid = r.json()["id"]
         try:
-            s = api_login("qa_api_inactive", "inactive1")
+            s = api_login("qa_api_inactive", "inactive-pass1")
+            assert s.get("/api/accounts").status_code == 200
             r = admin.delete(f"/api/users/{uid}")  # soft delete = deactivate
             assert r.json() == {"ok": True}
-            assert admin.get("/api/users").json()[-1]["is_active"] is False or any(
-                u["id"] == uid and not u["is_active"] for u in admin.get("/api/users").json())
-            assert Api().login("qa_api_inactive", "inactive1").status_code == 401
+            assert any(u["id"] == uid and not u["is_active"] for u in admin.get("/api/users").json())
+            assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 401
             assert s.get("/api/auth/me").status_code == 401, "an already-issued session must stop working"
+            assert s.get("/api/accounts").status_code == 401, "every route must re-check is_active, not just /me"
+            r = s.post("/api/accounts", json={"name": "QA ghost", "account_type": "checking", "currency": "USD"})
+            assert r.status_code == 401, r.text
             r = admin.put(f"/api/users/{uid}", json={"is_active": True})
             assert r.status_code == 200
-            assert Api().login("qa_api_inactive", "inactive1").status_code == 200
+            assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 200
         finally:
             admin.delete(f"/api/users/{uid}?permanent=true")
+
+    def test_demoted_admin_loses_admin_routes_at_once(self, admin):
+        r = admin.post("/api/users", json={"username": "qa_api_admin2", "password": "admin2-pass1", "role": "admin"})
+        assert r.status_code == 201
+        uid = r.json()["id"]
+        try:
+            s = api_login("qa_api_admin2", "admin2-pass1")
+            assert s.get("/api/users").status_code == 200
+            assert admin.put(f"/api/users/{uid}", json={"role": "user"}).status_code == 200
+            r = s.get("/api/users")
+            assert (r.status_code, r.json()) == (403, {"error": "Admin access required"})
+            assert s.get("/api/auth/me").json()["role"] == "user"
+            assert s.get("/api/accounts").status_code == 200, "a demoted admin keeps a working user session"
+        finally:
+            admin.delete(f"/api/users/{uid}?permanent=true")
+
+    def test_permanent_delete_removes_per_user_settings(self, admin):
+        r = admin.post("/api/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
+        uid = r.json()["id"]
+        s = api_login("qa_api_gone", "gone-pass-123")
+        assert s.put("/api/settings", json={"openrouter_model": "qa/gone-model"}).status_code == 200
+        assert s.get("/api/settings").json()["openrouter_model"] == "qa/gone-model"
+        assert admin.delete(f"/api/users/{uid}?permanent=true").json() == {"ok": True}
+        r = admin.post("/api/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
+        try:
+            s2 = api_login("qa_api_gone", "gone-pass-123")
+            assert s2.get("/api/settings").json()["openrouter_model"] == "", "settings must not survive a permanent delete"
+        finally:
+            admin.delete(f"/api/users/{r.json()['id']}?permanent=true")
+
+    def test_security_headers_on_pages_and_api(self, anon):
+        for path in ("/login.html", "/api/health"):
+            h = anon.get(path).headers
+            assert h.get("X-Frame-Options") == "DENY", (path, dict(h))
+            assert h.get("X-Content-Type-Options") == "nosniff", path
+            assert "frame-ancestors 'none'" in h.get("Content-Security-Policy", ""), path
+            assert h.get("Referrer-Policy") == "same-origin", path
 
     def test_password_change_rules(self, qa_users):
         s = api_login("qa_api2", QA_USERS["qa_api2"])
         r = s.put("/api/auth/me/password", json={"current_password": "nope", "password": "newpass123"})
         assert (r.status_code, r.json()) == (400, {"error": "Current password is incorrect"})
-        r = s.put("/api/auth/me/password", json={"current_password": QA_USERS["qa_api2"], "password": "short"})
-        assert (r.status_code, r.json()) == (400, {"error": "New password must be at least 6 characters"})
+        r = s.put("/api/auth/me/password", json={"current_password": QA_USERS["qa_api2"], "password": "short-one"})
+        assert (r.status_code, r.json()) == (400, {"error": "New password must be at least 10 characters"})
         r = s.put("/api/auth/me/password", json={"current_password": QA_USERS["qa_api2"], "password": "newpass123"})
         assert r.json() == {"ok": True}
         assert Api().login("qa_api2", QA_USERS["qa_api2"]).status_code == 401
@@ -307,6 +347,9 @@ class TestIsolation:
         r = u2.post("/api/transactions", json={"account_id": victim["account"], "txn_date": "2024-01-01",
                                               "amount": "-1.00", "description": "pwned"})
         assert (r.status_code, r.json()) == (404, {"error": "Account not found"})
+        r = u2.post("/api/transactions", json={"account_id": acct2, "txn_date": "2024-01-01", "amount": "-1.00",
+                                              "description": "pwned cat", "category_id": victim["category"]["id"]})
+        assert (r.status_code, r.json()) == (404, {"error": "Category not found"})
         r = upload(u2, os.path.join(FIXTURES, "td.csv"), account_id=victim["account"])
         assert (r.status_code, r.json()) == (404, {"error": "Account not found"})
         r = u2.put(f"/api/merchants/{victim['merchant_key']}", json={"category_id": victim["category"]["id"]})

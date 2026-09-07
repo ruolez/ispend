@@ -240,3 +240,41 @@ class MonthRangeBoundsTest(unittest.TestCase):
         self.assertEqual(tapi.range_bounds("month:2026-02"), (date(2026, 2, 1), date(2026, 2, 28)))
         self.assertEqual(tapi.range_bounds("month:2026-12"), (date(2026, 12, 1), date(2026, 12, 31)))
         self.assertEqual(tapi.range_bounds("month:bogus"), (None, None))
+
+
+class CreateTransactionTest(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(tapi.bp)
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as s:
+            s["user_id"] = 1
+            s["role"] = "user"
+
+    def _post(self, body, category_lookup):
+        def handler(sql, params, one):
+            if "FROM accounts WHERE id" in sql:
+                return {"id": 4, "currency": "USD"}
+            if "FROM categories WHERE id" in sql:
+                self.assertEqual(params, (body["category_id"], 1))
+                return category_lookup
+            if "INSERT INTO transactions" in sql:
+                return {"id": 77}
+            return None
+        fake = FakeDB(handler)
+        with patch_db(fake):
+            res = self.client.post("/api/transactions", data=json.dumps(body), content_type="application/json")
+        return res, fake
+
+    def test_foreign_category_is_404_and_nothing_is_written(self):
+        body = {"account_id": 4, "txn_date": "2026-01-05", "amount": "-4.00", "description": "X", "category_id": 55}
+        res, fake = self._post(body, None)
+        self.assertEqual((res.status_code, json.loads(res.get_data())), (404, {"error": "Category not found"}))
+        self.assertEqual([c for c in fake.calls if c[0] == "execute"], [])
+
+    def test_non_integer_category_is_400(self):
+        body = {"account_id": 4, "txn_date": "2026-01-05", "amount": "-4.00", "description": "X", "category_id": "abc"}
+        res, _fake = self._post(body, None)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn(b"Category must be an integer", res.get_data())

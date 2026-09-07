@@ -1,15 +1,38 @@
 import json
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from util import api_error, audit
+from util import api_error, audit, json_body
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start"}
+MIN_PASSWORD_LEN = 10
+_DUMMY_HASH = generate_password_hash("not-a-real-password")
+
+
+def password_problem(password, label="Password"):
+    """User-facing message when a new password is unacceptable, else None."""
+    if len(password or "") < MIN_PASSWORD_LEN:
+        return f"{label} must be at least {MIN_PASSWORD_LEN} characters"
+    return None
+
+
+def refresh_session_user():
+    """before_request hook: the signed cookie only proves who logged in; the account row decides
+    what it may do now. Deactivated or deleted users lose the session, role changes apply at once."""
+    uid = session.get("user_id")
+    if uid is None:
+        return
+    row = db.query("SELECT role, is_active FROM users WHERE id = %s", (uid,), one=True)
+    if not row or not row["is_active"]:
+        session.clear()
+        return
+    if session.get("role") != row["role"]:
+        session["role"] = row["role"]
 
 
 def login_required(f):
@@ -49,14 +72,15 @@ def _me_payload(user):
 
 @bp.post("/login")
 def login():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
-    user = db.query(
-        "SELECT * FROM users WHERE username = %s AND is_active", (username,), one=True
-    )
-    if not user or not check_password_hash(user["password_hash"], password):
+    user = db.query("SELECT * FROM users WHERE username = %s", (username,), one=True)
+    usable = bool(user and user["is_active"])
+    ok = check_password_hash(user["password_hash"] if usable else _DUMMY_HASH, str(password))
+    if not (usable and ok):
         return api_error("Invalid username or password", 401)
+    session.clear()
     session.permanent = True
     session["user_id"] = user["id"]
     session["username"] = user["username"]
@@ -84,7 +108,7 @@ def me():
 @bp.put("/me/preferences")
 @login_required
 def update_preferences():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     clean = {k: v for k, v in data.items() if k in PREFERENCE_KEYS}
     user = db.query("SELECT preferences FROM users WHERE id = %s", (session["user_id"],), one=True)
     prefs = {**(user["preferences"] or {}), **clean}
@@ -95,14 +119,15 @@ def update_preferences():
 @bp.put("/me/password")
 @login_required
 def change_own_password():
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     current = data.get("current_password") or ""
     new = data.get("password") or ""
     user = db.query("SELECT password_hash FROM users WHERE id = %s", (session["user_id"],), one=True)
-    if not check_password_hash(user["password_hash"], current):
+    if not check_password_hash(user["password_hash"], str(current)):
         return api_error("Current password is incorrect")
-    if len(new) < 6:
-        return api_error("New password must be at least 6 characters")
+    problem = password_problem(new, "New password")
+    if problem:
+        return api_error(problem)
     db.execute(
         "UPDATE users SET password_hash = %s WHERE id = %s",
         (generate_password_hash(new), session["user_id"]),

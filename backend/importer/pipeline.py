@@ -166,6 +166,7 @@ def _categorize_rows(user_id, account_id, staged):
             s["category_rule_id"] = d.rule_id
         except Exception:
             log.debug("categorize failed at preview", exc_info=True)
+    categorizer.deactivate_timed_out(ctx.rules)
 
 
 def _phrases_for(st, descriptions):
@@ -435,6 +436,8 @@ def _commit_locked(st, account):
             "category_id": category_id, "status": status, "source": source, "rule_id": rule_id,
             "confidence": confidence, "is_transfer": is_transfer,
         }
+    if ctx is not None:
+        categorizer.deactivate_timed_out(ctx.rules)
     with db.transaction():
         returned = db.execute_values(
             """INSERT INTO transactions (user_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance,

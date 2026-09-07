@@ -181,7 +181,7 @@ function openChangePassword() {
     title: 'Change password',
     html: `<form id="pw-form" class="col" style="gap:0">
       <div class="field"><label for="pw-cur">Current password</label><input id="pw-cur" class="input" type="password" autocomplete="current-password" required></div>
-      <div class="field"><label for="pw-new">New password</label><input id="pw-new" class="input" type="password" autocomplete="new-password" minlength="6" required><div class="hint">At least 6 characters.</div></div>
+      <div class="field"><label for="pw-new">New password</label><input id="pw-new" class="input" type="password" autocomplete="new-password" minlength="10" required><div class="hint">At least 10 characters.</div></div>
       <div class="field"><label for="pw-conf">Confirm new password</label><input id="pw-conf" class="input" type="password" autocomplete="new-password" required></div>
       <button type="submit" hidden></button></form>`,
     actions: [

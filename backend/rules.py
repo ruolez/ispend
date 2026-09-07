@@ -1,10 +1,28 @@
 """Pure rule matcher. No DB access: the same functions run at import time, for
 rule previews, and for retroactive application, so semantics never diverge."""
-import re
 from decimal import Decimal, InvalidOperation
+
+import regex
 
 MATCH_TYPES = ("contains", "starts_with", "equals", "regex")
 MATCH_FIELDS = ("description_clean", "description_raw", "merchant_key")
+MAX_PATTERN_LEN = 200
+MATCH_TIMEOUT = 0.05
+_PROBE_TEXTS = ("a" * 40 + "!", "1" * 40 + "!", "ab" * 20 + "!", " " * 40 + "!", "x-" * 20 + "!")
+
+
+def _compile(pattern, case_sensitive):
+    return regex.compile(pattern, 0 if case_sensitive else regex.IGNORECASE)
+
+
+def is_fast_pattern(compiled):
+    """False when the expression backtracks catastrophically on short adversarial inputs."""
+    try:
+        for text in _PROBE_TEXTS:
+            compiled.search(text, timeout=MATCH_TIMEOUT)
+    except TimeoutError:
+        return False
+    return True
 
 
 def _decimal(value, name):
@@ -37,12 +55,16 @@ def validate(payload, require_target=True):
     pattern = (payload.get("pattern") or "").strip()
     if not pattern:
         raise ValueError("Pattern is required")
+    if len(pattern) > MAX_PATTERN_LEN:
+        raise ValueError(f"Pattern must be at most {MAX_PATTERN_LEN} characters")
     case_sensitive = bool(payload.get("case_sensitive"))
     if match_type == "regex":
         try:
-            re.compile(pattern)
-        except re.error as e:
+            compiled = _compile(pattern, case_sensitive)
+        except regex.error as e:
             raise ValueError(f"Invalid regular expression: {e}")
+        if not is_fast_pattern(compiled):
+            raise ValueError("This regular expression is too slow to run safely; simplify it")
     amount_min = _decimal(payload.get("amount_min"), "Minimum amount")
     amount_max = _decimal(payload.get("amount_max"), "Maximum amount")
     if amount_min is not None and amount_max is not None and amount_min > amount_max:
@@ -79,11 +101,10 @@ def compile_rule(rule):
     """Attach the compiled regex / normalized pattern so matches() is cheap in loops."""
     rule = dict(rule)
     pattern = rule.get("pattern") or ""
-    flags = 0 if rule.get("case_sensitive") else re.IGNORECASE
     if rule.get("match_type") == "regex":
         try:
-            rule["_regex"] = re.compile(pattern, flags)
-        except re.error:
+            rule["_regex"] = _compile(pattern, bool(rule.get("case_sensitive")))
+        except regex.error:
             rule["_regex"] = None
     else:
         rule["_regex"] = None
@@ -120,13 +141,19 @@ def matches(rule, txn):
     text = txn.get(rule.get("match_field") or "description_clean") or ""
     match_type = rule.get("match_type") or "contains"
     if match_type == "regex":
-        regex = rule.get("_regex")
-        if regex is None:
+        if rule.get("_timed_out"):
+            return False
+        compiled = rule.get("_regex")
+        if compiled is None:
             try:
-                regex = re.compile(rule.get("pattern") or "", 0 if rule.get("case_sensitive") else re.IGNORECASE)
-            except re.error:
+                compiled = _compile(rule.get("pattern") or "", bool(rule.get("case_sensitive")))
+            except regex.error:
                 return False
-        return regex.search(text) is not None
+        try:
+            return compiled.search(text, timeout=MATCH_TIMEOUT) is not None
+        except TimeoutError:
+            rule["_timed_out"] = True
+            return False
     needle = rule.get("_needle")
     if needle is None:
         needle = rule.get("pattern") or ""
@@ -147,6 +174,11 @@ def first_match(rules, txn):
         if matches(rule, txn):
             return rule
     return None
+
+
+def timed_out_ids(rules):
+    """Ids of compiled rules whose regex hit MATCH_TIMEOUT during this run."""
+    return [r["id"] for r in rules if r.get("_timed_out") and r.get("id")]
 
 
 def count_and_sample(rule, txns, sample_n=20):

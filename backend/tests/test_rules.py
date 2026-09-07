@@ -1,5 +1,6 @@
 import unittest
 from decimal import Decimal
+from unittest import mock
 
 import rules
 
@@ -98,3 +99,34 @@ class MatchesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PatternSafetyTest(unittest.TestCase):
+    def test_pattern_length_is_capped(self):
+        rules.validate({"pattern": "x" * rules.MAX_PATTERN_LEN, "category_id": 1})
+        with self.assertRaisesRegex(ValueError, "at most"):
+            rules.validate({"pattern": "x" * (rules.MAX_PATTERN_LEN + 1), "category_id": 1})
+
+    def test_slow_regex_is_rejected_at_validation(self):
+        with mock.patch.object(rules, "is_fast_pattern", return_value=False):
+            with self.assertRaisesRegex(ValueError, "too slow"):
+                rules.validate({"pattern": "(a+)+$", "match_type": "regex", "category_id": 1})
+
+    def test_known_catastrophic_patterns_finish_within_the_probe_budget(self):
+        for pattern in ("(a+)+$", r"(\w+\s?)*$", r"^(\d+)*x", "(.*a){12}"):
+            clean = rules.validate({"pattern": pattern, "match_type": "regex", "category_id": 1})
+            self.assertEqual(clean["pattern"], pattern)
+
+    def test_timed_out_rule_is_flagged_and_stops_matching(self):
+        class Slow:
+            calls = 0
+
+            def search(self, text, timeout=None):
+                Slow.calls += 1
+                raise TimeoutError
+
+        rule = rules.compile_rule({"id": 9, "match_type": "regex", "pattern": "x"})
+        rule["_regex"] = Slow()
+        self.assertEqual([rules.matches(rule, txn()), rules.matches(rule, txn())], [False, False])
+        self.assertEqual((Slow.calls, rules.timed_out_ids([rule])), (1, [9]))
+        self.assertEqual(rules.timed_out_ids([rules.compile_rule({"id": 1, "pattern": "ok"})]), [])

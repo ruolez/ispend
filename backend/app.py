@@ -40,6 +40,7 @@ def create_app():
     ):
         app.register_blueprint(module.bp)
 
+    app.before_request(auth.refresh_session_user)
     app.teardown_appcontext(db.close_db)
 
     with app.app_context():

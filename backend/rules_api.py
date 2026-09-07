@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 
+import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
@@ -51,6 +52,7 @@ def apply_rules(user_id, rule_rows, only_uncategorized=True, scope_ids=None):
         rule = rules_mod.first_match(compiled, dict(txn))
         if rule:
             hits.setdefault(rule["id"], []).append(txn["id"])
+    categorizer.deactivate_timed_out(compiled)
     updated = 0
     transfer_cat = None
     for rule in compiled:
@@ -159,6 +161,7 @@ def preview():
             count += 1
             if len(sample) < 20:
                 sample.append(txn["id"])
+    categorizer.deactivate_timed_out([rule])
     rows = []
     if sample:
         rows = db.query(

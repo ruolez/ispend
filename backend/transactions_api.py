@@ -14,7 +14,7 @@ import config
 import db
 import transfers
 from auth import login_required
-from util import api_error, audit, parse_int_list, record_event, record_events, row_json, rows_json
+from util import api_error, audit, csv_safe, parse_int_list, record_event, record_events, row_json, rows_json, to_int
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
 
@@ -277,9 +277,9 @@ def export_csv():
             buf.seek(0)
             buf.truncate()
             writer.writerow([
-                r["txn_date"].isoformat(), r["account"], r["description_raw"], r["merchant_name"],
-                r["category"] or "", f"{r['amount']:.2f}", r["currency"], r["notes"] or "",
-                "yes" if r["is_transfer"] else "",
+                r["txn_date"].isoformat(), csv_safe(r["account"]), csv_safe(r["description_raw"]),
+                csv_safe(r["merchant_name"]), csv_safe(r["category"] or ""), f"{r['amount']:.2f}", r["currency"],
+                csv_safe(r["notes"] or ""), "yes" if r["is_transfer"] else "",
             ])
             yield buf.getvalue()
 
@@ -431,7 +431,10 @@ def create_transaction():
         "SELECT COUNT(*) AS n FROM transactions WHERE account_id = %s AND fingerprint = %s",
         (account["id"], fp), one=True,
     ) or {}).get("n", 0)
-    category_id = data.get("category_id")
+    category_id = to_int(data.get("category_id"), "Category")
+    if category_id is not None and not db.query(
+            "SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
+        return api_error("Category not found", 404)
     row = db.execute(
         """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw, description_clean,
                merchant_key, merchant_name, category_id, category_status, category_source, category_confidence,

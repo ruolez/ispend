@@ -34,6 +34,14 @@ class Context:
     memory_keys: list = field(default_factory=list)
 
 
+def deactivate_timed_out(compiled_rules):
+    """A regex that hit MATCH_TIMEOUT is switched off so it cannot stall the next import."""
+    ids = rules_mod.timed_out_ids(compiled_rules)
+    if ids:
+        db.execute("UPDATE rules SET is_active = FALSE, updated_at = now() WHERE id = ANY(%s)", (ids,))
+    return ids
+
+
 def load_context(user_id):
     rule_rows = db.query(
         "SELECT * FROM rules WHERE user_id = %s AND is_active ORDER BY priority, id", (user_id,)

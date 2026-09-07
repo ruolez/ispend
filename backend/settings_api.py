@@ -8,7 +8,7 @@ import config
 import db
 import openrouter
 import seed_categories
-from auth import admin_required, login_required
+from auth import MIN_PASSWORD_LEN, admin_required, login_required, password_problem
 from util import api_error, audit
 
 bp = Blueprint("settings", __name__, url_prefix="/api")
@@ -126,8 +126,8 @@ def create_user():
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     role = data.get("role") if data.get("role") in ("admin", "user") else "user"
-    if not username or len(password) < 6:
-        return api_error("Username and a password of at least 6 characters are required")
+    if not username or password_problem(password):
+        return api_error(f"Username and a password of at least {MIN_PASSWORD_LEN} characters are required")
     existing = db.query("SELECT id FROM users WHERE username = %s", (username,), one=True)
     if existing:
         return api_error("Username already exists")
@@ -168,7 +168,9 @@ def delete_user(user_id):
     if user_id == session["user_id"]:
         return api_error("You cannot delete your own account")
     if request.args.get("permanent") == "true":
-        db.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        with db.transaction():
+            db.execute("DELETE FROM users WHERE id = %s", (user_id,), commit=False)
+            db.execute("DELETE FROM settings WHERE key LIKE %s", (f"u{user_id}:%",), commit=False)
         shutil.rmtree(os.path.join(config.STATEMENTS_DIR, str(user_id)), ignore_errors=True)
         audit("user.delete", {"id": user_id})
     else:
@@ -182,8 +184,9 @@ def delete_user(user_id):
 def reset_password(user_id):
     data = request.get_json(silent=True) or {}
     password = data.get("password") or ""
-    if len(password) < 6:
-        return api_error("Password must be at least 6 characters")
+    problem = password_problem(password)
+    if problem:
+        return api_error(problem)
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (generate_password_hash(password), user_id))
     audit("user.password_reset", {"id": user_id})
     return jsonify({"ok": True})

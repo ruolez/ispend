@@ -316,7 +316,7 @@ function openUserModal() {
     title: 'Add user',
     html: `<form id="user-form">
       <div class="field"><label for="u-name">Username</label><input id="u-name" class="input" autocomplete="off" required autofocus spellcheck="false"></div>
-      <div class="field"><label for="u-pass">Password</label><input id="u-pass" class="input" type="password" minlength="6" autocomplete="new-password" required><div class="hint">At least 6 characters. The user can change it later.</div></div>
+      <div class="field"><label for="u-pass">Password</label><input id="u-pass" class="input" type="password" minlength="10" autocomplete="new-password" required><div class="hint">At least 10 characters. The user can change it later.</div></div>
       <div class="field"><label for="u-role">Role</label><select id="u-role" class="select"><option value="user">User</option><option value="admin">Admin</option></select></div>
       <button type="submit" hidden></button></form>`,
     actions: [{ label: 'Cancel' }, { label: 'Create user', primary: true, onClick: async () => {
@@ -331,7 +331,7 @@ function openUserMenuFor(anchor, u) {
   ui.menu(anchor, [
     { label: u.role === 'admin' ? 'Make regular user' : 'Make admin', icon: 'shield', disabled: isMe, onClick: async () => { await api(`/api/users/${u.id}`, { method: 'PUT', body: { role: u.role === 'admin' ? 'user' : 'admin' } }); loadUsers(); } },
     { label: 'Reset password', icon: 'lock', onClick: () => {
-      const m = ui.modal({ title: `Reset password for ${u.username}`, html: `<div class="field"><label for="rp">New password</label><input id="rp" class="input" type="password" minlength="6" autofocus></div>`,
+      const m = ui.modal({ title: `Reset password for ${u.username}`, html: `<div class="field"><label for="rp">New password</label><input id="rp" class="input" type="password" minlength="10" autofocus></div>`,
         actions: [{ label: 'Cancel' }, { label: 'Reset', primary: true, onClick: async () => { await api(`/api/users/${u.id}/password`, { method: 'PUT', body: { password: m.el.querySelector('#rp').value } }); toast('Password reset', { type: 'success' }); } }] });
     } },
     { divider: true },
@@ -348,7 +348,7 @@ function renderAccount() {
   $('#account-panel').innerHTML = `
     <form id="me-pw-form" style="max-width:380px">
       <div class="field"><label for="me-cur">Current password</label><input id="me-cur" class="input" type="password" autocomplete="current-password" required></div>
-      <div class="field"><label for="me-new">New password</label><input id="me-new" class="input" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="field"><label for="me-new">New password</label><input id="me-new" class="input" type="password" autocomplete="new-password" minlength="10" required></div>
       <div class="field"><label for="me-conf">Confirm new password</label><input id="me-conf" class="input" type="password" autocomplete="new-password" required></div>
       <button type="submit" class="btn btn-primary">Update password</button>
     </form>`;

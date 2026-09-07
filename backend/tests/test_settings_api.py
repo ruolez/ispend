@@ -74,12 +74,12 @@ class SettingsApiTest(unittest.TestCase):
 
     def test_users_endpoints_are_admin_only(self):
         self.assertEqual(self._call("get", "/api/users").status_code, 403)
-        self.assertEqual(self._call("post", "/api/users", {"username": "x", "password": "secret1"}).status_code, 403)
+        self.assertEqual(self._call("post", "/api/users", {"username": "x", "password": "secret1234x"}).status_code, 403)
 
     def test_create_user_seeds_categories(self):
         self.x.routes.append(("INSERT INTO users", {"id": 7}))
         with mock.patch.object(seed_categories, "seed_for_user") as seed:
-            res = self._call("post", "/api/users", {"username": "eve", "password": "secret1", "role": "user"}, uid=1, role="admin")
+            res = self._call("post", "/api/users", {"username": "eve", "password": "secret1234x", "role": "user"}, uid=1, role="admin")
         self.assertEqual((res.status_code, res.get_json()), (201, {"id": 7}))
         self.assertEqual(seed.call_args.args, (FAKE, 7))
         self.assertEqual(self.x.sql("INSERT INTO users")[0][1][0], "eve")
@@ -88,7 +88,7 @@ class SettingsApiTest(unittest.TestCase):
         res = self._call("post", "/api/users", {"username": "eve", "password": "abc"}, uid=1, role="admin")
         self.assertEqual(res.status_code, 400)
         self.q.routes.append(("SELECT id FROM users WHERE username", {"id": 3}))
-        res = self._call("post", "/api/users", {"username": "eve", "password": "secret1"}, uid=1, role="admin")
+        res = self._call("post", "/api/users", {"username": "eve", "password": "secret1234x"}, uid=1, role="admin")
         self.assertEqual(res.get_json()["error"], "Username already exists")
 
     def test_admin_cannot_deactivate_demote_or_delete_self(self):
@@ -105,6 +105,19 @@ class SettingsApiTest(unittest.TestCase):
         res = self._call("delete", "/api/users/5", uid=1, role="admin")
         self.assertEqual(res.status_code, 200)
         self.assertEqual([p for _s, p in self.x.sql("UPDATE users SET is_active = FALSE")], [(5,)])
+
+    def test_permanent_delete_removes_the_users_settings_rows(self):
+        res = self._call("delete", "/api/users/5?permanent=true", uid=1, role="admin")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([p for _s, p in self.x.sql("DELETE FROM users")], [(5,)])
+        self.assertEqual([p for _s, p in self.x.sql("DELETE FROM settings WHERE key LIKE")], [("u5:%",)])
+
+    def test_passwords_shorter_than_the_policy_are_rejected(self):
+        short = "a" * 9
+        res = self._call("post", "/api/users", {"username": "eve", "password": short}, uid=1, role="admin")
+        self.assertEqual(res.get_json(), {"error": "Username and a password of at least 10 characters are required"})
+        res = self._call("put", "/api/users/5/password", {"password": short}, uid=1, role="admin")
+        self.assertEqual(res.get_json(), {"error": "Password must be at least 10 characters"})
 
 
 if __name__ == "__main__":
