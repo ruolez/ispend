@@ -52,6 +52,13 @@ cd backend && ../.venv/bin/python -m unittest discover -s tests -v
 docker compose exec backend python -m unittest discover -s tests
 ```
 
+An opt-in integration suite runs the transfer trigger, duplicate detection and statement rollback against a real Postgres (it creates and drops a scratch database):
+
+```bash
+docker compose exec -e ISPEND_TEST_DSN=postgresql://ispend:$POSTGRES_PASSWORD@postgres/ispend backend \
+  python -m unittest tests.test_db_integration
+```
+
 The `qa/` directory holds the QA audit: `qa/IMPROVEMENT_PLAN.md` (findings and phased fixes), the reports behind it, and black-box suites (`qa/e2e/test_api.py`, `test_smoke.py`, `test_flows.py`) that run against the dev stack; see `qa/CONTEXT.md`.
 
 ## How an import works

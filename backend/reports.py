@@ -218,13 +218,19 @@ def _month_list(months, end=None):
 
 
 def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None,
-                        flow="spending"):
+                        flow="spending", end=None):
     """Top-level categories by month; with parent_id, that category's subcategories by month
-    (charges filed directly on the parent appear as 'Directly in <parent>')."""
+    (charges filed directly on the parent appear as 'Directly in <parent>'). `end` (YYYY-MM) makes the
+    window finish on that month instead of the current one."""
     months = max(1, min(int(months or 12), 60))
-    month_keys = _month_list(months)
+    if isinstance(end, str):
+        ey, em = parse_month(end)
+        end = date(ey, em, 1)
+    month_keys = _month_list(months, end=end)
     fy, fm = (int(x) for x in month_keys[0].split("-"))
     first = date(fy, fm, 1)
+    ly, lm = (int(x) for x in month_keys[-1].split("-"))
+    last = month_bounds(ly, lm)[1]
     acct_sql, acct_params = _acct(account_ids)
     if parent_id:
         top_n = 1000
@@ -234,19 +240,19 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
                        CASE WHEN c.id = %s THEN 'Directly in ' || c.name ELSE c.name END AS name,
                        c.color, SUM({_amt(flow)}) AS total
                 FROM transactions t JOIN categories c ON c.id = t.category_id
-                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s
+                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s
                   AND c.user_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
                 GROUP BY 1, 2, 3, 4""",
-            (parent_id, uid, first, uid, parent_id, parent_id, *acct_params),
+            (parent_id, uid, first, last, uid, parent_id, parent_id, *acct_params),
         )
     else:
         rows = db.query(
             f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
                        g.id AS category_id, g.name, g.color, SUM({_amt(flow)}) AS total
                 FROM transactions t {_CAT_JOIN}
-                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s{acct_sql}
+                WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s{acct_sql}
                 GROUP BY 1, 2, 3, 4""",
-            (uid, first, *acct_params),
+            (uid, first, last, *acct_params),
         )
     cats = {}
     for r in rows:
@@ -266,8 +272,10 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
                            "values": [round(c["values"][m], 2) for m in month_keys], "total": round(c["sum"], 2)})
         else:
             if other is None:
-                other = {"category_id": None, "name": "Other", "color": "muted",
+                other = {"category_id": None, "name": "Other", "color": "muted", "other_category_ids": [],
                          "values": [0.0] * len(month_keys), "total": 0.0}
+            if c["category_id"] is not None:
+                other["other_category_ids"].append(c["category_id"])
             for j, m in enumerate(month_keys):
                 other["values"][j] = round(other["values"][j] + c["values"][m], 2)
             other["total"] = round(other["total"] + c["sum"], 2)

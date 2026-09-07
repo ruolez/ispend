@@ -58,9 +58,10 @@ function statementRow(s) {
   else if (s.status === 'previewed') rows = `<span class="st-counts">${fmtNumber(stats.rows_total || stats.rows_valid || 0)} found${stats.dupes_existing ? `<span class="muted"> · ${fmtNumber(stats.dupes_existing)} dup</span>` : ''}</span>`;
   const period = s.period_start ? `${fmtDate(s.period_start)} – ${fmtDate(s.period_end || s.period_start)}` : '—';
   const isClickable = s.status === 'previewed' || s.status === 'committed';
+  const href = s.status === 'previewed' ? `/import.html?statement=${s.id}` : s.status === 'committed' ? `/transactions.html?statement=${s.id}&range=all` : null;
   return `<tr data-id="${s.id}" class="${isClickable ? 'is-clickable' : ''}">
     <td><div class="st-file"><span class="st-file-icon ${esc(s.file_kind)}">${icon(KIND_ICON[s.file_kind] || 'file')}</span>
-      <div class="merchant"><span class="st-file-name" title="${esc(s.original_filename)}">${esc(s.original_filename)}</span><span class="st-file-meta">${esc(String(s.file_kind || '').toUpperCase())} · ${fmtBytes(s.file_size)}${s.ocr_applied ? ' · OCR' : ''}</span></div></div></td>
+      <div class="merchant">${href ? `<a class="st-file-name row-link" href="${href}" title="${esc(s.original_filename)}">${esc(s.original_filename)}</a>` : `<span class="st-file-name" title="${esc(s.original_filename)}">${esc(s.original_filename)}</span>`}<span class="st-file-meta">${esc(String(s.file_kind || '').toUpperCase())} · ${fmtBytes(s.file_size)}${s.ocr_applied ? ' · OCR' : ''}</span></div></div></td>
     <td class="hide-mobile">${esc(bankLabel(s.bank_profile))}</td>
     <td>${s.account_name ? esc(s.account_name) : '<span class="text-4">Not set</span>'}</td>
     <td class="hide-mobile text-2">${period}</td>

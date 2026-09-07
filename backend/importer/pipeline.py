@@ -216,6 +216,7 @@ def _stage(st, result, ocr_rel):
         ))
     stats = _preview_stats(staged, existing)
     stats["stripped_phrases"] = phrases
+    stats["account_type_hint"] = getattr(result, "account_type_hint", None)
     stats["header"] = result.header
     stats["sample"] = result.sample
     with db.transaction():

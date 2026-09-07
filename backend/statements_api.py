@@ -61,7 +61,8 @@ def _predicted(statement_id):
 def _suggest_account(st):
     """Best guess for the account a statement belongs to: an account whose last four digits appear in
     the file name or statement text, else the only account at the detected bank."""
-    accounts = db.query("SELECT id, last4, institution FROM accounts WHERE user_id = %s AND is_active", (st["user_id"],)) or []
+    accounts = db.query("SELECT id, last4, institution, account_type FROM accounts WHERE user_id = %s AND is_active",
+                        (st["user_id"],)) or []
     if not accounts:
         return None
     haystack = f"{st.get('original_filename') or ''} {json.dumps((st.get('stats') or {}).get('header') or '')}"
@@ -71,6 +72,10 @@ def _suggest_account(st):
         return by_last4[0]["id"]
     if st.get("bank_profile"):
         same_bank = [a for a in accounts if a["institution"] == st["bank_profile"]]
+        hint = (st.get("stats") or {}).get("account_type_hint")
+        if hint:
+            kinds = ("credit_card", "line_of_credit") if hint == "credit_card" else ("checking", "savings", "cash")
+            same_bank = [a for a in same_bank if a["account_type"] in kinds]
         if len(same_bank) == 1:
             return same_bank[0]["id"]
     return None

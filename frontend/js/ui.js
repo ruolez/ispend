@@ -3,6 +3,25 @@
 const ui = (() => {
   const layers = []; // stack of {close} for Esc handling (topmost first)
 
+  /* Focus survival across innerHTML re-renders: describe the focused control by its stable data
+     attributes (and position among lookalikes), then find the same control in the fresh DOM. */
+  const KEY_ATTRS = ['data-id', 'data-key', 'data-act', 'data-dact', 'data-cact', 'data-field', 'data-cfield', 'data-select', 'data-cat-pick', 'data-row-include', 'data-col', 'data-v'];
+  function focusKey(el, container) {
+    if (!el || el === container) return null;
+    const attrs = KEY_ATTRS.filter((a) => el.hasAttribute(a)).map((a) => `[${a}="${CSS.escape(el.getAttribute(a))}"]`).join('');
+    const owner = el.closest('[data-id],[data-key]');
+    const ownerSel = owner && owner !== el && container.contains(owner) ? ['data-id', 'data-key'].filter((a) => owner.hasAttribute(a)).map((a) => `[${a}="${CSS.escape(owner.getAttribute(a))}"]`).join('') : '';
+    const sel = `${ownerSel} ${el.tagName.toLowerCase()}${attrs}`.trim();
+    const all = Array.from(container.querySelectorAll(sel));
+    return { sel, index: Math.max(0, all.indexOf(el)) };
+  }
+  function refocus(container, key) {
+    if (!key) return;
+    const all = Array.from(container.querySelectorAll(key.sel));
+    const target = all[key.index] || all[0] || (container.matches && container.matches(key.sel) ? container : null);
+    if (target && target.focus) target.focus({ preventScroll: true });
+  }
+
   const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
   function root(id) {
     let el = document.getElementById(id);
@@ -454,7 +473,7 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

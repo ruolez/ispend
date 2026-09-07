@@ -89,3 +89,4 @@ class ParseResult:
     header: list[str] | None = None
     sample: list[list[str]] = field(default_factory=list)
     ocr_applied: bool = False
+    account_type_hint: str | None = None   # credit_card | checking, from the matched CSV format

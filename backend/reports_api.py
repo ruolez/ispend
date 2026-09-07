@@ -1,4 +1,5 @@
 import csv
+import re
 import io
 
 from flask import Blueprint, Response, abort, jsonify, request, session
@@ -99,8 +100,11 @@ def monthly():
         parent_id = int(parent_id) if parent_id else None
     except ValueError:
         return api_error("parent_id must be an integer")
+    end = request.args.get("end") or None
+    if end and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end):
+        return api_error("end must be a month (YYYY-MM)")
     data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id,
-                                       flow=_flow())
+                                       flow=_flow(), end=end)
     if _wants_csv():
         rows = []
         for s in data["series"]:

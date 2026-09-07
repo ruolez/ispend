@@ -264,7 +264,11 @@ function rerenderRow(id) {
   const idx = Number(tr.dataset.idx);
   const tmp = document.createElement('tbody');
   tmp.innerHTML = rowHtml(it, idx);
-  tr.replaceWith(tmp.firstElementChild);
+  const fresh = tmp.firstElementChild;
+  const active = document.activeElement;
+  const keep = tr.contains(active) ? ui.focusKey(active, tr) : null;
+  tr.replaceWith(fresh);
+  if (keep) ui.refocus(fresh, keep);
 }
 function rerenderAll() { $('#tx-body').innerHTML = tx.items.map((it, i) => rowHtml(it, i)).join(''); }
 function removeRows(ids) {

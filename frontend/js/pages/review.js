@@ -232,7 +232,10 @@ function rerenderCard(g) {
   const el = $(`.rv-card[data-key="${CSS.escape(groupKey(g))}"]`);
   if (!el) return;
   const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(g, idx);
-  el.replaceWith(tmp.firstElementChild);
+  const fresh = tmp.firstElementChild;
+  const keep = el.contains(document.activeElement) ? ui.focusKey(document.activeElement, el) : null;
+  el.replaceWith(fresh);
+  if (keep) ui.refocus(fresh, keep);
 }
 
 /* ---------- focus ---------- */
@@ -332,10 +335,9 @@ async function resolve(g, body, label) {
     rv.done += r.updated || ids.length;
     rv.remainingItems = Math.max(0, rv.remainingItems - (r.updated || ids.length));
     if (ids.length === g.ids.length) { rv.remaining = Math.max(0, rv.remaining - 1); leave(g); }
-    else { g.ids = g.ids.filter((id) => g.excluded.has(id)); g.count = g.ids.length; g.excluded = new Set(); g.rows = null; g.expanded = false; rerenderCard(g); }
+    else { g.ids = g.ids.filter((id) => g.excluded.has(id)); g.count = g.ids.length; g.excluded = new Set(); g.rows = null; g.expanded = false; render(); }
     toast(`${label}${r.rule_id ? ' · rule created' : ''}`, { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
-    render();
   } catch (err) { toast(err.message, { type: 'error' }); }
 }
 function leave(g) {

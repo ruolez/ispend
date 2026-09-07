@@ -102,7 +102,7 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
     pop.close('pick');
     onPick && onPick(byId.get(r.id));
   }
-  const pop = ui.popover(anchor, el, { onClose: () => { if (anchor && anchor.focus) anchor.focus(); } });
+  const pop = ui.popover(anchor, el, { onClose: () => { const a = anchor && anchor.isConnected ? anchor : (anchor && anchor.dataset && anchor.dataset.catPick ? document.querySelector(`[data-cat-pick="${CSS.escape(anchor.dataset.catPick)}"]`) : null); if (a && a.focus) a.focus(); } });
   build('');
   pop.position();
   input.addEventListener('input', () => build(input.value));

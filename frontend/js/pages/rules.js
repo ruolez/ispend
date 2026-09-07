@@ -89,6 +89,8 @@ function ruleHtml(r, i) {
 }
 function render() {
   const host = $('#rule-list');
+  const keep = host.contains(document.activeElement) ? ui.focusKey(document.activeElement, host) : null;
+  if (keep) requestAnimationFrame(() => ui.refocus(host, keep));
   if (!state.rules.length) {
     host.innerHTML = `<li class="rules-empty">${ui.emptyState({ icon: 'sliders', title: 'No rules yet', body: 'Create a rule here, or from any transaction with “Create rule from this”. Rules categorize charges automatically on every import.', action: { label: 'New rule', act: 'new-rule' } })}</li>`;
     return;

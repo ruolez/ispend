@@ -72,6 +72,8 @@ function rowHtml(c, isChild) {
 
 function render() {
   const host = $('#cat-tree');
+  const keep = host.contains(document.activeElement) ? ui.focusKey(document.activeElement, host) : null;
+  if (keep) requestAnimationFrame(() => ui.refocus(host, keep));
   if (!state.tree.length) {
     host.innerHTML = `<div class="cat-empty">${ui.emptyState({ icon: 'tags', title: 'No categories', body: 'Add a category or restore the default set.', action: { label: 'Reset defaults', act: 'reset-defaults' } })}</div>`;
     return;

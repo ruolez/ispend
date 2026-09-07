@@ -132,10 +132,12 @@ def parse_rows(rows, mapping=None, profile_key=None, delimiter=","):
     dates = [r.txn_date for r in valid]
     if dates:
         period = (min(dates), max(dates))
-    return ParseResult(
+    result = ParseResult(
         rows=parsed, profile=profile.key if profile else None, profile_confidence=confidence,
         mapping=mapping, period=period, warnings=warnings, header=header, sample=sample,
     )
+    result.account_type_hint = fmt.account_type_hint() if hasattr(fmt, "account_type_hint") else None
+    return result
 
 
 def parse_csv(text, mapping=None, profile_key=None):

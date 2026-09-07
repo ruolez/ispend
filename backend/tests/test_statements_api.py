@@ -140,3 +140,31 @@ class PhrasesForTest(unittest.TestCase):
     def test_recomputed_when_absent(self):
         self.assertEqual(pipeline._phrases_for({"stats": {}}, self.DESCS), ["EUGENE BRAVERMAN"])
         self.assertEqual(pipeline._phrases_for(None, self.DESCS), ["EUGENE BRAVERMAN"])
+
+
+class SuggestAccountTest(unittest.TestCase):
+    ACCOUNTS = [{"id": 1, "last4": None, "institution": "chase", "account_type": "checking"},
+                {"id": 2, "last4": None, "institution": "chase", "account_type": "credit_card"}]
+
+    def _suggest(self, stats):
+        from unittest import mock
+
+        import statements_api as sapi
+        st = {"user_id": 1, "original_filename": "export.csv", "bank_profile": "chase", "stats": stats}
+        with mock.patch.object(sapi.db, "query", return_value=list(self.ACCOUNTS)):
+            return sapi._suggest_account(st)
+
+    def test_card_format_picks_the_card_account_at_the_same_bank(self):
+        self.assertEqual(self._suggest({"account_type_hint": "credit_card"}), 2)
+        self.assertEqual(self._suggest({"account_type_hint": "checking"}), 1)
+
+    def test_without_a_hint_two_accounts_at_the_bank_is_ambiguous(self):
+        self.assertIsNone(self._suggest({}))
+
+
+class FormatAccountTypeHintTest(unittest.TestCase):
+    def test_labels_map_to_account_types(self):
+        from bank_profiles.base import CsvFormat
+        cases = {"Chase credit card": "credit_card", "Amex card": "credit_card", "Chase checking": "checking",
+                 "BMO chequing": "checking", "Capital One 360": "checking", "RBC": None}
+        self.assertEqual({k: CsvFormat(signature=(), columns={}, label=k).account_type_hint() for k in cases}, cases)

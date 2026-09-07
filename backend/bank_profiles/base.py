@@ -18,6 +18,17 @@ class CsvFormat:
     debit_types: tuple = ()
     currency_columns: dict = field(default_factory=dict)   # {"CAD": "cad$", "USD": "usd$"}
     label: str = ""
+    account_type: str | None = None    # credit_card | checking; inferred from the label when unset
+
+    def account_type_hint(self):
+        if self.account_type:
+            return self.account_type
+        low = self.label.lower()
+        if "card" in low:
+            return "credit_card"
+        if any(w in low for w in ("checking", "chequing", "saving", "360", "activity")):
+            return "checking"
+        return None
 
 
 @dataclass(frozen=True)
