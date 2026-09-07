@@ -5,7 +5,7 @@
 .rv-list { display: flex; flex-direction: column; gap: 10px; }
 .rv-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; transition: box-shadow var(--dur-2), border-color var(--dur-2), opacity var(--dur-2), transform var(--dur-3) var(--ease-out), max-height var(--dur-3) var(--ease-out), margin var(--dur-3), padding var(--dur-3); outline: none; }
 .rv-card.is-focused { border-color: var(--accent); box-shadow: var(--sh-2), 0 0 0 3px var(--accent-ring); }
-.rv-list.has-focus .rv-card:not(.is-focused) { opacity: .72; }
+.rv-list.has-focus .rv-card:not(.is-focused) { background: var(--bg); border-color: var(--border); } /* recede without dropping text contrast */
 .rv-card.is-leaving { opacity: 0; transform: translateX(24px); max-height: 0 !important; overflow: hidden; margin-top: -10px; padding-top: 0; padding-bottom: 0; border-width: 0; }
 .rv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .rv-name { font-size: var(--fs-lg); font-weight: 600; }

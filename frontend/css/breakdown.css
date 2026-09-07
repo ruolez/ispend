@@ -1,5 +1,5 @@
 /* category → subcategory breakdown (dashboard + reports) */
-.bd-wrap { border: 0; box-shadow: none; border-radius: 0; }
+.bd-wrap { border: 0; box-shadow: none; border-radius: 0; overflow-x: auto; max-width: 100%; }
 .bd-table td, .bd-table th { vertical-align: middle; }
 .bd-row.bd-parent { cursor: default; }
 .bd-row.bd-parent.has-kids { cursor: pointer; }

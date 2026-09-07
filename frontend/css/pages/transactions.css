@@ -23,7 +23,7 @@
 .catcell { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .catcell .catchip { min-width: 0; }
 .catcell .sugg-act { display: inline-flex; gap: 0; opacity: .7; }
-.catcell .sugg-act .btn { width: 22px; height: 22px; }
+.catcell .sugg-act .btn { width: 24px; height: 24px; }
 .catcell .sugg-act .btn .ico { width: 12px; height: 12px; }
 .catcell .sugg-act .btn-accept { color: var(--success); }
 .catcell .sugg-act .btn-reject { color: var(--text-3); }
@@ -75,6 +75,7 @@
   .tbl-tx td.col-actions { grid-area: actions; align-self: start; width: 28px; min-width: 0; margin-top: -2px; }
   .tbl-tx td.col-actions .row-actions { opacity: 1; justify-content: flex-start; width: 28px; }
   .tbl-tx td.col-actions [data-open] { display: none; }
+  .tbl-tx td[colspan] { grid-column: 1 / -1; } /* empty/skeleton/error rows span the card, not the 28px check column */
   .tx-search { max-width: none; flex-basis: 100%; }
   .floatbar { bottom: 72px; }
 }

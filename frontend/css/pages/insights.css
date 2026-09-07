@@ -3,6 +3,7 @@
 .stat:not(.is-loading) .stat-skel { display: none; }
 #month { width: 170px; }
 .ins-grid { align-items: start; }
+.ins-grid > * { min-width: 0; }
 .rec-table td { vertical-align: middle; }
 .rec-table .col-last, .rec-table .rec-next .when, .rec-table .rec-amt { white-space: nowrap; }
 .rec-table th:last-child, .rec-table td:last-child { width: 36px; }

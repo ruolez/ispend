@@ -125,7 +125,7 @@ PAIRS = [  # (label, fg token, bg token, size class: 'text' 4.5 | 'large' 3 | 'u
     ('.badge-info / .catchip--suggested (--accent on --info-soft)', 'accent', 'info-soft', 'text'),
     ('.amt--income / .badge-success (--success on --surface)', 'success', 'surface', 'text'),
     ('.badge-success / .chip-ok (--success on --success-soft)', 'success', 'success-soft', 'text'),
-    ('.badge-danger / .error-box (--danger on --danger-soft)', 'danger', 'danger-soft', 'text'),
+    ('.badge-danger / .error-box (--danger-text on --danger-soft)', 'danger-text', 'danger-soft', 'text'),
     ('.text-danger / .btn-danger (--danger on --surface)', 'danger', 'surface', 'text'),
     ('.badge-warning / .pill-warning (--warning on --warning-soft)', 'warning', 'warning-soft', 'text'),
     ('.text-warning / .chip-q (--warning on --surface)', 'warning', 'surface', 'text'),
