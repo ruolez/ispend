@@ -31,7 +31,7 @@ def _decimal(value, name):
     try:
         return Decimal(str(value)).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
-        raise ValueError(f"{name} must be a number")
+        raise ValueError(f"{name} must be a number") from None
 
 
 def _int_or_none(value, name):
@@ -40,7 +40,7 @@ def _int_or_none(value, name):
     try:
         return int(value)
     except (TypeError, ValueError):
-        raise ValueError(f"{name} must be an integer")
+        raise ValueError(f"{name} must be an integer") from None
 
 
 def validate(payload, require_target=True):
@@ -62,7 +62,7 @@ def validate(payload, require_target=True):
         try:
             compiled = _compile(pattern, case_sensitive)
         except regex.error as e:
-            raise ValueError(f"Invalid regular expression: {e}")
+            raise ValueError(f"Invalid regular expression: {e}") from e
         if not is_fast_pattern(compiled):
             raise ValueError("This regular expression is too slow to run safely; simplify it")
     amount_min = _decimal(payload.get("amount_min"), "Minimum amount")
@@ -79,7 +79,7 @@ def validate(payload, require_target=True):
     try:
         priority = int(payload.get("priority", 100))
     except (TypeError, ValueError):
-        raise ValueError("Priority must be an integer")
+        raise ValueError("Priority must be an integer") from None
     return {
         "name": name[:200],
         "match_type": match_type,

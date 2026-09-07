@@ -179,7 +179,7 @@ def frequent_phrases(descriptions, min_share=0.35, min_rows=15):
     for d in docs:
         toks = [t.upper() for t in _WORD.findall(d)]
         seen = {}
-        for i, (a, b) in enumerate(zip(toks, toks[1:])):
+        for i, (a, b) in enumerate(zip(toks, toks[1:], strict=False)):
             if not (a.isalpha() and b.isalpha() and len(a) >= 2 and len(b) >= 2):
                 continue
             if a in PHRASE_STOP or b in PHRASE_STOP or b in STATES or b in COUNTRY_SUFFIX:

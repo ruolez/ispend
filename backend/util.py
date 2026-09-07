@@ -66,7 +66,7 @@ def audit(action, detail=None, user_id=None):
         "INSERT INTO audit_log (user_id, action, detail) VALUES (%s, %s, %s)",
         (user_id, action, json.dumps(detail, default=str) if detail is not None else None),
     )
-    if random.random() < 0.005:  # roughly one prune per 200 writes keeps the log bounded without a scheduler
+    if random.random() < 0.005:  # noqa: S311 - sampling, not security  # roughly one prune per 200 writes keeps the log bounded without a scheduler
         db.execute("DELETE FROM audit_log WHERE created_at < now() - make_interval(days => %s)", (AUDIT_RETENTION_DAYS,))
 
 

@@ -75,7 +75,7 @@ function ruleHtml(r, i) {
       <select class="select" data-field="match_type" aria-label="Match type">${MATCH_TYPES.map(([v, l]) => `<option value="${v}" ${r.match_type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <input class="input rule-pattern" data-field="pattern" value="${esc(r.pattern)}" aria-label="Pattern" spellcheck="false">
       ${extrasHtml(r)}
-      ${r.name && r.name !== `${r.match_type} “${r.pattern}”` ? `<span class="rule-name truncate">${esc(r.name)}</span>` : ''}
+      ${r.name && r.name !== `${r.match_type.replace('_', ' ')} “${r.pattern}”` ? `<span class="rule-name truncate">${esc(r.name)}</span>` : ''}
     </div>
     <span class="rule-arrow">${icon('arrow-right', 'ico-sm')}</span>
     <div class="rule-then">${catChip(r.category_id, r)}</div>

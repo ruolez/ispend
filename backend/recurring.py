@@ -50,7 +50,7 @@ def detect(txns, today, min_occurrences=3):
         dates = sorted({r["txn_date"] for r in rows})
         if len(dates) < min_occurrences:
             continue
-        intervals = [(b - a).days for a, b in zip(dates, dates[1:])]
+        intervals = [(b - a).days for a, b in zip(dates, dates[1:], strict=False)]
         cadence = _cadence_for(median(intervals))
         if not cadence:
             continue

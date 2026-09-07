@@ -27,7 +27,7 @@
 .catcell .sugg-act .btn .ico { width: 12px; height: 12px; }
 .catcell .sugg-act .btn-accept { color: var(--success); }
 .catcell .sugg-act .btn-reject { color: var(--text-3); }
-.tbl-tx .badge-mini { height: 18px; padding: 0 5px; font-size: 10px; margin-left: 4px; }
+.tbl-tx .badge-mini { height: 18px; padding: 0 5px; font-size: 11px; margin-left: 4px; }
 .tbl-tx td.col-date { color: var(--text-2); }
 .tbl-tx tr.is-focused td.col-date { color: var(--text-1); }
 .tx-foot-msg { padding: 14px; text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
@@ -80,7 +80,8 @@
   .floatbar { bottom: 72px; }
 }
 @media (max-width: 768px) {
-  .tbl-toolbar .seg { max-width: 100%; overflow-x: auto; }
+  .tbl-toolbar .seg { max-width: 100%; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: thin; padding-bottom: 2px; }
+  .tbl-toolbar .seg .seg-btn { scroll-snap-align: start; }
 }
 
 /* inline "new account" block inside the Add transaction modal */

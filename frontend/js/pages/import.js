@@ -81,9 +81,9 @@ function renderUpload() {
   ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('is-dragover'); }));
   ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('is-dragover'); }));
   dz.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
+  if (!window.__dropGuard) { window.__dropGuard = true; document.addEventListener('dragover', (e) => e.preventDefault()); document.addEventListener('drop', (e) => { if (!e.target.closest('#dropzone')) e.preventDefault(); }); }
   dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file-input').click(); } });
   $('#file-input').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
-  $('#dropzone').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file-input').click(); } });
   renderFileList();
 }
 
@@ -436,8 +436,8 @@ async function changeAccount(f, value, { quiet = false, reason = '' } = {}) {
     if (!f.statement.rows) await reloadStatement(f, { silent: true });
     rememberAccount(id);
     if (imp.step === 'review') renderReview();
-    if (reason && id) toast(`Using ${esc(accountName(id))} ${reason} — change it above if that is wrong`, { type: 'info', duration: 6000 });
-    else if (!quiet && id) toast(`Account set to ${esc(accountName(id))}`, { type: 'success' });
+    if (reason && id) toast(`Using ${accountName(id)} ${reason} — change it above if that is wrong`, { type: 'info', duration: 6000 });
+    else if (!quiet && id) toast(`Account set to ${accountName(id)}`, { type: 'success' });
   } catch (err) { toast(err.message, { type: 'error' }); }
 }
 /* A previewed statement with no account gets one automatically: the account the statement points at
@@ -499,7 +499,7 @@ async function pickRowCategory(f, anchor, rowId) {
         if (cat && !imp.cats.has(cat.id)) imp.cats.set(cat.id, cat);
         f.statement = { ...f.statement, ...res };
         renderReview();
-        toast(cat ? `${esc(cat.name)} set for ${ids.length === 1 ? 'this row' : `${ids.length} rows from ${esc(row.merchant_name)}`} · it will be remembered` : 'Category cleared', { type: 'success' });
+        toast(cat ? `${cat.name} set for ${ids.length === 1 ? 'this row' : `${ids.length} rows from ${row.merchant_name}`} · it will be remembered` : 'Category cleared', { type: 'success' });
       } catch (err) { toast(err.message, { type: 'error' }); }
     },
   });

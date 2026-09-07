@@ -17,26 +17,26 @@ After de-duplication (the cache leak, double date picker, mobile overflow, CSV i
 
 ## Status (updated 2026-09-07, end of day)
 
-Executed in this order, each step committed separately (`git log --oneline` from `2f4ecd2` onwards):
+All seven sessions of the execution order below have been executed and committed (`git log --oneline` from `2f4ecd2` onwards).
 
-| Done | Items |
+| Phase | Done |
 |---|---|
-| Phase 0 | H-1, H-2, H-3 |
-| Phase 1 | S-1, S-2, S-3, S-4, S-5, S-6, S-7, S-8, S-9, S-10 (S-11 Docker hardening still open) |
-| Phase 2 | D-1 (flags only on confirmed categories; trigger fires on status), D-2, D-3, D-4 (switch removed, duplicates always skipped), D-5, D-6, D-7, D-8, D-9, D-10, D-11, D-12, D-13 |
-| Phase 3 | R-1 … R-9 |
-| Phase 4 | F-1 … F-11 (F-12 batch open except the items below) |
-| Phase 5 | M-1 … M-5; from M-6 the off-canvas nav is now a layer (Esc closes, focus trapped and restored) |
-| Phase 6 | A-1 … A-9; from A-10 the toast `aria-live` and empty action headers (rest open) |
-| Phase 7 | U-1, U-2, U-3, U-4, U-5, U-6, U-7; U-8: favicon, duplicate rules, dead component rules (utility classes kept on purpose) |
-| Phase 8 | P-1, P-2, P-3 |
-| Phase 9 | T-1 (`test_api.py` 376/376), T-2 (`test_flows.py` 12/12, `test_smoke.py` 121/121) |
+| 0 | H-1, H-2, H-3 |
+| 1 | S-1 … S-11 (S-11: unprivileged gunicorn workers via entrypoint, `.dockerignore`, backend/nginx healthchecks, owner-only backups) |
+| 2 | D-1 … D-13; D-14: month/date params validated (400), children inherit kind, transfer categories cannot be deleted, insights cache invalidates when the month's transactions change, local-time year inference, by-category CSV exports subcategories, 24-month hint on recurring. Open: Chase card CSV vs checking auto-assignment (needs per-format account type metadata), "Spending by month" chart tied to the range picker |
+| 3 | R-1 … R-9 |
+| 4 | F-1 … F-11; F-12: upload 401 keeps `next`, `?new` transient, range params validated, persisted theme toggle (double toggle returns to system), `ui.menu` onClose, starts_with default-name check, toast double-escaping, search Enter cancels the debounce, selection repaints instead of re-rendering, prototype-safe `icon()`, trend chips keyed by category, transfer-only merchant rename, drop outside the dropzone ignored, cross-tab cache sync, income totals in Categories. Open: "Other" bucket link, autoAccount render suppression, review double render, dead JS listed in the frontend review |
+| 5 | M-1 … M-6 |
+| 6 | A-1 … A-9; A-10: keyboard-sortable headers, progress bars named, toast live region, dialog headers not banners; axe now reports 0 violations at every impact. Open: rows acting as links, focus restore after re-render |
+| 7 | U-1 … U-8 (dark whites in the AI mark kept on purpose: the gradient is saturated in both themes) |
+| 8 | P-1 … P-3 |
+| 9 | T-1 (376/376), T-2 (flows 12/12, smoke 121/121), T-3 (OCR fixture passes in the container), T-4 (`test_auth`, `test_merchants_api`, `test_ai_api`, `test_jobs`; the DB integration suite is still open), T-5 (`backend/ruff.toml`, `ruff check backend` clean), T-6 (`.github/workflows/ci.yml`: lint + unit + JS syntax on push, API suite on the compose stack, nightly Playwright suites; written here, not yet exercised on GitHub) |
 
-Gates at the end of the day: backend unit suite 337 green (host or container), `test_api.py` 376/376, `test_flows.py` 12/12, `a11y_scan.py` 0 overflow and 0 serious/critical axe violations (156 moderate `region` nodes remain: skip link and popover roots sit outside landmarks), `css_audit.py` every text pair ≥ 4.5:1 (remaining failures are decorative borders, the sort caret and disabled buttons).
+Gates at the end of the day: backend unit suite 351 green (host or container), `ruff check backend` clean, `test_api.py` 376/376, `test_flows.py` 12/12, `test_smoke.py` 121/121, `a11y_scan.py` 0 overflow and 0 axe violations, `css_audit.py` every text pair ≥ 4.5:1 (remaining failures are decorative borders, the sort caret and disabled buttons).
 
-Behaviour decisions taken while executing (flag if you disagree): the server sets a readable `ispend_theme` cookie at login so a saved theme paints correctly on a fresh browser; new passwords need 10 characters; Review "Always do this" is off by default; duplicates in an import preview are always skipped (no switch); nginx rate-limits `/api/auth/login` to 10/min per IP with burst 20 (the suites wait out 429s via `qa/e2e/ratelimit.py`); `Clear filters` on Transactions shows all time.
+Behaviour decisions taken while executing (flag if you disagree): new passwords need 10 characters; Review "Always do this" is off by default; duplicates in an import preview are always skipped (no switch); nginx rate-limits `/api/auth/login` to 10/min per IP with burst 20 (the suites wait out 429s via `qa/e2e/ratelimit.py`); `Clear filters` on Transactions shows all time; the server sets a readable `ispend_theme` cookie at login so a saved theme paints on the first request; the topbar theme toggle persists to the account; system transfer categories are protected from deletion; unparseable report `from`/`to` dates are a 400 instead of being ignored; production gunicorn workers run as `app` (the master keeps root for the bind and chowns the statements volume on start).
 
-Still open: S-11, D-14, F-12 (most), M-6 remaining nits (status filter scroll affordance, floatbar centring, 9-10 px text), A-10 (most), the `region` axe rule, T-3 (OCR fixture), T-4, T-5, T-6, U-8 remaining dark-theme whites in the AI mark.
+Remaining backlog (all P3): the items marked Open above, the opt-in DB integration suite, and exercising the CI workflow on GitHub.
 
 ---
 

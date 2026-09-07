@@ -11,6 +11,19 @@ const store = (() => {
   }
   function ssSet(key, entry) {
     try { sessionStorage.setItem(SS_PREFIX + key, JSON.stringify(entry)); } catch { /* quota */ }
+    if (bc) { try { bc.postMessage({ key, entry }); } catch { /* ignore */ } }
+  }
+  /* Other tabs learn about fresh reference data (a renamed category, a new account) at once. */
+  const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ispend.store') : null;
+  if (bc) {
+    bc.onmessage = (e) => {
+      const { key, entry, invalidate: inv } = e.data || {};
+      if (!key) return;
+      if (inv) { delete mem[key]; return; }
+      const changed = JSON.stringify(mem[key] && mem[key].data) !== JSON.stringify(entry && entry.data);
+      mem[key] = entry;
+      if (changed) emit(`${key}-changed`, entry.data);
+    };
   }
 
   /* get(key, url, {ttl}) -> Promise<data>. Fresh cache returns immediately; stale
@@ -41,6 +54,7 @@ const store = (() => {
   function invalidate(key) {
     delete mem[key];
     try { sessionStorage.removeItem(SS_PREFIX + key); } catch { /* ignore */ }
+    if (bc) { try { bc.postMessage({ key, invalidate: true }); } catch { /* ignore */ } }
   }
   function on(event, fn) {
     (listeners[event] = listeners[event] || []).push(fn);

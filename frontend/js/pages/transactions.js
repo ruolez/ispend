@@ -35,14 +35,16 @@ initNav('transactions').then(async () => {
   $('#btn-add').addEventListener('click', openAddModal);
   $('.tx-search .ico-wrap').innerHTML = icon('search');
   $('#f-q').value = tx.filters.q;
-  $('#f-q').addEventListener('input', debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250));
-  $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
+  const searchDebounced = debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250);
+  $('#f-q').addEventListener('input', searchDebounced);
+  $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { searchDebounced.cancel(); tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
   $('#f-clear').addEventListener('click', clearFilters);
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   $('#f-status').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); });
   $('#f-flow').addEventListener('click', (e) => { const b = e.target.closest('[data-flow]'); if (!b) return; tx.filters.flow = tx.filters.flow === b.dataset.flow ? '' : b.dataset.flow; applyFilters(); });
   $('#tx-table thead').addEventListener('click', (e) => { const th = e.target.closest('th.sortable'); if (th) toggleSort(th.dataset.sort); });
+  $('#tx-table thead').addEventListener('keydown', (e) => { const th = e.target.closest('th.sortable'); if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSort(th.dataset.sort); th.focus(); } });
   $('#tx-check-all').addEventListener('change', (e) => { if (e.target.checked) tx.items.forEach((i) => tx.selection.add(i.id)); else tx.selection.clear(); paintSelection(); });
   $('#tx-body').addEventListener('click', onRowClick);
   $('#tx-body').addEventListener('change', (e) => { const cb = e.target.closest('input[data-select]'); if (cb) { toggleSelect(Number(cb.dataset.select), cb.checked); } });
@@ -330,7 +332,7 @@ function registerShortcuts() {
   ui.shortcuts.register('t', () => { const it = focusedItem(); if (it) updateItem(it.id, { is_transfer: !it.is_transfer }, it.is_transfer ? 'Unmarked as transfer' : 'Marked as transfer'); }, { when: noLayer, description: 'Toggle transfer' });
   ui.shortcuts.register('n', () => { const it = focusedItem(); if (it) openDrawer(it.id, { focusNotes: true }); }, { when: noLayer, description: 'Edit note' });
   ui.shortcuts.register('a', () => { const it = focusedItem(); if (it && it.category_status === 'suggested') bulk([it.id], 'accept_suggestion'); }, { when: noLayer, description: 'Accept suggestion' });
-  ui.shortcuts.register('Escape', () => { if (tx.selection.size) { tx.selection.clear(); rerenderAll(); paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
+  ui.shortcuts.register('Escape', () => { if (tx.selection.size) { tx.selection.clear(); paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
   window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['Esc', 'Clear selection']] }];
 }
 
@@ -349,7 +351,7 @@ function onRowClick(e) {
   if (e.shiftKey && tx.focus >= 0) {
     const [a, b] = [Math.min(tx.focus, idx), Math.max(tx.focus, idx)];
     for (let i = a; i <= b; i++) tx.selection.add(tx.items[i].id);
-    rerenderAll(); paintSelection(); setFocus(idx, { scroll: false });
+    paintSelection(); setFocus(idx, { scroll: false });
     return;
   }
   setFocus(idx, { scroll: false });
@@ -446,7 +448,7 @@ function onBulkClick(e) {
     case 'categorize': return categoryPicker({ anchor: b, allowNone: true, onPick: (cat) => setCategory(ids, cat ? cat.id : null) });
     case 'set_transfer': return bulk(ids, 'set_transfer');
     case 'exclude': return bulk(ids, 'exclude');
-    case 'clear': { tx.selection.clear(); rerenderAll(); paintSelection(); return; }
+    case 'clear': { tx.selection.clear(); paintSelection(); return; }
     case 'more': return ui.menu(b, [
       { label: 'Accept suggestions', icon: 'check', onClick: () => bulk(ids, 'accept_suggestion') },
       { label: 'Reject suggestions', icon: 'x', onClick: () => bulk(ids, 'reject_suggestion') },

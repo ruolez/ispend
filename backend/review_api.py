@@ -162,7 +162,7 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
                 "account_id": create_rule.get("account_id"),
             })
         except ValueError as e:
-            raise ResolveError(str(e))
+            raise ResolveError(str(e)) from e
         top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE user_id = %s", (uid,), one=True)
         row = db.execute(
             """INSERT INTO rules (user_id, name, priority, match_type, match_field, pattern, case_sensitive,

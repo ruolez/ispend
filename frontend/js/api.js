@@ -37,7 +37,7 @@ function apiUpload(path, formData, { onProgress } = {}) {
     xhr.addEventListener('load', () => {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
-      if (xhr.status === 401) { location.href = '/login.html'; return reject(new Error('Not authenticated')); }
+      if (xhr.status === 401) { location.href = `/login.html?next=${encodeURIComponent(location.pathname + location.search)}`; return reject(new Error('Not authenticated')); }
       if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
       const err = new Error((data && data.error) || `Upload failed (${xhr.status})`);
       err.status = xhr.status;
@@ -105,7 +105,7 @@ function setQs(obj, { replace = true, merge = true } = {}) {
    Filters, sorts and tabs live in the URL; remember each page's last query so returning
    through the sidebar restores it. Keys that open a specific thing are not remembered. */
 const PERIOD_QS = ['range', 'from', 'to', 'month'];
-const TRANSIENT_QS = { '/transactions.html': ['open'], '/import.html': ['statement'], '/rules.html': ['cat'], '/statements.html': ['open'] };
+const TRANSIENT_QS = { '/transactions.html': ['open'], '/import.html': ['statement'], '/rules.html': ['cat', 'new'], '/statements.html': ['open'] };
 function _qsKey(path) { return `ispend.q:${path}`; }
 function rememberQuery() {
   try {
@@ -149,7 +149,9 @@ function $(sel, root = document) { return root.querySelector(sel); }
 function $$(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
 function debounce(fn, ms = 250) {
   let t = null;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  const wrapped = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  wrapped.cancel = () => clearTimeout(t);
+  return wrapped;
 }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 function uid() { return Math.random().toString(36).slice(2, 9); }

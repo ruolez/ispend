@@ -104,3 +104,24 @@ class InsightsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CacheInvalidationTest(unittest.TestCase):
+    def test_cached_insight_is_dropped_when_transactions_changed_after_it(self):
+        import os as _os
+        import sys as _sys
+        _sys.path.insert(0, _os.path.dirname(__file__))
+        import _stubs as _st
+        from datetime import date, datetime, timezone
+        from unittest import mock as _mock
+
+        fake = _st.install()
+        import insights as _ins
+        written = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+        row = {"content": "{}", "model": "m", "created_at": written}
+        stale = _st.Router([("FROM insights WHERE", row), ("GREATEST(MAX(created_at)", {"latest": datetime(2026, 9, 2, tzinfo=timezone.utc)})])
+        fresh = _st.Router([("FROM insights WHERE", row), ("GREATEST(MAX(created_at)", {"latest": datetime(2026, 8, 30, tzinfo=timezone.utc)})])
+        with _mock.patch.object(_ins, "db", fake), _mock.patch.object(fake, "query", side_effect=stale):
+            self.assertIsNone(_ins.cached(1, date(2026, 8, 1), date(2026, 8, 31)))
+        with _mock.patch.object(_ins, "db", fake), _mock.patch.object(fake, "query", side_effect=fresh):
+            self.assertIsNotNone(_ins.cached(1, date(2026, 8, 1), date(2026, 8, 31)))

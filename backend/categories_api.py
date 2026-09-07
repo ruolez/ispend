@@ -236,6 +236,8 @@ def delete_category(cat_id):
     cat = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
     if not cat:
         return api_error("Category not found", 404)
+    if cat["is_system"] and str(cat["slug"] or "").startswith("transfers"):
+        return api_error("Transfer categories are needed to recognise transfers; rename them instead of deleting.", 409)
     child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,))]
     ids = [cat_id] + child_ids
     refs = db.query(

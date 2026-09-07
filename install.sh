@@ -128,6 +128,9 @@ backup_data() {
         return
     fi
     mkdir -p "$BACKUP_DIR"
+    chmod 700 "$BACKUP_DIR"
+    local old_umask; old_umask="$(umask)"
+    umask 077   # dumps hold every user's transactions: owner-readable only
     local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
     local dump="$BACKUP_DIR/ispend-db-$stamp.sql.gz"
     info "Backing up database to $dump ..."
@@ -138,6 +141,7 @@ backup_data() {
     cp "$INSTALL_DIR/.env" "$BACKUP_DIR/env-$stamp" 2>/dev/null || true
     ls -1t "$BACKUP_DIR"/ispend-db-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
     ls -1t "$BACKUP_DIR"/ispend-statements-*.tgz 2>/dev/null | tail -n +11 | xargs -r rm -f
+    umask "$old_umask"
     ok "Backup complete ($(du -h "$dump" | cut -f1)); the last 10 backups are kept"
 }
 

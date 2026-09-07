@@ -24,6 +24,7 @@ const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_SETTINGS];
 const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'import'];
 const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
+const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
 
 function sidebarMode() {
   try { const v = localStorage.getItem(SIDEBAR_KEY); if (v) return v; } catch { /* ignore */ }
@@ -54,8 +55,10 @@ async function initNav(activePage) {
   document.title = `${active ? active.label : 'iSpend'} · iSpend`;
 
   // Skip link + sidebar
+  const skipNav = document.createElement('nav'); skipNav.className = 'skip-nav'; skipNav.setAttribute('aria-label', 'Skip');
   const skip = document.createElement('a'); skip.className = 'skip'; skip.href = '#main'; skip.textContent = 'Skip to content';
-  document.body.prepend(skip);
+  skipNav.appendChild(skip);
+  document.body.prepend(skipNav);
   const sb = document.createElement('div');
   sb.innerHTML = `
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -94,7 +97,7 @@ async function initNav(activePage) {
   bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`).join('')
     + `<button type="button" class="bn-item" id="bn-more">${icon('menu')}<span>More</span></button>`;
   document.body.appendChild(bn);
-  ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; document.body.appendChild(d); } });
+  ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; d.setAttribute('role', 'region'); d.setAttribute('aria-label', ROOT_LABELS[id]); document.body.appendChild(d); } });
 
   // Wiring
   // The off-canvas sidebar is a layer like a modal: Escape closes it, focus stays inside, and returns to the opener.
@@ -128,7 +131,7 @@ async function initNav(activePage) {
   const themeBtn = $('#tb-theme');
   const paintTheme = () => { themeBtn.innerHTML = icon(Theme.effective() === 'dark' ? 'sun' : 'moon'); };
   paintTheme();
-  themeBtn.addEventListener('click', () => Theme.toggle());
+  themeBtn.addEventListener('click', toggleThemePersisted);
   window.addEventListener('ispend:theme', paintTheme);
   $('#tb-search').addEventListener('click', openPalette);
   $('#tb-user').addEventListener('click', (e) => openUserMenu(e.currentTarget));
@@ -198,6 +201,12 @@ function openUserMenu(anchor) {
     } },
   ]);
 }
+/* Quick toggle that persists: when the target equals what the device would show anyway, store "system"
+   so the preference stays device-driven (and a double toggle is a no-op). */
+function toggleThemePersisted() {
+  const next = Theme.effective() === 'dark' ? 'light' : 'dark';
+  setThemePref(next === Theme.system() ? 'system' : next);
+}
 function setThemePref(mode) {
   Theme.set(mode);
   api('/api/auth/me/preferences', { method: 'PUT', body: { theme: mode } }).catch(() => {});
@@ -247,7 +256,7 @@ function openPalette() {
 
   const actions = [
     { group: 'Actions', label: 'Import a statement', icon: 'upload', run: () => { location.href = '/import.html'; } },
-    { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: () => Theme.toggle() },
+    { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: toggleThemePersisted },
     { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
   ];
   const pages = NAV_ITEMS.map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));

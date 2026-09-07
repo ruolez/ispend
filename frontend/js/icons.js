@@ -134,7 +134,7 @@ const ICONS = (() => {
 })();
 
 function icon(name, cls = '') {
-  const svg = ICONS[name] || ICONS.tag;
+  const svg = (Object.hasOwn(ICONS, name) && ICONS[name]) || ICONS.tag;
   return cls ? svg.replace('class="ico"', `class="ico ${cls}"`) : svg;
 }
 

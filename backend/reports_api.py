@@ -1,7 +1,7 @@
 import csv
 import io
 
-from flask import Blueprint, Response, jsonify, request, session
+from flask import Blueprint, Response, abort, jsonify, request, session
 
 import db
 import reports
@@ -21,6 +21,10 @@ def _accounts():
 
 
 def _range():
+    for key in ("from", "to"):
+        value = request.args.get(key)
+        if value and reports._parse_date(value) is None:
+            abort(400, f"{key} must be a date (YYYY-MM-DD)")
     return reports.resolve_range(request.args.get("range"), request.args.get("from"), request.args.get("to"))
 
 
@@ -101,10 +105,10 @@ def monthly():
         rows = []
         for s in data["series"]:
             row = {"category": s["name"], "total": s["total"]}
-            row.update({m: v for m, v in zip(data["months"], s["values"])})
+            row.update({m: v for m, v in zip(data["months"], s["values"], strict=False)})
             rows.append(row)
         rows.append({"category": "Total", "total": round(sum(data["totals"]), 2),
-                     **{m: v for m, v in zip(data["months"], data["totals"])}})
+                     **{m: v for m, v in zip(data["months"], data["totals"], strict=False)}})
         return _csv_response(rows, f"{data['flow']}-by-month.csv", ["category", "total", *data["months"]])
     return jsonify(data)
 

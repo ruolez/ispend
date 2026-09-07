@@ -163,9 +163,12 @@ function rangeToQuery(value) {
   if (value.preset) return { range: value.preset, from: null, to: null };
   return { range: null, from: value.from || null, to: value.to || null };
 }
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 function rangeFromQuery(q, fallback = { preset: 'this-month' }) {
-  if (q.range) return { preset: q.range };
-  if (q.from || q.to) return { from: q.from || null, to: q.to || null };
+  if (q.range && (RANGE_PRESETS.some((p) => p.key === q.range) || /^month:\d{4}-\d{2}$/.test(q.range))) return { preset: q.range };
+  const from = ISO_DATE.test(q.from || '') ? q.from : null;
+  const to = ISO_DATE.test(q.to || '') ? q.to : null;
+  if (from || to) return { from, to };
   return fallback;
 }
 

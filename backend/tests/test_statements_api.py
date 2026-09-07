@@ -1,5 +1,4 @@
 import io
-import json
 import os
 import sys
 import tempfile
@@ -11,7 +10,7 @@ import _stubs  # noqa: E402
 TMP = tempfile.mkdtemp()
 FAKE = _stubs.install(TMP)
 
-from flask import Flask, session  # noqa: E402
+from flask import Flask  # noqa: E402
 
 import importer  # noqa: E402
 import statements_api  # noqa: E402

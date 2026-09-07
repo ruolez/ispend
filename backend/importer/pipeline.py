@@ -3,7 +3,6 @@ import json
 import logging
 import os
 from datetime import date
-from decimal import Decimal
 
 import config
 import db
@@ -38,7 +37,7 @@ def store_upload(user_id, file_storage, account_id=None):
     try:
         kind = sniff.file_kind(filename, data[:4096])
     except ValueError as e:
-        raise ImportError_(str(e))
+        raise ImportError_(str(e)) from e
     sha = sniff.sha256_bytes(data)
     rel = f"{user_id}/{sha}.{kind}"
     path = abs_path(rel)

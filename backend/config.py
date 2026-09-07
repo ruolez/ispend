@@ -11,13 +11,13 @@ POSTGRES = {
 }
 
 STATEMENTS_DIR = os.environ.get("STATEMENTS_DIR", "/data/statements")
-MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 25 * 1024 * 1024))
-OCR_TIMEOUT_SECONDS = int(os.environ.get("OCR_TIMEOUT_SECONDS", 600))
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", "26214400"))
+OCR_TIMEOUT_SECONDS = int(os.environ.get("OCR_TIMEOUT_SECONDS", "600"))
 OCR_LANGS = os.environ.get("OCR_LANGS", "eng")
 
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_TIMEOUT = int(os.environ.get("OPENROUTER_TIMEOUT", 90))
-AI_BATCH_SIZE = int(os.environ.get("AI_BATCH_SIZE", 40))
+OPENROUTER_TIMEOUT = int(os.environ.get("OPENROUTER_TIMEOUT", "90"))
+AI_BATCH_SIZE = int(os.environ.get("AI_BATCH_SIZE", "40"))
 
 # Set to 1 when the app is served over HTTPS (install.sh does this for SSL installs).
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"

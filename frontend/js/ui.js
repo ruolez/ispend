@@ -3,9 +3,10 @@
 const ui = (() => {
   const layers = []; // stack of {close} for Esc handling (topmost first)
 
+  const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
   function root(id) {
     let el = document.getElementById(id);
-    if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); }
+    if (!el) { el = document.createElement('div'); el.id = id; el.setAttribute('role', 'region'); el.setAttribute('aria-label', ROOT_LABELS[id] || id); document.body.appendChild(el); }
     return el;
   }
   const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -47,7 +48,7 @@ const ui = (() => {
     const titleId = `modal-title-${uid()}`;
     backdrop.innerHTML = `
       <div class="modal${sizeCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" ${width ? `style="max-width:${width}px"` : ''}>
-        <header class="modal-head"><h2 id="${titleId}">${esc(title)}</h2>${dismissible ? `<button class="btn btn-icon btn-ghost btn-sm modal-close" aria-label="Close">${icon('x')}</button>` : ''}</header>
+        <div class="modal-head"><h2 id="${titleId}">${esc(title)}</h2>${dismissible ? `<button class="btn btn-icon btn-ghost btn-sm modal-close" aria-label="Close">${icon('x')}</button>` : ''}</div>
         <div class="modal-body"></div>
         ${actions.length ? '<footer class="modal-foot"></footer>' : ''}
       </div>`;
@@ -126,8 +127,8 @@ const ui = (() => {
     wrap.innerHTML = `
       <div class="drawer-backdrop"></div>
       <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ${width ? `style="width:min(${width}px,100vw)"` : ''}>
-        <header class="drawer-head"><h2 id="drawer-title">${esc(title)}</h2>
-          <button class="btn btn-icon btn-ghost btn-sm drawer-close" aria-label="Close">${icon('x')}</button></header>
+        <div class="drawer-head"><h2 id="drawer-title">${esc(title)}</h2>
+          <button class="btn btn-icon btn-ghost btn-sm drawer-close" aria-label="Close">${icon('x')}</button></div>
         <div class="drawer-body"></div>
         <footer class="drawer-foot" ${foot ? '' : 'hidden'}></footer>
       </div>`;
@@ -172,7 +173,7 @@ const ui = (() => {
   /* ---------- Popover ---------- */
   function popover(anchor, el, { placement = 'bottom-start', offset = 6, onClose, closeOnOutside = true, matchWidth = false } = {}) {
     el.classList.add('popover');
-    document.body.appendChild(el);
+    root('popover-root').appendChild(el);
     if (matchWidth) el.style.minWidth = `${anchor.getBoundingClientRect().width}px`;
     function position() {
       const r = anchor.getBoundingClientRect();
@@ -227,7 +228,7 @@ const ui = (() => {
       </${tag}>`;
     }).join('');
     const prevFocus = document.activeElement;
-    const pop = popover(anchor, el, { placement: opts.placement || 'bottom-end', onClose: () => { if (prevFocus && prevFocus.focus && !opts.noRefocus) prevFocus.focus(); } });
+    const pop = popover(anchor, el, { placement: opts.placement || 'bottom-end', onClose: (r) => { if (prevFocus && prevFocus.focus && !opts.noRefocus) prevFocus.focus(); if (opts.onClose) opts.onClose(r); } });
     el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-i]');
       if (!btn || btn.getAttribute('aria-disabled') === 'true') return;

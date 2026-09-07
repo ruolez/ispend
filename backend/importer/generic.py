@@ -1,6 +1,5 @@
 """Header/column heuristics for statements from unknown banks. Pure."""
 import re
-from datetime import date
 
 from importer.amounts import parse_amount
 from importer.dates import DATE_FORMATS, parse_date

@@ -218,3 +218,20 @@ class KindChangeSyncsTransactionsTest(unittest.TestCase):
     def test_unchanged_kind_touches_no_transactions(self):
         self.assertEqual(self._put(CAT, {"name": "Food"}).status_code, 200)
         self.assertEqual(self.x.sql("UPDATE transactions"), [])
+
+
+class TransferCategoriesAreProtectedTest(unittest.TestCase):
+    def test_deleting_a_system_transfer_category_is_refused(self):
+        app = Flask(__name__)
+        app.secret_key = "test"
+        app.register_blueprint(categories_api.bp)
+        q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", {**CAT, "id": 2, "slug": "transfers", "kind": "transfer", "is_system": True})])
+        x = _stubs.Router(default=1)
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = 1
+        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=x), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
+            res = c.delete("/api/categories/2")
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(x.sql("DELETE FROM categories"), [])

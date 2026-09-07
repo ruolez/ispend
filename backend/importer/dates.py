@@ -10,6 +10,17 @@ DATE_FORMATS = [
     "%d-%m-%Y", "%b. %d, %Y", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
 ]
 _DAY_FIRST = ("%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%b-%y")
+def _today():
+    """Today in the app's timezone (UTC would flip the year around New Year for western users)."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        import config
+        return datetime.now(ZoneInfo(config.APP_TIMEZONE)).date()
+    except Exception:
+        return date.today()
+
+
 _MONTH_DAY = re.compile(r"^(\d{1,2})[/-](\d{1,2})$")
 _MON_DAY_TEXT = re.compile(r"^([A-Za-z]{3,9})\.?\s*(\d{1,2})$|^(\d{1,2})\s+([A-Za-z]{3,9})\.?$")
 
@@ -54,7 +65,7 @@ def parse_date(value, fmt=None, day_first=False, default_year=None):
         month, day = (b, a) if day_first else (a, b)
         if month > 12 and day <= 12:
             month, day = day, month
-        year = default_year or date.today().year
+        year = default_year or _today().year
         try:
             return date(year, month, day)
         except ValueError:
@@ -63,7 +74,7 @@ def parse_date(value, fmt=None, day_first=False, default_year=None):
     if m:
         mon, day = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
         if mon.lower()[:3] in _MONTHS:
-            year = default_year or date.today().year
+            year = default_year or _today().year
             try:
                 return date(year, _MONTHS[mon.lower()[:3]], int(day))
             except ValueError:

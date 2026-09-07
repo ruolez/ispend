@@ -59,6 +59,7 @@
     set: set,
     toggle: function () { set(effective() === 'dark' ? 'light' : 'dark'); },
     hasStored: function () { try { return !!localStorage.getItem(THEME_KEY); } catch (e) { return false; } },
+    system: function () { return mql && mql.matches ? 'dark' : 'light'; },
     density: function () { return read(DENSITY_KEY, 'comfortable'); },
     setDensity: function (d) { write(DENSITY_KEY, d); applyDensity(d); window.dispatchEvent(new CustomEvent('ispend:density', { detail: d })); },
     hasStoredDensity: function () { try { return !!localStorage.getItem(DENSITY_KEY); } catch (e) { return false; } },

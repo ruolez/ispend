@@ -1354,7 +1354,7 @@ class TestReview:
         mem = next(m for m in u1.get("/api/merchants", params={"q": "gym"}).json() if m["merchant_key"] == key)
         assert mem["display_name"] == "QA Gym Renamed" and mem["txn_count"] == 3 and money(mem["total"]) == money("-120")
         r = u1.put(f"/api/merchants/{key}", json={})
-        assert (r.status_code, r.json()) == (400, {"error": "category_id is required"})
+        assert (r.status_code, r.json()) == (400, {"error": "category_id or display_name is required"})
         # restore category A on the gym rows for the report tests
         r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_a"]["id"], "apply_existing": True})
         assert r.json()["applied"] == 3
@@ -1619,7 +1619,6 @@ class TestReports:
         assert u2.get("/api/reports/by-category", params={"format": "csv"}).text == ""
 
     @pytest.mark.parametrize("path,params", [
-        ("/api/reports/summary", {"from": "garbage", "to": "2024-99-99"}),
         ("/api/reports/summary", {"from": "2024-12-31", "to": "2024-01-01"}),
         ("/api/reports/summary", {"range": "month:2024-13"}),
         ("/api/reports/summary", {"range": "month:abc"}),
@@ -1638,6 +1637,7 @@ class TestReports:
             assert r.json()["range"]["start"] <= r.json()["range"]["end"]
 
     @pytest.mark.parametrize("path,params,msg", [
+        ("/api/reports/summary", {"from": "garbage", "to": "2024-99-99"}, "from must be a date (YYYY-MM-DD)"),
         ("/api/reports/monthly", {"months": "abc"}, "months must be an integer"),
         ("/api/reports/monthly", {"parent_id": "abc"}, "parent_id must be an integer"),
         ("/api/reports/trends", {"months": "12.5"}, "months must be an integer"),

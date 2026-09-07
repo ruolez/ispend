@@ -92,7 +92,7 @@ function onAction(e) {
 function exportCsv() {
   const rq = rangeToQuery(state.range);
   const urls = {
-    category: `/api/reports/by-category${toQuery({ ...rq, level: 'top', ...acctQuery(), format: 'csv' })}`,
+    category: `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery(), format: 'csv' })}`,
     trend: `/api/reports/monthly${toQuery({ months: state.months, ...acctQuery(), format: 'csv' })}`,
     merchants: `/api/reports/top-merchants${toQuery({ ...rq, limit: 200, ...acctQuery(), format: 'csv' })}`,
     compare: `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery(), format: 'csv' })}`,
@@ -186,8 +186,9 @@ function renderTrend(data) {
   const chipsEl = $('#trend-chips'); const cur = state.currency;
   if (!data.series.length) { charts.destroyChart($('#ch-trend')); body.innerHTML = ui.emptyState({ icon: 'trending-up', title: `No ${flowWord()} yet` }); chipsEl.innerHTML = ''; return; }
   if (!body.querySelector('canvas')) body.innerHTML = '<canvas id="ch-trend"></canvas>';
-  const all = [{ name: 'Total', color: null, values: data.totals, key: 'total' }, ...data.series.map((s, i) => ({ ...s, key: String(i) }))];
-  if (!state.trendSel) state.trendSel = new Set(['total', ...data.series.slice(0, 2).map((_, i) => String(i))]);
+  const keyOf = (s, i) => (s.category_id != null ? `c${s.category_id}` : `i${i}`);
+  const all = [{ name: 'Total', color: null, values: data.totals, key: 'total' }, ...data.series.map((s, i) => ({ ...s, key: keyOf(s, i) }))];
+  if (!state.trendSel) state.trendSel = new Set(['total', ...data.series.slice(0, 2).map((s, i) => keyOf(s, i))]);
   const colorOf = (s) => s.key === 'total' ? charts.theme().text2 : seriesColor(s);
   chipsEl.innerHTML = all.map((s) => `<button type="button" class="chip ${state.trendSel.has(s.key) ? 'active' : ''}" data-key="${s.key}" style="--c:${colorOf(s)}" aria-pressed="${state.trendSel.has(s.key)}"><i class="dot" style="--c:${colorOf(s)}"></i>${esc(s.name)}</button>`).join('');
   chipsEl.onclick = (e) => { const b = e.target.closest('[data-key]'); if (!b) return; const k = b.dataset.key; if (state.trendSel.has(k)) state.trendSel.delete(k); else { if (state.trendSel.size >= 4) { toast('Up to 4 lines at a time', { type: 'info', duration: 1500 }); return; } state.trendSel.add(k); } renderTrend(data); };

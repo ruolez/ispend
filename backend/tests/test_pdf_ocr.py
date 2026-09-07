@@ -27,21 +27,26 @@ class NeedsOcrTest(unittest.TestCase):
 @unittest.skipUnless(shutil.which("tesseract") and shutil.which("gs"), "OCR binaries not installed")
 class OcrEndToEndTest(unittest.TestCase):
     def test_scanned_page_gets_text_layer(self):
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageFont
 
         from importer import pdf_text
 
         tmp = tempfile.mkdtemp()
-        img = Image.new("RGB", (1200, 400), "white")
+        img = Image.new("RGB", (1600, 700), "white")
         d = ImageDraw.Draw(img)
-        d.text((40, 40), "08/02/2024 COFFEE SHOP 4.50", fill="black")
+        font = ImageFont.load_default(size=44)
+        lines = ["08/02/2024  COFFEE SHOP DOWNTOWN        4.50",
+                 "08/03/2024  GROCERY MARKET NORTH       62.18",
+                 "08/05/2024  PAYMENT THANK YOU        -200.00"]
+        for i, line in enumerate(lines):
+            d.text((60, 80 + i * 120), line, fill="black", font=font)
         src, dst = os.path.join(tmp, "scan.pdf"), os.path.join(tmp, "scan.ocr.pdf")
         img.save(src, "PDF", resolution=150)
         self.assertTrue(pdf_ocr.needs_ocr(src))
-        pdf_ocr.run_ocr(src, dst, timeout=120)
-        self.assertFalse(pdf_ocr.needs_ocr(dst))
-        text = pdf_text.page_text(pdf_text.extract_pages(dst))
-        self.assertIn("COFFEE", text.upper())
+        pdf_ocr.run_ocr(src, dst, timeout=180)
+        self.assertFalse(pdf_ocr.needs_ocr(dst), "the OCR text layer must clear the chars-per-page floor")
+        text = pdf_text.page_text(pdf_text.extract_pages(dst)).upper()
+        self.assertTrue("COFFEE" in text and "GROCERY" in text, text[:200])
 
 
 if __name__ == "__main__":

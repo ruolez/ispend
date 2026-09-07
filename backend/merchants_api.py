@@ -35,14 +35,19 @@ def update_merchant(merchant_key):
     uid = session["user_id"]
     data = json_body()
     category_id = to_int(data.get("category_id"), "Category")
-    if category_id is None:
-        return api_error("category_id is required")
-    if not db.query("SELECT 1 FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
-        return api_error("Category not found", 404)
-    display_name = (data.get("display_name") or "").strip() or None
-    categorizer.learn(uid, merchant_key, category_id, display_name=display_name, is_transfer=bool(data.get("is_transfer")))
+    display_name = str(data.get("display_name") or "").strip() or None
+    if category_id is None and not display_name:
+        return api_error("category_id or display_name is required")
+    if category_id is not None:
+        if not db.query("SELECT 1 FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
+            return api_error("Category not found", 404)
+        categorizer.learn(uid, merchant_key, category_id, display_name=display_name, is_transfer=bool(data.get("is_transfer")))
+    else:
+        # transfer-only merchants have no category to learn; a rename still applies
+        db.execute("UPDATE merchant_memory SET display_name = %s WHERE user_id = %s AND merchant_key = %s",
+                   (display_name, uid, merchant_key))
     applied = 0
-    if data.get("apply_existing"):
+    if data.get("apply_existing") and category_id is not None:
         ids = [r["id"] for r in (db.query(
             """SELECT id FROM transactions WHERE user_id = %s AND merchant_key = %s
                AND (category_id IS DISTINCT FROM %s OR category_status <> 'confirmed')""",

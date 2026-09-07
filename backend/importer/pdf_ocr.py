@@ -40,11 +40,11 @@ def run_ocr(src, dst, langs="eng", timeout=600):
         raise OcrError("OCR is not available on this server (tesseract missing)")
     with OCR_LOCK:
         try:
-            proc = subprocess.run(ocr_command(src, dst, langs), capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(ocr_command(src, dst, langs), capture_output=True, text=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired:
-            raise OcrError(f"OCR timed out after {timeout}s")
+            raise OcrError(f"OCR timed out after {timeout}s") from None
         except OSError as e:
-            raise OcrError(f"Could not start OCR: {e}")
+            raise OcrError(f"Could not start OCR: {e}") from e
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
         raise OcrError("OCR failed: " + " | ".join(tail))

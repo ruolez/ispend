@@ -58,12 +58,27 @@ def _row_payload(row, cached):
             "created_at": created.isoformat() if hasattr(created, "isoformat") else created, "cached": cached}
 
 
+def _data_changed_since(uid, start, end, since):
+    """True when a transaction in the period was added or edited after the insight was written."""
+    if since is None:
+        return False
+    row = db.query(
+        """SELECT GREATEST(MAX(created_at), MAX(updated_at)) AS latest FROM transactions
+           WHERE user_id = %s AND txn_date BETWEEN %s AND %s""",
+        (uid, start, end), one=True,
+    )
+    latest = row and row.get("latest")
+    return bool(latest and latest > since)
+
+
 def cached(uid, start, end):
     row = db.query(
         "SELECT content, model, created_at FROM insights WHERE user_id = %s AND period_start = %s AND period_end = %s",
         (uid, start, end), one=True,
     )
-    return _row_payload(row, True) if row else None
+    if not row or _data_changed_since(uid, start, end, row.get("created_at")):
+        return None
+    return _row_payload(row, True)
 
 
 def _validate(parsed):

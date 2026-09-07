@@ -7,7 +7,7 @@ from decimal import Decimal
 def fingerprint(account_id, txn_date, amount, description_clean):
     amount = Decimal(str(amount)) if not isinstance(amount, Decimal) else amount
     payload = f"{int(account_id)}|{txn_date.isoformat()}|{amount:.2f}|{description_clean or ''}"
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def assign_occurrences(rows):

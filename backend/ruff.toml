@@ -1,0 +1,17 @@
+# ruff check backend   (the CI lint gate)
+line-length = 130
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "B", "S", "PLW"]
+ignore = [
+  "E501",    # line length is handled by convention, not the linter
+  "S101",    # asserts are fine in tests and as invariants
+  "S608",    # SQL is composed from fixed fragments with parameters, never user strings
+  "PLW2901", # reusing a loop variable for its cleaned value is deliberate in the parsers
+  "S110",    # per-page parser fallbacks swallow pdfplumber errors on purpose
+  "S603",    # ocrmypdf is invoked with a fixed argv list
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S108", "S324", "E731", "E701"]

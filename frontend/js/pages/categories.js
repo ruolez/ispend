@@ -24,16 +24,18 @@ async function load() {
   $('#cat-error').innerHTML = '';
   if (!state.tree.length) $('#cat-tree').innerHTML = `<div class="cat-empty">${ui.skeletonList(8)}</div>`;
   try {
-    const [tree, top, sub] = await Promise.all([
+    const [tree, top, sub, topInc, subInc] = await Promise.all([
       store.categories({ force: true }),
       api('/api/reports/by-category?range=this-month&level=top').catch(() => ({ categories: [] })),
       api('/api/reports/by-category?range=this-month&level=sub').catch(() => ({ categories: [] })),
+      api('/api/reports/by-category?range=this-month&level=top&flow=income').catch(() => ({ categories: [] })),
+      api('/api/reports/by-category?range=this-month&level=sub&flow=income').catch(() => ({ categories: [] })),
     ]);
     state.tree = tree;
     state.flat = await store.categoriesFlat();
     state.totals = {};
-    top.categories.forEach((c) => { if (c.id != null) state.totals[c.id] = c.total; });
-    sub.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; });
+    [top, topInc].forEach((r) => r.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; }));
+    [sub, subInc].forEach((r) => r.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; }));
   } catch (err) {
     $('#cat-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
     return;
@@ -202,14 +204,14 @@ async function loadSideTrend(cat) {
   if (level === 'top') {
     // One call: the monthly report already carries the top-level series (top 7 + Other).
     try {
-      const data = await api('/api/reports/monthly?months=6');
+      const data = await api(`/api/reports/monthly${toQuery({ months: 6, ...(cat.kind === 'income' ? { flow: 'income' } : {}) })}`);
       const s = (data.series || []).find((x) => x.category_id === cat.id);
       if (s) values = months.map((ym) => { const j = data.months.indexOf(ym); return j >= 0 ? (s.values[j] || 0) : 0; });
     } catch { values = null; }
   }
   if (!values) {
     try {
-      const res = await Promise.all(months.map((ym) => { const r = monthRange(ym); return api(`/api/reports/by-category${toQuery({ from: r.from, to: r.to, level })}`); }));
+      const res = await Promise.all(months.map((ym) => { const r = monthRange(ym); return api(`/api/reports/by-category${toQuery({ from: r.from, to: r.to, level, ...(cat.kind === 'income' ? { flow: 'income' } : {}) })}`); }));
       values = res.map((r) => { const row = r.categories.find((c) => c.id === cat.id); return row ? row.total : 0; });
     } catch { values = months.map(() => 0); }
   }

@@ -17,12 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+RUN useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin app
+
 COPY --from=builder /wheels /wheels
 COPY requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
     && rm -rf /wheels
 
 COPY . .
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 5000
 
@@ -38,7 +42,10 @@ ENV GUNICORN_WORKERS=2 \
     STATEMENTS_DIR=/data/statements \
     OMP_THREAD_LIMIT=1
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+#   --user/--group     : workers run unprivileged; the master keeps root only for the bind
 CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:5000 \
+    --user app --group app \
     --workers ${GUNICORN_WORKERS} \
     --threads ${GUNICORN_THREADS} \
     --timeout ${GUNICORN_TIMEOUT} \

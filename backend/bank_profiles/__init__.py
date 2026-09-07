@@ -3,6 +3,8 @@ import importlib
 
 from bank_profiles.base import (BankProfile, CsvFormat, build_mapping_from_format, find_format_row)
 
+__all__ = ["BankProfile", "CsvFormat", "REGISTRY", "all_profiles", "build_mapping_from_format", "find_format_row", "get"]
+
 _MODULES = ("chase", "amex", "capital_one", "bofa", "citi", "discover", "wells_fargo", "rbc", "td", "bmo", "scotiabank", "pnc")
 REGISTRY = {}
 for _name in _MODULES:

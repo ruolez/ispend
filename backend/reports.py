@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import config
 import db
 import recurring as recurring_lib
-from util import row_json, rows_json
+from util import rows_json
 
 SPENDING = "t.user_id = %s AND t.amount < 0 AND NOT t.is_transfer AND NOT t.is_excluded"
 CASHFLOW = "t.user_id = %s AND NOT t.is_transfer AND NOT t.is_excluded"

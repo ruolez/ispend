@@ -72,7 +72,7 @@ def list_models(force=False):
     try:
         resp = requests.get(f"{config.OPENROUTER_BASE_URL}/models", timeout=20)
     except requests.RequestException as e:
-        raise OpenRouterError(f"Could not reach OpenRouter: {e}")
+        raise OpenRouterError(f"Could not reach OpenRouter: {e}") from e
     if resp.status_code != 200:
         raise OpenRouterError(f"OpenRouter returned {resp.status_code}")
     out = []
@@ -131,11 +131,11 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
             headers=_headers(key, user_id), json=body, timeout=timeout or config.OPENROUTER_TIMEOUT,
         )
     except requests.RequestException as e:
-        raise OpenRouterError(f"OpenRouter request failed: {e}")
+        raise OpenRouterError(f"OpenRouter request failed: {e}") from e
     try:
         data = resp.json()
     except ValueError:
-        raise OpenRouterError(f"OpenRouter returned non-JSON ({resp.status_code})")
+        raise OpenRouterError(f"OpenRouter returned non-JSON ({resp.status_code})") from None
     if resp.status_code != 200 or (isinstance(data, dict) and "error" in data):
         err = data.get("error") if isinstance(data, dict) else None
         code = resp.status_code
@@ -149,7 +149,7 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
         choice = data["choices"][0]
         content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError):
-        raise OpenRouterError("OpenRouter response had no content")
+        raise OpenRouterError("OpenRouter response had no content") from None
     text = _FENCE.sub("", (content or "").strip())
     if choice.get("finish_reason") == "length" and not _looks_complete_json(text):
         used = ((data.get("usage") or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
@@ -161,11 +161,11 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
     except ValueError:
         m = re.search(r"\{.*\}", text, re.S)
         if not m:
-            raise OpenRouterError("Model did not return JSON")
+            raise OpenRouterError("Model did not return JSON") from None
         try:
             parsed = json.loads(m.group(0))
         except ValueError:
-            raise OpenRouterError("Model returned malformed JSON")
+            raise OpenRouterError("Model returned malformed JSON") from None
     return parsed, data.get("usage") or {}
 
 

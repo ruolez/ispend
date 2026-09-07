@@ -44,7 +44,7 @@ def renormalize_user(user_id):
     key_map = {old: votes.most_common(1)[0][0] for old, votes in key_votes.items()}
     key_map = {o: n for o, n in key_map.items() if o != n}
     name_for = {}
-    for r, m in changed:
+    for _r, m in changed:
         name_for.setdefault(m.key, m.name)
 
     touched_ids = [r["id"] for r, _m in changed]
