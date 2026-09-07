@@ -256,22 +256,19 @@ def put_rows(statement_id):
         audit("statement.rows.category", {"id": statement_id, "rows": n, "category_id": cid})
         return jsonify({"updated": n, **_detail(_get(statement_id))})
     include = bool(data.get("include", True))
+    # rows already imported (duplicate_of) are always skipped; include only moves the others
     if data.get("all"):
-        sql = "UPDATE import_rows SET include = %s WHERE statement_id = %s AND is_valid"
+        sql = "UPDATE import_rows SET include = %s WHERE statement_id = %s AND is_valid AND duplicate_of IS NULL"
         params = [include, statement_id]
-        only = data.get("only")
-        if only == "dupes":
-            sql += " AND duplicate_of IS NOT NULL"
-        elif only == "in_file":
+        if data.get("only") == "in_file":
             sql += " AND in_file_duplicate"
-        elif only == "clean":
-            sql += " AND duplicate_of IS NULL"
         n = db.execute(sql, params)
     else:
         ids = parse_int_list(data.get("row_ids"))
         if not ids:
             return api_error("row_ids or all is required")
-        n = db.execute("UPDATE import_rows SET include = %s WHERE statement_id = %s AND id = ANY(%s) AND is_valid",
+        n = db.execute("""UPDATE import_rows SET include = %s
+                          WHERE statement_id = %s AND id = ANY(%s) AND is_valid AND duplicate_of IS NULL""",
                        (include, statement_id, ids))
     return jsonify({"updated": n, **{"summary": _detail(_get(statement_id)).get("summary")}})
 

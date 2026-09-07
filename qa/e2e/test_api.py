@@ -1007,6 +1007,10 @@ class TestTransactions:
         r = u1.post("/api/transactions/pair", json={})
         assert r.status_code == 400
         r = u1.post("/api/transactions/pair", json={"a_id": out_leg["id"], "b_id": in_leg["id"]})
+        assert r.status_code == 200, r.text
+        r = u1.post("/api/transactions/pair", json={"a_id": out_leg["id"], "b_id": manual["txns"][1]["id"]})
+        assert r.status_code in (400, 409) and "already paired" in r.json()["error"] or r.status_code == 400, r.text
+        r = u1.post("/api/transactions/pair", json={"a_id": out_leg["id"], "b_id": in_leg["id"]})
         assert r.status_code == 200 and r.json()["ok"] is True
         internal = cat_by_slug(u1, "transfers.internal")
         assert r.json()["category_id"] == internal["id"]

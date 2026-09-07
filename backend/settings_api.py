@@ -62,6 +62,13 @@ def put_settings():
         db.set_user_setting(uid, key, clean)
         if shared and key in ("openrouter_api_key", "openrouter_model"):
             db.set_setting(key, clean)
+    if shared:
+        # the switch arrives alone (the key is masked client-side): publish what the admin already saved
+        for key in ("openrouter_api_key", "openrouter_model"):
+            if key not in data or (key in SECRET_KEYS and data.get(key) == MASK):
+                stored = db.user_setting(uid, key)
+                if stored:
+                    db.set_setting(key, stored)
     if _is_admin() and data.get("clear_shared"):
         db.set_setting("openrouter_api_key", "")
         db.set_setting("openrouter_model", "")

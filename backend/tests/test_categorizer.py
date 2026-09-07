@@ -134,3 +134,20 @@ class ApplyManualTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FuzzyMemoryBoundsTest(unittest.TestCase):
+    def test_token_subsets_are_not_matches(self):
+        for key, remembered in (("UBER", "UBER EATS"), ("AMAZON", "AMAZON PRIME"), ("AMZN MKTP US", "AMZN MKTP CA")):
+            d = categorizer.categorize(txn(merchant_key=key), ctx(memory={remembered: {"category_id": 5, "is_transfer": False}}))
+            self.assertNotEqual(d.source, "merchant", (key, remembered))
+
+    def test_near_identical_keys_still_match(self):
+        d = categorizer.categorize(txn(merchant_key="STARBUCKS COFFEE"),
+                                   ctx(memory={"STARBUCKS COFFEE CO": {"category_id": 5, "is_transfer": False}}))
+        self.assertEqual((d.category_id, d.status), (5, "suggested"))
+
+    def test_a_suggestion_never_carries_transfer_flags(self):
+        d = categorizer.categorize(txn(merchant_key="E-TRANSFER SENT"),
+                                   ctx(memory={"E-TRANSFER SENT TO": {"category_id": 3, "is_transfer": True}}))
+        self.assertEqual((d.status, d.is_transfer, d.is_excluded), ("suggested", False, False))

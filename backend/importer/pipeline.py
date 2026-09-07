@@ -387,7 +387,9 @@ def _commit_locked(st, account):
     all_rows = db.query("SELECT * FROM import_rows WHERE statement_id = %s ORDER BY row_index", (sid,))
     excluded_by_user = sum(1 for r in all_rows if r["is_valid"] and r["duplicate_of"] is None and not r["include"])
     skipped_invalid = sum(1 for r in all_rows if not r["is_valid"])
-    candidates = [r for r in all_rows if r["is_valid"] and r["include"]]
+    # rows already imported are never written again, whatever their include flag says
+    skipped_dupes = sum(1 for r in all_rows if r["is_valid"] and r["duplicate_of"] is not None)
+    candidates = [r for r in all_rows if r["is_valid"] and r["include"] and r["duplicate_of"] is None]
     phrases = _phrases_for(st, (r["description"] or "" for r in all_rows))
     staged = []
     for r in candidates:
@@ -406,7 +408,6 @@ def _commit_locked(st, account):
     counts = {"rule": 0, "merchant": 0, "builtin": 0, "manual": 0, "suggested": 0, "uncategorized": 0}
     rule_hits = {}
     events, inserted_ids, uncategorized_ids = [], [], []
-    skipped_dupes = 0
     values, meta = [], {}
     manual_learn = {}
     for s in staged:
@@ -428,8 +429,9 @@ def _commit_locked(st, account):
         source = getattr(d, "source", None) if category_id else None
         rule_id = getattr(d, "rule_id", None)
         confidence = getattr(d, "confidence", None) if category_id else None
-        is_transfer = bool(getattr(d, "is_transfer", False))
-        is_excluded = bool(getattr(d, "is_excluded", False)) or is_transfer
+        authoritative = status == "confirmed" or getattr(d, "source", None) == "rule"
+        is_transfer = authoritative and bool(getattr(d, "is_transfer", False))
+        is_excluded = (authoritative and bool(getattr(d, "is_excluded", False))) or is_transfer
         if r.get("category_source") == "manual" and r.get("category_id"):
             # the user set this category in the preview: it wins and is remembered
             category_id, status, source, rule_id, confidence = r["category_id"], "confirmed", "manual", None, 1.0

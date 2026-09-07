@@ -69,7 +69,7 @@ async function load() {
   try {
     const r = await api(`/api/review?mode=${rv.mode}&limit=100`);
     if (rv.mode === 'merchant') {
-      rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: g.count >= 1, pattern: g.key, patternOpen: false, rows: null }));
+      rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
       rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
     } else {
       rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));

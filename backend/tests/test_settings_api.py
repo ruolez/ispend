@@ -64,6 +64,14 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual((FAKE.settings["openrouter_api_key"], FAKE.settings["openrouter_model"]), ("", ""))
         self.assertEqual(FAKE.settings["u1:openrouter_api_key"], "sk-a")
 
+    def test_share_switch_alone_publishes_the_admins_saved_key_and_model(self):
+        FAKE.settings.update({"u1:openrouter_api_key": "sk-saved", "u1:openrouter_model": "saved/model"})
+        res = self._call("put", "/api/settings", {"shared": True}, uid=1, role="admin")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual((FAKE.settings["openrouter_api_key"], FAKE.settings["openrouter_model"]), ("sk-saved", "saved/model"))
+        res = self._call("put", "/api/settings", {"shared": True, "openrouter_api_key": MASK}, uid=1, role="admin")
+        self.assertEqual(FAKE.settings["openrouter_api_key"], "sk-saved")
+
     def test_client_settings_reflect_the_current_user(self):
         FAKE.settings.update({"u2:openrouter_api_key": "k", "u2:openrouter_model": "m", "u2:ai_categorize_enabled": "1"})
         body = self._call("get", "/api/settings/client").get_json()

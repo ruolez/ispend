@@ -707,19 +707,20 @@ def test_f3_import(page, qapi):
     st = review_state(page)
     F.note(f"dup review: {st}")
     F.eq(st["dupes"], 6, "all 6 rows flagged Duplicate")
-    F.check("6 duplicates" in st["summary"] and "0 to import" in st["summary"], f"summary: {st['summary']!r}")
-    F.check(page.locator("#skip-dupes").is_checked(), "skip duplicates switch on by default")
+    F.check("6 duplicates skipped" in st["summary"] and "0 to import" in st["summary"], f"summary states duplicates are skipped: {st['summary']!r}")
+    F.eq(page.locator("#skip-dupes").count(), 0, "no dead 'skip duplicates' switch")
+    F.check(all(page.locator(".tbl-preview [data-row-include]").nth(i).is_disabled() for i in range(6)), "duplicate rows cannot be ticked")
     F.check(st["commit_disabled"] is True, "commit disabled with nothing to import")
     shot(page, "F3-duplicates-review", full=True)
-    # turn the skip switch off: UI promises to import them
-    page.locator("label.switch:has(#skip-dupes) .switch-track").click()
+    # 'Include all' must leave duplicates out
+    page.locator('[data-act="rows-all"][data-include="1"]').click()
     page.wait_for_timeout(1500)
     st2 = review_state(page)
-    F.note(f"dup review after unchecking skip: summary={st2['summary']!r} foot={st2['foot']!r} commit_disabled={st2['commit_disabled']} switch_checked={page.locator('#skip-dupes').is_checked()}")
     rows_api = qapi.get(f"/api/statements/{[x for x in qapi.get('/api/statements') if x['status'] == 'previewed'][0]['id']}?limit=10")
-    F.note(f"API after un-skip: include flags={[r['include'] for r in rows_api['rows']]} summary.included={rows_api['summary']['included']}")
-    F.check("6 to import" in st2["summary"] and st2["commit_disabled"] is False, f"'Skip 6 duplicates' switch is a dead control: turning it off flips every row's include flag (API include={rows_api['rows'][0]['include']}) but summary.included stays {rows_api['summary']['included']} (statements_api counts only duplicate_of IS NULL), so the UI still says {st2['summary']!r} and Import stays disabled")
-    shot(page, "F3-duplicates-unskipped")
+    F.note(f"API after Include all: include flags={[r['include'] for r in rows_api['rows']]} summary.included={rows_api['summary']['included']}")
+    F.check(not any(r["include"] for r in rows_api["rows"]) and rows_api["summary"]["included"] == 0, "Include all leaves duplicate rows excluded")
+    F.check("0 to import" in st2["summary"] and st2["commit_disabled"] is True, f"still nothing to import: {st2['summary']!r}")
+    shot(page, "F3-duplicates-include-all")
     before = txn_total(qapi)
     page.locator('[data-act="discard"]').click()
     m = confirm_modal(page)
@@ -1232,11 +1233,14 @@ def test_f5_review(page, qapi):
     F.note(f"suggestion sources shown with AI off: {sorted(set(confs))}")
     F.check(not any("AI" in c.split("·")[-1] for c in confs), f"no suggestion is attributed to AI while AI is off: {confs}")
     F.check(cards.first.evaluate("e => e.classList.contains('is-focused')"), "first card focused on load")
-    F.check(all(page.locator(".rv-card [data-cfield='always']").nth(i).is_checked() for i in range(min(3, cards.count()))), "'Always do this' is ON by default on every card")
+    F.check(not any(page.locator(".rv-card [data-cfield='always']").nth(i).is_checked() for i in range(min(3, cards.count()))), "'Always do this' is OFF by default (rules are opt-in)")
     shot(page, "F5-review", full=True)
 
-    # keyboard-resolve the focused (largest) group -> rule created
+    # opt in to a rule on the focused (largest) group, then keyboard-resolve -> rule created
     g0 = q["groups"][0]
+    cards.first.locator(".rv-always .switch-track").click()
+    F.check(cards.first.locator("[data-cfield='always']").is_checked(), "'Always do this' switched on for the first group")
+    cards.first.locator("[data-cfield='always']").blur()
     page.keyboard.press("c")
     page.wait_for_selector(".cat-picker input", timeout=5000)
     page.locator(".cat-picker input").type("Groceries")
@@ -1252,13 +1256,12 @@ def test_f5_review(page, qapi):
     F.check(f"{q['remaining_items'] - g0['count']}" in page.locator("#rv-progress").inner_text(), "progress decremented")
     shot(page, "F5-after-resolve", full=True)
 
-    # resolve another group with 'always' OFF -> no rule
+    # resolve another group with the default ('always' OFF) -> no rule
     q2 = qapi.get("/api/review?mode=merchant&limit=100")
     F.check(len(q2["groups"]) >= 3, f"groups remain after one resolve: {len(q2['groups'])}")
     g1 = q2["groups"][0]
     card = page.locator(f".rv-card[data-key='{g1['key']}']")
-    card.locator(".rv-always .switch-track").click()
-    F.check(not card.locator("[data-cfield='always']").is_checked(), "'Always do this' switched off")
+    F.check(not card.locator("[data-cfield='always']").is_checked(), "'Always do this' is off on the next card")
     card.locator("[data-cact='pick']").first.click()
     page.wait_for_selector(".cat-picker input", timeout=5000)
     page.locator(".cat-picker input").type("Dining")

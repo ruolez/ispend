@@ -10,7 +10,7 @@ import db
 import rules as rules_mod
 from util import record_events
 
-FUZZY_CUTOFF = 92
+FUZZY_CUTOFF = 90  # plain ratio: near-identical keys only, never token subsets (UBER vs UBER EATS)
 
 
 @dataclass
@@ -99,13 +99,11 @@ def categorize(txn, ctx):
             is_transfer=bool(mem.get("is_transfer")), is_excluded=bool(mem.get("is_transfer")),
         )
     if key and ctx.memory_keys:
-        best = process.extractOne(key, ctx.memory_keys, scorer=fuzz.token_set_ratio, score_cutoff=FUZZY_CUTOFF)
+        best = process.extractOne(key, ctx.memory_keys, scorer=fuzz.ratio, score_cutoff=FUZZY_CUTOFF)
         if best:
             mem = ctx.memory[best[0]]
-            return Decision(
-                category_id=mem["category_id"], status="suggested", source="merchant", confidence=0.8,
-                is_transfer=bool(mem.get("is_transfer")), is_excluded=bool(mem.get("is_transfer")),
-            )
+            # a suggestion never moves money out of the totals; confirming it in Review does
+            return Decision(category_id=mem["category_id"], status="suggested", source="merchant", confidence=0.8)
 
     slug = builtin_hints.lookup(key, txn.get("description_clean") or "", txn.get("description_raw") or "")
     if slug:

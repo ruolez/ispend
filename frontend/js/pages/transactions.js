@@ -207,7 +207,7 @@ async function loadMore(first = false) {
 }
 function paintSummary() {
   const curs = tx.currencies && tx.currencies.length ? tx.currencies : (tx.items.length ? [currencyOf(tx.items[0])] : []);
-  const cur = curs[0] || tx.displayCurrency || 'USD';
+  const cur = curs.length === 1 ? curs[0] : (tx.displayCurrency || curs[0] || 'USD');
   const mixed = curs.length > 1;
   $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span>${tx.filters.flow !== 'in' ? `<span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span>` : ''}${tx.filters.flow !== 'out' ? `<span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span>` : ''}${!tx.filters.flow ? `<span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>` : ''}${tx.skipped.count ? `<span class="text-3" title="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
@@ -520,9 +520,9 @@ function onDrawerClick(e, it, d) {
   if (other) return openDrawer(Number(other.dataset.openOther));
   if (!b) return;
   switch (b.dataset.dact) {
-    case 'pick': return categoryPicker({ anchor: b, value: it.category_id, allowNone: !!it.category_id, suggestedId: it.category_status === 'suggested' ? it.category_id : null, onPick: async (cat) => { await setCategory([it.id], cat ? cat.id : null); const u = tx.byId.get(it.id); if (u) Object.assign(it, u); d.setBody(drawerHtml(it)); } });
-    case 'accept': return bulk([it.id], 'accept_suggestion').then(() => { Object.assign(it, tx.byId.get(it.id) || {}); d.setBody(drawerHtml(it)); });
-    case 'reject': return bulk([it.id], 'reject_suggestion').then(() => { Object.assign(it, tx.byId.get(it.id) || {}); d.setBody(drawerHtml(it)); });
+    case 'pick': return categoryPicker({ anchor: b, value: it.category_id, allowNone: !!it.category_id, suggestedId: it.category_status === 'suggested' ? it.category_id : null, onPick: async (cat) => { await setCategory([it.id], cat ? cat.id : null); await refreshDrawer(it, d); } });
+    case 'accept': return bulk([it.id], 'accept_suggestion').then(() => refreshDrawer(it, d));
+    case 'reject': return bulk([it.id], 'reject_suggestion').then(() => refreshDrawer(it, d));
     case 'rule': return openRuleModal(it.id);
     case 'rename': { const name = d.el.querySelector('#txd-merchant').value.trim(); if (!name || name === it.merchant_name) return; return updateItem(it.id, { merchant_name: name, rename_all: true }, `Renamed to ${name}`).then(() => { it.merchant_name = name; d.setTitle(name); tx.items.filter((x) => x.merchant_key === it.merchant_key).forEach((x) => { x.merchant_name = name; rerenderRow(x.id); }); }); }
     case 'delete': return deleteItems([it.id]).then(() => { if (!tx.byId.has(it.id)) d.close(); });
@@ -534,9 +534,23 @@ async function onDrawerChange(e, it, d) {
   if (!cb) return;
   const key = cb.dataset.dflag;
   try {
-    const u = await updateItem(it.id, { [key]: cb.checked }, key === 'is_transfer' ? (cb.checked ? 'Marked as transfer' : 'Unmarked as transfer') : (cb.checked ? 'Excluded from reports' : 'Included in reports'));
-    Object.assign(it, u); d.setBody(drawerHtml(it));
+    await updateItem(it.id, { [key]: cb.checked }, key === 'is_transfer' ? (cb.checked ? 'Marked as transfer' : 'Unmarked as transfer') : (cb.checked ? 'Excluded from reports' : 'Included in reports'));
+    await refreshDrawer(it, d);
   } catch { cb.checked = !cb.checked; }
+}
+/* Re-fetch the full record (history, other charges, statement) after an edit so the open drawer
+   never shows a stale timeline; falls back to the list row when the fetch fails. */
+async function refreshDrawer(it, d) {
+  try {
+    const fresh = await api(`/api/transactions/${it.id}`);
+    Object.assign(it, fresh);
+    const local = tx.byId.get(it.id);
+    if (local) Object.assign(local, fresh, { events: undefined, merchant_others: undefined, statement: undefined });
+  } catch {
+    const u = tx.byId.get(it.id);
+    if (u) Object.keys(u).forEach((k) => { if (u[k] !== undefined) it[k] = u[k]; });
+  }
+  if (tx.drawer === d) d.setBody(drawerHtml(it));
 }
 
 /* ---------- rule modal ---------- */

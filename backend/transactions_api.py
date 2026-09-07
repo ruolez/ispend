@@ -310,6 +310,8 @@ def pair_transfer():
     b_id = to_int(data.get("b_id"), "b_id", required=True)
     try:
         out = transfers.pair(session["user_id"], a_id, b_id)
+    except transfers.AlreadyPaired as e:
+        return api_error(str(e), 409)
     except ValueError as e:
         return api_error(str(e))
     except LookupError as e:
@@ -502,7 +504,7 @@ def update_transaction(txn_id):
             db.execute(
                 """UPDATE transactions SET is_transfer = TRUE, is_excluded = TRUE,
                        category_id = COALESCE(category_id, %s),
-                       category_status = CASE WHEN category_id IS NULL AND %s IS NOT NULL THEN 'confirmed' ELSE category_status END,
+                       category_status = CASE WHEN COALESCE(category_id, %s) IS NULL THEN category_status ELSE 'confirmed' END,
                        updated_at = now()
                    WHERE id = %s""",
                 (transfers_cat, transfers_cat, txn_id),

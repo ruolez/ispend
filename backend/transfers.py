@@ -5,6 +5,10 @@ import re
 import db
 from util import record_events, rows_json
 
+class AlreadyPaired(ValueError):
+    """One leg already belongs to another pair; unpair it first."""
+
+
 HINT = re.compile(r"\b(PAYMENT|AUTOPAY|TRANSFER|XFER|ONLINE PMT|E-TRANSFER|ETRANSFER|INTERAC|THANK YOU)\b", re.I)
 
 
@@ -22,7 +26,7 @@ def candidates(user_id, days=4, limit=200):
            FROM transactions a
            JOIN transactions b
              ON b.user_id = a.user_id AND b.account_id <> a.account_id AND b.amount = -a.amount
-            AND abs(b.txn_date - a.txn_date) <= %s AND b.transfer_pair_id IS NULL
+            AND b.currency = a.currency AND abs(b.txn_date - a.txn_date) <= %s AND b.transfer_pair_id IS NULL
            WHERE a.user_id = %s AND a.amount < 0 AND a.transfer_pair_id IS NULL
            ORDER BY a.txn_date DESC, a.id DESC
            LIMIT %s""",
@@ -63,6 +67,9 @@ def pair(user_id, a_id, b_id):
         raise ValueError("Both transactions are in the same account")
     if a["amount"] != -b["amount"]:
         raise ValueError("Amounts do not offset each other")
+    for leg in (a, b):
+        if leg["transfer_pair_id"] and leg["transfer_pair_id"] not in (a["id"], b["id"]):
+            raise AlreadyPaired("One of these transactions is already paired with another; unpair it first")
     category_id = _transfer_category_id(user_id, {a["account_type"], b["account_type"]})
     with db.transaction():
         for me, other in ((a, b), (b, a)):

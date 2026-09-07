@@ -116,6 +116,20 @@ def _clean_icon(value):
     return value if ICON_NAME.match(value) else None
 
 
+def _sync_transfer_flags(category_ids, new_kind, old_kind):
+    """Rows filed under these categories follow a kind change to or from transfer; paired legs keep theirs."""
+    if new_kind == "transfer":
+        db.execute(
+            """UPDATE transactions SET is_transfer = TRUE, is_excluded = TRUE, updated_at = now()
+               WHERE category_id = ANY(%s) AND category_status = 'confirmed' AND NOT (is_transfer AND is_excluded)""",
+            (category_ids,))
+    elif old_kind == "transfer":
+        db.execute(
+            """UPDATE transactions SET is_transfer = FALSE, is_excluded = FALSE, updated_at = now()
+               WHERE category_id = ANY(%s) AND transfer_pair_id IS NULL AND (is_transfer OR is_excluded)""",
+            (category_ids,))
+
+
 def _next_color(uid):
     used = db.query("SELECT color, COUNT(*) AS n FROM categories WHERE user_id = %s AND parent_id IS NULL GROUP BY color", (uid,))
     counts = {r["color"]: r["n"] for r in used}
@@ -166,8 +180,11 @@ def update_category(cat_id):
     )
     if data.get("propagate_color") and not parent_id:
         db.execute("UPDATE categories SET color = %s WHERE parent_id = %s", (color, cat_id))
-    if not parent_id and kind != cat["kind"]:
-        db.execute("UPDATE categories SET kind = %s WHERE parent_id = %s", (kind, cat_id))
+    if kind != cat["kind"]:
+        child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,)) or []]
+        if child_ids:
+            db.execute("UPDATE categories SET kind = %s WHERE parent_id = %s", (kind, cat_id))
+        _sync_transfer_flags([cat_id, *child_ids], kind, cat["kind"])
     audit("category.update", {"id": cat_id})
     return jsonify({"ok": True})
 

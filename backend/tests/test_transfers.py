@@ -39,3 +39,25 @@ class AutoPairTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PairGuardsTest(unittest.TestCase):
+    def _rows(self, a_pair=None, b_pair=None):
+        return [{"id": 1, "account_id": 10, "amount": -50, "transfer_pair_id": a_pair, "account_type": "checking"},
+                {"id": 2, "account_id": 11, "amount": 50, "transfer_pair_id": b_pair, "account_type": "credit_card"}]
+
+    def test_a_leg_paired_elsewhere_is_refused(self):
+        with mock.patch.object(transfers.db, "query", return_value=self._rows(b_pair=99)):
+            with self.assertRaises(transfers.AlreadyPaired):
+                transfers.pair(1, 1, 2)
+
+    def test_repairing_the_same_two_legs_is_allowed(self):
+        calls = []
+        with mock.patch.object(transfers.db, "query", side_effect=[self._rows(a_pair=2, b_pair=1), {"id": 7}]), \
+             mock.patch.object(transfers.db, "execute", side_effect=lambda *a, **k: calls.append(a)), \
+             mock.patch.object(transfers.db, "transaction", create=True) as tx, \
+             mock.patch.object(transfers, "record_events"):
+            tx.return_value.__enter__ = lambda *a: None
+            tx.return_value.__exit__ = lambda *a: False
+            out = transfers.pair(1, 1, 2)
+        self.assertEqual((out["a_id"], out["b_id"], len(calls)), (1, 2, 2))

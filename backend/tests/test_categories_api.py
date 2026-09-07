@@ -185,3 +185,36 @@ class CreateInheritsParentKindTest(unittest.TestCase):
         self.assertEqual(self._post({"name": "X", "icon": "__proto__"}).get_json(), {"error": "Invalid icon name"})
         self.assertEqual(self._post({"name": "X", "icon": "<img>"}).get_json(), {"error": "Invalid icon name"})
         self.assertEqual(self._post({"name": "X", "icon": "shopping-cart"}).status_code, 201)
+
+
+class KindChangeSyncsTransactionsTest(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(categories_api.bp)
+        self.x = _stubs.Router(default=1)
+
+    def _put(self, cat, body):
+        q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", cat),
+                           ("SELECT id FROM categories WHERE parent_id", [{"id": 31}])])
+        c = self.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = 1
+        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
+            return c.put(f"/api/categories/{cat['id']}", data=json.dumps(body), content_type="application/json")
+
+    def test_becoming_a_transfer_flags_confirmed_rows_of_the_tree(self):
+        self.assertEqual(self._put(CAT, {"kind": "transfer"}).status_code, 200)
+        (_sql, params), = self.x.sql("UPDATE transactions SET is_transfer = TRUE")
+        self.assertEqual(params, ([3, 31],))
+        self.assertEqual([p for _s, p in self.x.sql("UPDATE categories SET kind")], [("transfer", 3)])
+
+    def test_leaving_transfer_unflags_unpaired_rows(self):
+        self.assertEqual(self._put({**CAT, "kind": "transfer"}, {"kind": "expense"}).status_code, 200)
+        (_sql, params), = self.x.sql("UPDATE transactions SET is_transfer = FALSE")
+        self.assertEqual(params, ([3, 31],))
+
+    def test_unchanged_kind_touches_no_transactions(self):
+        self.assertEqual(self._put(CAT, {"name": "Food"}).status_code, 200)
+        self.assertEqual(self.x.sql("UPDATE transactions"), [])

@@ -17,9 +17,11 @@ function fmtMoney(n, currency = 'USD', { compact = false, sign = 'auto', abs = f
   const a = Math.abs(v);
   const cur = currency || 'USD';
   let opts;
-  if (compact) opts = { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol', notation: 'compact', maximumFractionDigits: a < 1000 ? 0 : 1 };
-  else opts = { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol', minimumFractionDigits: decimals ?? 2, maximumFractionDigits: decimals ?? 2 };
-  const key = `${cur}|${compact}|${decimals}`;
+  // 'symbol' keeps the foreign currency visible: en-US shows CAD as CA$ and USD as $, en-CA the reverse
+  const small = compact && a < 1000;
+  if (compact) opts = { style: 'currency', currency: cur, currencyDisplay: 'symbol', notation: 'compact', maximumFractionDigits: small ? 0 : 1 };
+  else opts = { style: 'currency', currency: cur, currencyDisplay: 'symbol', minimumFractionDigits: decimals ?? 2, maximumFractionDigits: decimals ?? 2 };
+  const key = `${cur}|${compact}|${small}|${decimals}`;
   let s;
   try { s = _numFmt(key, opts).format(a); } catch { s = a.toFixed(2); }
   if (neg) return MINUS + s;

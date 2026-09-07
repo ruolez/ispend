@@ -17,7 +17,7 @@ def _scan(user_id, only_uncategorized, scope_ids=None):
     sql = f"SELECT {SCAN_FIELDS} FROM transactions WHERE user_id = %s"
     params = [user_id]
     if only_uncategorized:
-        sql += " AND category_id IS NULL AND NOT is_transfer"
+        sql += " AND (category_id IS NULL OR category_status = 'suggested') AND NOT is_transfer"
     if scope_ids:
         sql += " AND id = ANY(%s)"
         params.append(list(scope_ids))

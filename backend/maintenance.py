@@ -10,21 +10,34 @@ import merchant
 log = logging.getLogger(__name__)
 
 
+def _phrases_by_statement(user_id, rows):
+    """The cardholder phrases each statement was imported with (saved at parse time, else recomputed from
+    that statement's own rows), so renormalized fingerprints keep matching future re-imports. Manual
+    rows (no statement) are normalized without phrases, exactly like POST /api/transactions."""
+    saved = {}
+    for st in db.query("SELECT id, stats FROM statements WHERE user_id = %s", (user_id,)) or []:
+        phrases = ((st.get("stats") or {}).get("stripped_phrases"))
+        if isinstance(phrases, list):
+            saved[st["id"]] = [p for p in phrases if isinstance(p, str)]
+    by_statement = defaultdict(list)
+    for r in rows:
+        if r.get("statement_id") is not None:
+            by_statement[r["statement_id"]].append(r["description_raw"])
+    return {sid: saved.get(sid, merchant.frequent_phrases(descs)) for sid, descs in by_statement.items()}
+
+
 def renormalize_user(user_id):
     rows = db.query(
-        """SELECT id, account_id, txn_date, amount, description_raw, description_clean, merchant_key, merchant_name,
-                  fingerprint, occurrence
+        """SELECT id, account_id, statement_id, txn_date, amount, description_raw, description_clean, merchant_key,
+                  merchant_name, fingerprint, occurrence
            FROM transactions WHERE user_id = %s ORDER BY account_id, txn_date, id""",
         (user_id,),
     ) or []
-    by_account = defaultdict(list)
-    for r in rows:
-        by_account[r["account_id"]].append(r["description_raw"])
-    phrases = {acct: merchant.frequent_phrases(descs) for acct, descs in by_account.items()}
+    phrases = _phrases_by_statement(user_id, rows)
     key_votes = defaultdict(Counter)
     changed = []
     for r in rows:
-        m = merchant.normalize(r["description_raw"], phrases.get(r["account_id"], ()))
+        m = merchant.normalize(r["description_raw"], phrases.get(r.get("statement_id"), ()))
         key_votes[r["merchant_key"]][m.key] += 1
         if (m.key, m.name, m.clean) != (r["merchant_key"], r["merchant_name"], r["description_clean"]):
             changed.append((r, m))

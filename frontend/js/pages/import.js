@@ -309,7 +309,6 @@ function previewTable(s) {
   const sm = s.summary || {};
   const cur = (imp.accounts.find((a) => a.id === s.account_id) || {}).currency || 'USD';
   const dupCount = sm.dupes_existing || 0;
-  const dupSkipped = rows.filter((r) => r.duplicate_of && !r.include).length;
   const body = rows.map((r) => {
     const excluded = !r.include || !r.is_valid;
     const badges = [];
@@ -317,7 +316,7 @@ function previewTable(s) {
     if (r.in_file_duplicate) badges.push('<span class="badge badge-neutral" title="The same line appears more than once in this file">In file</span>');
     (r.problems || []).forEach((p) => badges.push(`<span class="badge badge-danger" title="${esc(p)}">${esc(p.length > 24 ? p.slice(0, 22) + '…' : p)}</span>`));
     return `<tr data-row="${r.id}" class="${excluded ? 'is-excluded' : ''}">
-      <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid ? 'checked' : ''} ${!r.is_valid ? 'disabled' : ''} aria-label="Include row"></td>
+      <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid && !r.duplicate_of ? 'checked' : ''} ${!r.is_valid || r.duplicate_of ? 'disabled' : ''} ${r.duplicate_of ? 'title="Already imported: duplicates are always skipped"' : ''} aria-label="Include row"></td>
       <td class="num nowrap">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
       <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
       <td>${r.is_valid ? catChip(r.category_id, r.category_source, r.id) : ''}</td>
@@ -325,8 +324,8 @@ function previewTable(s) {
     </tr>`;
   }).join('');
   return `<div class="preview-head">
-      <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'}</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
-      <div class="row" style="gap:12px">${dupCount ? `<label class="switch switch-sm"><input type="checkbox" id="skip-dupes" ${dupSkipped === dupCount ? 'checked' : ''}><span class="switch-track"></span>Skip ${fmtNumber(dupCount)} duplicate${dupCount === 1 ? '' : 's'}</label>` : ''}${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" title="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
+      <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span title="Rows already imported into this account are skipped automatically"><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'} skipped</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
+      <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" title="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-preview"><thead><tr><th class="col-check"></th><th>Date</th><th>Description</th><th>Category</th><th class="right">Amount</th></tr></thead>
       <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'The PDF text did not contain recognizable transaction lines. If it is a scan, the OCR quality may be too low; try a clearer export or a CSV.' + (imp.aiReady ? ' You can also let the AI model read the pages with “Read with AI” above.' : '') : 'Check the column mapping above.' })}</td></tr>`}</tbody></table>
@@ -396,7 +395,6 @@ function onImportChange(e) {
   if (t.id === 'rv-profile' && f) return applyMapping(f, readMappingFromDom(f.statement), { bank_profile: t.value });
   if (t.matches('[data-map], .mapping-table select[data-col]') && f) return scheduleMapping(f);
   if (t.matches('[data-row-include]') && f) return setRows(f, { row_ids: [Number(t.dataset.rowInclude)], include: t.checked });
-  if (t.id === 'skip-dupes' && f) return setRows(f, { all: true, only: 'dupes', include: !t.checked });
 }
 function onImportInput(e) {
   const f = activeFile();

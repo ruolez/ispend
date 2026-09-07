@@ -15,10 +15,10 @@ import maintenance  # noqa: E402
 
 
 
-def txn(i, raw, key, name, clean, account_id=4):
-    return {"id": i, "account_id": account_id, "txn_date": date(2026, 6, 1 + i % 20), "amount": Decimal("-10.00"),
-            "description_raw": raw, "description_clean": clean, "merchant_key": key, "merchant_name": name,
-            "fingerprint": f"old{i}", "occurrence": 1}
+def txn(i, raw, key, name, clean, account_id=4, statement_id=7):
+    return {"id": i, "account_id": account_id, "statement_id": statement_id, "txn_date": date(2026, 6, 1 + i % 20),
+            "amount": Decimal("-10.00"), "description_raw": raw, "description_clean": clean, "merchant_key": key,
+            "merchant_name": name, "fingerprint": f"old{i}", "occurrence": 1}
 
 
 class RenormalizeUserTest(unittest.TestCase):
@@ -42,8 +42,10 @@ class RenormalizeUserTest(unittest.TestCase):
             {"id": 12, "merchant_key": "GEICO EUGENE BRAVERMAN", "category_id": 8, "times_used": 3},
             {"id": 13, "merchant_key": "CHEWY EUGENE BRAVERMAN", "category_id": 9, "times_used": 2},
         ]
+        self.rows = rows
         self.queries = _stubs.Router([
             ("FROM transactions WHERE user_id = %s ORDER BY account_id", rows),
+            ("SELECT id, stats FROM statements WHERE user_id", [{"id": 7, "stats": {}}]),
             ("SELECT fingerprint, occurrence FROM transactions", []),
             ("FROM rules WHERE user_id", rules),
             ("FROM merchant_memory WHERE user_id", memory),
@@ -120,3 +122,17 @@ class LearnFromHistoryTest(unittest.TestCase):
         inserts = [c for c in calls if "INSERT INTO merchant_memory" in c[0]]
         self.assertEqual(out, {"merchants_seen": 2, "memory_added": 1, "memory_updated": 1})
         self.assertEqual(inserts[0][1][:3], (1, "ZELLE JOHN", 64))
+
+
+class PhrasesFollowTheStatementTest(unittest.TestCase):
+    """Fingerprints must come out exactly as at import time: saved statement phrases win, manual rows get none."""
+
+    def test_saved_phrases_and_manual_rows(self):
+        rows = [txn(1, "Geico Eugene Braverman GEICO AUTO", "GEICO EUGENE BRAVERMAN", "Geico Eugene Braverman", "X", statement_id=7),
+                txn(2, "Geico Eugene Braverman GEICO AUTO", "GEICO EUGENE BRAVERMAN", "Geico Eugene Braverman", "X", statement_id=None)]
+        with mock.patch.object(maintenance, "db", FAKE), \
+                mock.patch.object(FAKE, "query", side_effect=_stubs.Router([
+                    ("SELECT id, stats FROM statements WHERE user_id", [{"id": 7, "stats": {"stripped_phrases": ["EUGENE BRAVERMAN"]}}])])):
+            phrases = maintenance._phrases_by_statement(4, rows)
+        self.assertEqual(phrases, {7: ["EUGENE BRAVERMAN"]})
+        self.assertNotIn(None, phrases)
