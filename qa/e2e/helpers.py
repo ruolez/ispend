@@ -131,8 +131,8 @@ TEXT_SCAN_JS = r"""
     const el = n.parentElement; if (!el || !vis(el) || el.closest('script,style,noscript')) continue;
     out.push({ kind: 'text', text: t.trim().slice(0, 140), el: sel(el) });
   }
-  document.querySelectorAll('[title],[aria-label],[placeholder],[alt]').forEach((el) => {
-    ['title', 'aria-label', 'placeholder', 'alt'].forEach((a) => { const v = el.getAttribute(a); if (v && bad.test(v)) out.push({ kind: a, text: v.slice(0, 140), el: sel(el) }); });
+  document.querySelectorAll('[title],[data-tip],[aria-label],[placeholder],[alt]').forEach((el) => {
+    ['title', 'data-tip', 'aria-label', 'placeholder', 'alt'].forEach((a) => { const v = el.getAttribute(a); if (v && bad.test(v)) out.push({ kind: a, text: v.slice(0, 140), el: sel(el) }); });
   });
   return out.slice(0, 40);
 }

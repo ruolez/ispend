@@ -83,6 +83,8 @@ jobs:
         run: pytest qa/e2e/test_flows.py -q -p no:cacheprovider
       - name: smoke
         run: pytest qa/e2e/test_smoke.py -q -p no:cacheprovider
+      - name: phone parity, static CSS rules, report snapshots
+        run: pytest qa/e2e/test_phone.py qa/e2e/test_css_audit.py qa/e2e/test_report_snapshot.py -q -p no:cacheprovider
       - name: a11y scan
         run: python qa/e2e/a11y_scan.py --quick
       - name: logs on failure

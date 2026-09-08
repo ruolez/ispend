@@ -189,6 +189,41 @@ def contrast_table():
         # bd-child bg mix
     return rows
 
+# ---------- static design-system rules (python css_audit.py --check) ----------
+BREAKPOINTS = {'1280', '960', '768', '640', '480'}
+HEX_ALLOW = {'#fff', '#ffffff'}   # solid white on accent/danger fills
+
+def static_checks():
+    """Return a list of human-readable violations; empty when the design-system rules hold."""
+    fails = []
+    for f in CSS_FILES:
+        css = strip_comments(read(f))
+        for m in re.finditer(r'font-size:\s*(\d+(?:\.\d+)?)px', css):
+            fails.append(f"{f}:{css.count(chr(10), 0, m.start()) + 1} font-size in px ({m.group(1)}px); use the --fs-* rem scale")
+        for m in re.finditer(r'@media[^{]*\((?:max|min)-width:\s*(\d+)px\)', css):
+            if m.group(1) not in BREAKPOINTS:
+                fails.append(f"{f}:{css.count(chr(10), 0, m.start()) + 1} off-ladder breakpoint {m.group(1)}px (ladder: 1280 JS / 960 / 768 / 640 / 480)")
+        for m in re.finditer(r'border-radius:\s*(\d+(?:\.\d+)?)px', css):
+            fails.append(f"{f}:{css.count(chr(10), 0, m.start()) + 1} border-radius in px ({m.group(1)}px); use --r-xs/--r-sm/--r-md/--r-lg/--r-xl")
+        for m in re.finditer(r'#[0-9a-fA-F]{3,8}\b', css):
+            if m.group(0).lower() in HEX_ALLOW:
+                continue
+            line = css.count(chr(10), 0, m.start()) + 1
+            if 'url(' in css[max(0, m.start() - 200):m.start()] and ')' not in css[max(0, m.start() - 200):m.start()].split('url(')[-1]:
+                fails.append(f"{f}:{line} hex colour inside a data URI ({m.group(0)}); swap per theme with a token")
+            else:
+                fails.append(f"{f}:{line} hex colour {m.group(0)} outside tokens.css")
+    n_dark = tokens_css.count('--bg: #0c0e13')
+    if n_dark != 1:
+        fails.append(f"css/tokens.css: dark token block defined {n_dark} times (expected once)")
+    return fails
+
 if __name__ == '__main__':
+    if '--check' in sys.argv:
+        problems = static_checks()
+        for p in problems:
+            print(p)
+        print(f"{len(problems)} static rule violation(s)")
+        sys.exit(1 if problems else 0)
     out = {'dead': dead, 'dup': dup_sel, 'contrast': contrast_table(), 'dyn_prefixes': sorted(dyn_prefixes)}
     print(json.dumps(out, indent=1, default=str))

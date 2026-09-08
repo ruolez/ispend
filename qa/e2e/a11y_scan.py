@@ -78,6 +78,15 @@ WALKER_JS = r"""
   if (out.overflow) {
     document.querySelectorAll('body *').forEach((el) => { const r = el.getBoundingClientRect(); if (r.right > vw + 1 && r.width > 0 && visible(el) && getComputedStyle(el).position !== 'fixed') { if (out.overflowEls.length < 12) out.overflowEls.push({ sel: sel(el), right: Math.round(r.right), width: Math.round(r.width) }); } });
   }
+  // elements inside main that scroll sideways or poke past the viewport (phone card-mode regressions)
+  out.innerOverflow = [];
+  const main = document.getElementById('main') || document.body;
+  main.querySelectorAll('*').forEach((el) => {
+    if (!visible(el) || el.closest('canvas, .tabs, .file-tabs, .settings-nav, .filter-row, .mapping-table, .tbl-toolbar .seg, .page-actions .seg, .rv-toolbar .seg, .menu-opts, .tx-wrap, .popover, .modal, .drawer')) return;
+    const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+    const scrolls = (cs.overflowX === 'auto' || cs.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1;
+    if ((scrolls || (cs.position !== 'fixed' && r.right > vw + 1)) && out.innerOverflow.length < 12) out.innerOverflow.push({ sel: sel(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, right: Math.round(r.right) });
+  });
   // touch targets
   document.querySelectorAll('a[href],button,input,select,textarea,[role="button"],[role="tab"],[role="radio"],[role="menuitem"],[role="option"],[tabindex="0"]').forEach((el) => {
     if (!visible(el) || el.closest('.sr-only,.skip,[aria-hidden="true"]')) return;
@@ -205,7 +214,7 @@ def main():
                     page.screenshot(path=os.path.join(SHOTS, f'a11y-{pg}-{theme}-{w}-focus.png'))
                     rec['console'] = list(errs)
                     results['runs'].append(rec)
-                    print(f"[{theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} small={len(rec.get('walk', {}).get('small', []))} lowc={len(rec.get('walk', {}).get('contrast', []))} targets<44={len(rec.get('walk', {}).get('targets', []))}", flush=True)
+                    print(f"[{theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} small={len(rec.get('walk', {}).get('small', []))} lowc={len(rec.get('walk', {}).get('contrast', []))} targets<44={len(rec.get('walk', {}).get('targets', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
                 context.close()
 
         # ---- admin: READ-ONLY populated pages (1440 + 390, both themes) ----
@@ -223,7 +232,7 @@ def main():
                     rec.update(page=pg, theme=theme, width=w, user='admin')
                     rec['focus'] = tab_focus(page, 15)
                     results['admin_runs'].append(rec)
-                    print(f"[admin {theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} lowc={len(rec.get('walk', {}).get('contrast', []))} small={len(rec.get('walk', {}).get('small', []))}", flush=True)
+                    print(f"[admin {theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} lowc={len(rec.get('walk', {}).get('contrast', []))} small={len(rec.get('walk', {}).get('small', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
                     # read-only layer states on the wide viewport
                     if w == 1440:
                         states = []
