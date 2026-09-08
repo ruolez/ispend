@@ -1,0 +1,41 @@
+/* Budgets */
+.stat-delta--warn { color: var(--warning); }
+.month-nav { display: inline-flex; align-items: center; gap: 4px; }
+.month-nav .btn-icon { width: 36px; padding: 0; }
+.month-nav #month-btn { gap: 6px; min-width: 170px; justify-content: space-between; }
+.bud-rows { display: flex; flex-direction: column; }
+.bud-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(120px, 1fr) auto minmax(120px, auto) auto 28px; gap: var(--sp-3); align-items: center; padding: 10px var(--sp-5); border-bottom: 1px solid var(--border); }
+.bud-row:last-child { border-bottom: 0; }
+.bud-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.min-w-0 { min-width: 0; }
+.bud-title { font-weight: 500; }
+.bud-sub { font-size: var(--fs-xs); color: var(--text-3); }
+.bud-bar { position: relative; height: 8px; border-radius: var(--r-pill); background: var(--surface-3); overflow: visible; }
+.bud-bar .fill { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--dur-3) var(--ease-out); }
+.bud-row.is-ahead .bud-bar .fill { background: var(--warning); }
+.bud-row.is-over .bud-bar .fill { background: var(--danger); }
+.bud-bar .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text-3); }
+.bud-amounts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bud-amounts .spent { font-weight: 600; }
+.bud-edit { padding: 2px 4px; margin: -2px -4px; border-radius: var(--r-xs); color: var(--text-2); border-bottom: 1px dashed var(--border-strong); }
+.bud-edit:hover, .bud-edit:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+.bud-amt-input { width: 110px; }
+.bud-left { white-space: nowrap; font-size: var(--fs-base); color: var(--text-2); display: flex; flex-direction: column; gap: 1px; }
+.bud-left.is-over { color: var(--danger-text); font-weight: 500; }
+.bud-proj { font-size: var(--fs-xs); color: var(--text-4); font-weight: 400; }
+.bud-status { white-space: nowrap; }
+.bud-unb { gap: 12px; }
+@media (max-width: 768px) {
+  .bud-row { grid-template-columns: minmax(0, 1fr) auto 28px; grid-template-areas: "name status menu" "bar bar bar" "amounts left left"; gap: 6px 10px; padding: 12px var(--sp-4); }
+  .bud-name { grid-area: name; }
+  .bud-bar { grid-area: bar; margin: 4px 0; }
+  .bud-amounts { grid-area: amounts; }
+  .bud-left { grid-area: left; align-items: flex-end; text-align: right; }
+  .bud-status { grid-area: status; justify-self: end; }
+  .bud-row > .btn-icon { grid-area: menu; }
+  .bud-edit { min-height: 32px; display: inline-flex; align-items: center; }
+}
+@media (max-width: 640px) {
+  .month-nav { flex: 1 1 auto; }
+  .month-nav #month-btn { min-width: 0; flex: 1 1 auto; }
+}

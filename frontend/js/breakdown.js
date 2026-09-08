@@ -48,7 +48,24 @@
     return `<span class="bd-delta ${cls}" title="Previous period: ${esc(fmtMoney(prev, currency))}">${arrow} ${esc(fmtPct(Math.abs(pct)))}</span>`;
   }
 
-  function renderBreakdown(host, { rows, prevRows, total, currency, range, storageKey, categories, showHeader = true, upIsGood = false }) {
+  /* GET /api/budgets/progress for a range that is exactly one calendar month, as a Map(category_id → item); null otherwise. */
+  async function budgetsForRange(start, end, extraQuery = {}) {
+    if (!start || !end || !/^\d{4}-\d{2}-01$/.test(start)) return null;
+    const [y, m] = start.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    if (end !== `${start.slice(0, 7)}-${String(last).padStart(2, '0')}`) return null;
+    try {
+      const p = await api(`/api/budgets/progress${toQuery({ month: start.slice(0, 7), ...extraQuery })}`);
+      return p && p.items && p.items.length ? new Map(p.items.map((i) => [i.category_id, i])) : null;
+    } catch { return null; }
+  }
+  function budgetCell(budgets, id, currency) {
+    const it = budgets && id != null ? budgets.get(id) : null;
+    if (!it) return '<span class="text-4">—</span>';
+    return `<span class="bd-budget is-${it.pace_status}" data-tip="${esc(fmtMoney(it.spent, currency))} of ${esc(fmtMoney(it.budget, currency))} · ${esc(it.pace_status === 'over' ? 'over budget' : it.pace_status === 'ahead' ? 'ahead of pace' : 'on track')}"><span class="share-bar is-sub"><span style="width:${Math.min(it.pct, 100).toFixed(1)}%"></span></span><span class="pct">${esc(fmtMoney(it.budget, currency))}</span></span>`;
+  }
+
+  function renderBreakdown(host, { rows, prevRows, total, currency, range, storageKey, categories, showHeader = true, upIsGood = false, budgets = null }) {
     const cur = currency || 'USD';
     const tree = buildTree(rows || [], prevRows || [], categories || []);
     const grand = total || tree.reduce((s, p) => s + p.total, 0);
@@ -68,7 +85,7 @@
           <td class="bd-share"><span class="share-bar" style="--c:${color(p.color)}"><span style="width:${(share * 100).toFixed(1)}%"></span></span><span class="pct">${fmtPct(share)}</span></td>
           <td class="right num col-count">${fmtNumber(p.count)}</td>
           <td class="right col-delta">${deltaHtml(p.total, p.prev, cur, upIsGood)}</td>
-          <td class="right num fw-500 col-total">${fmtMoney(p.total, cur)}</td></tr>`;
+          <td class="right num fw-500 col-total">${fmtMoney(p.total, cur)}</td>${budgets ? `<td class="right col-budget">${budgetCell(budgets, p.id, cur)}</td>` : ''}</tr>`;
         if (!hasKids || !open) return head;
         const kids = [];
         if (p.own > 0 && p.children.length) kids.push({ id: p.id, name: `Directly in ${p.name}`, total: p.own, count: p.ownCount, prev: null, direct: true, color: p.color });
@@ -78,11 +95,11 @@
           <td class="bd-share"><span class="share-bar is-sub" style="--c:${color(c.color || p.color)}"><span style="width:${grand ? (c.total / grand * 100).toFixed(1) : 0}%"></span></span><span class="pct text-4">${fmtPct(grand ? c.total / grand : 0)}</span></td>
           <td class="right num col-count text-3">${fmtNumber(c.count)}</td>
           <td class="right col-delta">${c.direct ? '' : deltaHtml(c.total, c.prev, cur, upIsGood)}</td>
-          <td class="right num col-total">${fmtMoney(c.total, cur)}</td></tr>`).join('');
+          <td class="right num col-total">${fmtMoney(c.total, cur)}</td>${budgets ? `<td class="right col-budget">${c.direct ? '' : budgetCell(budgets, c.id, cur)}</td>` : ''}</tr>`).join('');
       }).join('');
       host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl bd-table">
-        ${showHeader ? `<thead><tr><th>Category</th><th>Share</th><th class="right col-count">Transactions</th><th class="right col-delta">vs previous</th><th class="right col-total">Total</th></tr></thead>` : ''}
-        <tbody>${rowsHtml}<tr class="totals-row"><td class="bd-name">Total</td><td class="bd-share"></td><td class="right num col-count">${fmtNumber(tree.reduce((s, p) => s + p.count, 0))}</td><td class="col-delta"></td><td class="right num col-total">${fmtMoney(grand, cur)}</td></tr></tbody></table></div>
+        ${showHeader ? `<thead><tr><th>Category</th><th>Share</th><th class="right col-count">Transactions</th><th class="right col-delta">vs previous</th><th class="right col-total">Total</th>${budgets ? '<th class="right col-budget">Budget</th>' : ''}</tr></thead>` : ''}
+        <tbody>${rowsHtml}<tr class="totals-row"><td class="bd-name">Total</td><td class="bd-share"></td><td class="right num col-count">${fmtNumber(tree.reduce((s, p) => s + p.count, 0))}</td><td class="col-delta"></td><td class="right num col-total">${fmtMoney(grand, cur)}</td>${budgets ? '<td class="col-budget"></td>' : ''}</tr></tbody></table></div>
         <div class="bd-foot"><button type="button" class="btn btn-ghost btn-xs" data-bd="toggle-all">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
     };
     const toggle = (id) => { if (expanded.has(id)) expanded.delete(id); else expanded.add(id); writeExpanded(key, expanded); draw(); };
@@ -97,4 +114,5 @@
   }
 
   window.renderBreakdown = renderBreakdown;
+  window.budgetsForRange = budgetsForRange;
 })();

@@ -638,7 +638,7 @@ const ui = (() => {
 
   function shortcutsSheet(extra = []) {
     const groups = [
-      { title: 'Global', items: [['⌘K', 'Search'], ['g d', 'Dashboard'], ['g t', 'Transactions'], ['g r', 'Review'], ['g i', 'Import'], ['g c', 'Categories'], ['g p', 'Reports'], ['g s', 'Settings'], ['[', 'Toggle sidebar'], ['?', 'This sheet']] },
+      { title: 'Global', items: [['⌘K', 'Search'], ['g d', 'Dashboard'], ['g t', 'Transactions'], ['g r', 'Review'], ['g i', 'Import'], ['g c', 'Categories'], ['g p', 'Reports'], ['g b', 'Budgets'], ['g s', 'Settings'], ['[', 'Toggle sidebar'], ['?', 'This sheet']] },
       ...extra,
     ];
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });

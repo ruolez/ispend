@@ -2288,6 +2288,101 @@ OVERFLOW_JS = """() => { const out = []; const W = document.documentElement.clie
   return { W, sw: document.documentElement.scrollWidth, offenders: out.slice(0, 8) }; }"""
 
 
+def test_f13_budgets(page, qapi, browser):
+    F = Soft("F13", page, S["rec"])
+    import datetime as dt
+    ui_login(page, QA)  # F11 left the shared page signed in as qa_tester
+    goto(page, "/budgets.html", wait_sel="#bud-list .empty, .bud-row", soft=F, label="budgets load")
+    F.check("No budgets" in page.locator("#bud-list").inner_text(), "empty state before any budget")
+    F.check(page.locator("#btn-copy").is_hidden(), "copy button hidden without a previous month")
+    # add a budget through the modal
+    page.locator("#btn-add").click()
+    page.wait_for_selector("#bf-cat", timeout=4000)
+    page.locator(".modal-foot .btn-primary").click()
+    page.wait_for_selector(".modal .field-error", timeout=3000)
+    F.check(page.locator(".modal .field-error").count() >= 1, "empty submit shows inline errors")
+    page.locator("#bf-cat").click()
+    page.wait_for_selector(".cat-picker input", timeout=4000)
+    page.locator(".cat-picker input").type("Groceries")
+    page.wait_for_timeout(200)
+    page.locator(".cat-picker .cp-opt").first.click()
+    page.fill("#bf-amount", "400")
+    page.locator(".modal-foot .btn-primary").click()
+    toast(page, "a month")
+    page.wait_for_selector(".bud-row", timeout=8000)
+    row = page.locator(".bud-row").first
+    F.check("Groceries" in row.inner_text() and "$400.00" in row.inner_text(), f"budget row rendered: {row.inner_text()[:80]!r}")
+    month = page.evaluate("() => new URL(location.href).searchParams.get('month')") or __import__("datetime").date.today().strftime("%Y-%m")
+    api_list = qapi.get(f"/api/budgets?month={month}")["budgets"]
+    F.check(len(api_list) == 1 and api_list[0]["amount"] == 400.0, "budget persisted")
+    # inline edit + undo
+    row.locator("[data-act='edit-amount']").click()
+    page.fill(".bud-amt-input", "450")
+    page.keyboard.press("Enter")
+    t = toast(page, "set to")
+    F.check("Undo" in t and qapi.get(f"/api/budgets?month={month}")["budgets"][0]["amount"] == 450.0, "inline edit saved with undo")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(500)
+    F.check(qapi.get(f"/api/budgets?month={month}")["budgets"][0]["amount"] == 400.0, "undo restored the limit")
+    dismiss_toasts(page)
+    # not-budgeted card offers "Set budget"
+    unb = page.locator("#bud-unbudgeted")
+    F.note(f"unbudgeted card: {unb.inner_text()[:120]!r}")
+    if unb.locator("[data-act='set-budget']").count():
+        unb.locator("[data-act='set-budget']").first.click()
+        page.wait_for_selector("#bf-amount", timeout=4000)
+        F.check(page.locator("#bf-amount").input_value() != "", "Set budget prefills the amount")
+        page.locator(".modal-foot .btn-primary").click()
+        toast(page, "a month")
+        page.wait_for_timeout(500)
+        F.check(len(qapi.get(f"/api/budgets?month={month}")["budgets"]) == 2, "second budget saved from the unbudgeted card")
+    shot(page, "F13-budgets", full=True)
+    # dashboard card and reports column
+    goto(page, "/index.html", wait_sel="#budget-card:not([hidden])", soft=F, label="dashboard with budgets")
+    F.check("Groceries" in page.locator("#budget-card").inner_text(), "dashboard budget card lists the category")
+    # the column needs a range that is exactly one calendar month, and a cell needs a row: give the
+    # budgeted category one charge in the current month (the fixture data is historical)
+    groceries = next(c for c in qapi.get("/api/categories?flat=1") if c["name"] == "Groceries")
+    this_month = qapi.post("/api/transactions", {"account_id": S["acct_checking"], "txn_date": dt.date.today().replace(day=1).isoformat(),
+                                                 "amount": -25.0, "description": "QA BUDGET MARKER", "category_id": groceries["id"]})
+    goto(page, "/reports.html?range=this-month", wait_sel=".bd-table", soft=F, label="reports with budget column")
+    page.wait_for_timeout(800)
+    F.check(page.locator(".bd-table th.col-budget").count() == 1 and page.locator(".bd-table .bd-budget").count() >= 1, "reports breakdown shows a Budget column for this month")
+    qapi.delete(f"/api/transactions/{this_month['id']}")
+    # copy forward, then remove with undo
+    goto(page, "/budgets.html", wait_sel=".bud-row", soft=F, label="budgets again")
+    page.locator("[data-month='next']").click()
+    page.wait_for_selector("#btn-copy:not([hidden])", timeout=6000)
+    page.locator("#btn-copy").click()
+    t = toast(page, "copied")
+    page.wait_for_selector(".bud-row", timeout=6000)
+    F.check(page.locator(".bud-row").count() >= 1, "copy created next month's budgets")
+    nxt = page.evaluate("() => new URL(location.href).searchParams.get('month')")
+    n_before = len(qapi.get(f"/api/budgets?month={nxt}")["budgets"])
+    page.locator(".bud-row [data-act='menu']").first.click()
+    menu_click(page, "Remove budget")
+    t = toast(page, "removed")
+    F.check("Undo" in t and len(qapi.get(f"/api/budgets?month={nxt}")["budgets"]) == n_before - 1, "remove offers Undo")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(500)
+    F.check(len(qapi.get(f"/api/budgets?month={nxt}")["budgets"]) == n_before, "undo re-created the budget")
+    # phone layout
+    c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True)
+    p = c.new_page()
+    ui_login(p, QA, expect_path="/index.html")
+    p.goto(f"{BASE}/budgets.html")
+    p.wait_for_selector(".bud-row", timeout=10000)
+    p.wait_for_timeout(400)
+    no_hscroll(p, F, "budgets (phone)")
+    box = p.locator(".bud-row").first.bounding_box()
+    F.check(box and box["x"] >= 0 and box["x"] + box["width"] <= 391, "budget row fits the phone width")
+    shot(p, "F13-budgets-phone", full=True)
+    c.close()
+    F.finish()
+
+
 def no_hscroll(p, F, label):
     r = p.evaluate(OVERFLOW_JS)
     F.check(r["sw"] <= r["W"] + 1, f"{label}: page scrolls horizontally on a 390px viewport (scrollWidth {r['sw']}); widest elements: {r['offenders'][:4]}")

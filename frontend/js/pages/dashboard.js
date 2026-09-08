@@ -117,11 +117,32 @@ async function load() {
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
   loadBreakdown(data.range);
+  loadBudgetCard(periodMonth(state.period));
   renderMonthly(data);
   renderDonut(data);
   renderIncome(data);
   renderRecent(data);
   renderAttention(data);
+}
+
+/* ---------- budgets ---------- */
+async function loadBudgetCard(ym) {
+  const host = $('#budget-card'); if (!host) return;
+  const seq = state.seq;
+  let p;
+  try { p = await api(`/api/budgets/progress${toQuery({ month: ym })}`); } catch { host.hidden = true; return; }
+  if (seq !== state.seq) return;
+  const cur = state.currency;
+  const label = fmtMonth(ym, { long: true });
+  host.hidden = false;
+  if (!p.items.length) {
+    host.innerHTML = `<div class="card-body row-between gap-3 wrap"><div><div class="fw-600">No budgets for ${esc(label)}</div><div class="text-3 fs-sm">Set a monthly limit per category to see how the month is going.</div></div><a class="btn btn-secondary btn-sm" href="/budgets.html${toQuery({ month: ym })}">${icon('target', 'ico-sm')}Set budgets</a></div>`;
+    return;
+  }
+  const t = p.totals;
+  const tone = t.pace_status === 'over' ? 'text-danger' : t.pace_status === 'ahead' ? 'text-warning' : '';
+  host.innerHTML = `<header class="card-head"><h2>Budgets · <span class="text-3 fw-500">${esc(label)}</span></h2><div class="card-actions"><span class="hint ${tone}">${esc(fmtMoney(t.spent, cur))} of ${esc(fmtMoney(t.budget, cur))}${t.remaining < 0 ? ` · over by ${esc(fmtMoney(-t.remaining, cur))}` : ''}</span><a class="btn btn-ghost btn-xs" href="/budgets.html${toQuery({ month: ym })}">All budgets</a></div></header>
+    <div class="card-body bud-mini">${p.items.slice(0, 6).map((it) => `<a class="bud-mini-row is-${it.pace_status}" href="/budgets.html${toQuery({ month: ym })}"><span class="cat-icon" style="--c:${catColor(it.color || 'muted')}">${icon(it.icon || 'tag')}</span><span class="bud-mini-name truncate">${esc(it.name)}</span><span class="bud-mini-bar" aria-hidden="true"><span style="width:${Math.min(it.pct, 100).toFixed(1)}%"></span></span><span class="bud-mini-val num">${it.remaining < 0 ? `Over by ${esc(fmtMoney(-it.remaining, cur))}` : `${esc(fmtMoney(it.remaining, cur))} left`}</span></a>`).join('')}</div>`;
 }
 
 /* ---------- first-run checklist ---------- */
@@ -397,6 +418,8 @@ async function loadBreakdown(range) {
       store.categoriesFlat(),
     ]);
     if (seq !== state.seq) return;
-    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency: state.currency, range, categories, storageKey: 'ispend.breakdown.dashboard' });
+    const budgets = await budgetsForRange(range.start, range.end);
+    if (seq !== state.seq) return;
+    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency: state.currency, range, categories, storageKey: 'ispend.breakdown.dashboard', budgets });
   } catch (err) { if (seq === state.seq) host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

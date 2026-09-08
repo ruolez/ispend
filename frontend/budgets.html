@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Budgets · iSpend</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/budgets.css">
+</head>
+<body>
+  <main id="main" class="main">
+    <div class="page-head">
+      <div><h1>Budgets</h1><div class="page-sub" id="bud-sub">Monthly limits per category, and how the month is going.</div></div>
+      <div class="page-actions">
+        <div class="month-nav" id="month-nav" role="group" aria-label="Pick a month">
+          <button type="button" class="btn btn-secondary btn-icon" data-month="prev" aria-label="Previous month"></button>
+          <button type="button" class="btn btn-secondary" id="month-btn" aria-haspopup="menu" aria-expanded="false"></button>
+          <button type="button" class="btn btn-secondary btn-icon" data-month="next" aria-label="Next month"></button>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-copy" hidden>Copy last month</button>
+        <button type="button" class="btn btn-primary" id="btn-add">Add budget</button>
+      </div>
+    </div>
+    <div id="bud-error"></div>
+    <div class="stat-grid" id="bud-stats">
+      <div class="stat is-loading"><div class="stat-label">Budgeted</div><div class="stat-value">$0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading"><div class="stat-label">Spent</div><div class="stat-value">$0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+      <div class="stat is-loading"><div class="stat-label">Left</div><div class="stat-value">$0</div><div class="stat-delta">—</div><span class="skel stat-skel"></span></div>
+    </div>
+    <div class="grid grid-2-1 mt-4">
+      <section class="card">
+        <header class="card-head"><h2>Budgets · <span id="bud-month-label" class="text-3 fw-500"></span></h2><div class="card-actions"><span class="hint" id="bud-hint"></span></div></header>
+        <div id="bud-list"></div>
+      </section>
+      <section class="card">
+        <header class="card-head"><h2>Not budgeted</h2></header>
+        <div class="card-body" id="bud-unbudgeted"></div>
+      </section>
+    </div>
+    <div class="sr-only" aria-live="polite" id="bud-live"></div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/budgets.js"></script>
+</body>
+</html>

@@ -12,6 +12,7 @@ import pytest
 
 from helpers import PAGES, wait_loaded
 from smoke_fixtures import base_url, browser, make_context, pw  # noqa: F401  (pytest fixtures)
+from playwright.sync_api import TimeoutError as PWTimeout
 
 # Elements that legitimately scroll sideways on a phone (chip rows, tab strips, mapping tables, charts).
 ALLOW_HSCROLL = [".tbl-toolbar .seg", ".tabs", ".file-tabs", ".settings-nav", ".filter-row", ".mapping-table",
@@ -241,7 +242,17 @@ def test_async_button_disabled(make_context):
     page.wait_for_timeout(120)
     state = page.evaluate("() => { const b = document.getElementById('login-btn'); return { disabled: b.disabled, busy: b.getAttribute('aria-busy'), loading: b.classList.contains('is-loading') }; }")
     assert state == {"disabled": True, "busy": "true", "loading": True}, state
-    page.wait_for_url(lambda u: "/login.html" not in u, timeout=10000)
+    # the login rate limit (10/min per IP) can reject this attempt when the suites run back to back
+    for _ in range(6):
+        try:
+            page.wait_for_url(lambda u: "/login.html" not in u, timeout=10000)
+            return
+        except PWTimeout:
+            if "too many" not in page.locator("#login-error").inner_text().lower():
+                raise
+            page.wait_for_timeout(10000)
+            page.click("#login-btn", no_wait_after=True)
+    raise AssertionError("login kept hitting the rate limit")
 
 
 def test_rem_scale(make_context):

@@ -2,7 +2,7 @@ import json
 import random
 import re
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from flask import abort, jsonify, request, session
 
@@ -44,6 +44,19 @@ def to_int(value, name, lo=None, hi=None, required=False):
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def to_money(value, name):
+    """Decimal with two places from a body value; 400 with a user-facing message otherwise."""
+    if value is None or value == "" or isinstance(value, bool):
+        abort(400, f"{name} must be an amount")
+    try:
+        out = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        abort(400, f"{name} must be an amount")
+    if not out.is_finite() or abs(out) >= Decimal("10000000000"):
+        abort(400, f"{name} must be an amount")
+    return out.quantize(Decimal("0.01"))
 
 
 def csv_safe(value):

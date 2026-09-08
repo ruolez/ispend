@@ -16,6 +16,7 @@ const NAV_GROUPS = [
   ] },
   { label: 'Analyze', items: [
     { page: 'reports', href: '/reports.html', label: 'Reports', icon: 'bar-chart', key: 'p' },
+    { page: 'budgets', href: '/budgets.html', label: 'Budgets', icon: 'target', key: 'b' },
     { page: 'insights', href: '/insights.html', label: 'Insights', icon: 'lightbulb' },
   ] },
 ];

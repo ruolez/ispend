@@ -184,6 +184,7 @@ function select(id) {
     const d = ui.drawer({ title: cat.name, html: sideHtml(cat), width: 420 });
     d.el.classList.add('cat-side-drawer');
     loadSideTrend(cat, d.el);
+    loadSideBudget(cat, d.el);
   }
 }
 
@@ -196,6 +197,7 @@ async function renderSide() {
   }
   host.innerHTML = `<div class="card"><div class="card-body">${sideHtml(cat)}</div></div>`;
   loadSideTrend(cat);
+  loadSideBudget(cat);
 }
 function sideHtml(cat) {
   const total = state.totals[cat.id] || 0;
@@ -204,6 +206,7 @@ function sideHtml(cat) {
     <div class="side-head"><button type="button" class="cat-icon cat-icon-lg" data-act="side-icon" data-id="${cat.id}" aria-label="Change icon" style="--c:${catColor(cat.color)}" data-tip="Change icon">${icon(cat.icon || 'tag')}</button>
       <div class="grow"><div class="side-title">${esc(cat.name)}</div><div class="side-sub">${esc(cat.parent_name ? `${cat.parent_name} › subcategory` : `${KIND_LABEL[cat.kind] || 'Expense'} category`)}</div></div></div>
     <div class="side-stats"><div class="side-stat"><div class="l">This month</div><div class="v">${fmtMoney(total, state.currency)}</div></div><div class="side-stat"><div class="l">Transactions</div><div class="v">${fmtNumber(count)}</div></div></div>
+    ${cat.kind === 'transfer' ? '' : '<div class="section-label mb-2">Budget · this month</div><div class="side-budget" id="side-budget"><span class="skel" style="width:60%;height:14px"></span></div>'}
     <div class="section-label mb-2">Last 6 months</div>
     <div class="side-chart is-loading chart-body" style="--h:140px;padding:0"><canvas id="side-chart"></canvas></div>
     <div class="side-actions">
@@ -222,6 +225,29 @@ function lastMonths(n) {
 }
 function monthRange(ym) { const [y, m] = ym.split('-').map(Number); return { from: `${ym}-01`, to: `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` }; }
 
+async function loadSideBudget(cat, root = document) {
+  const host = $('#side-budget', root); if (!host || cat.kind === 'transfer') return;
+  const ym = new Date().toISOString().slice(0, 7);
+  let b = null;
+  try { const r = await api(`/api/budgets${toQuery({ month: ym })}`); b = (r.budgets || []).find((x) => x.category_id === cat.id) || null; } catch { /* no budget info */ }
+  if (state.selected !== cat.id || !$('#side-budget', root)) return;
+  host.innerHTML = `<div class="row gap-2 side-budget-row"><input class="input input-sm num" id="side-budget-amt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="No limit" value="${b ? Number(b.amount).toFixed(2) : ''}" aria-label="Monthly budget for ${esc(cat.name)}"><button type="button" class="btn btn-secondary btn-sm" data-act="budget-save" data-id="${cat.id}">Save</button>${b ? `<button type="button" class="btn btn-ghost btn-sm" data-act="budget-clear" data-bid="${b.id}">Clear</button>` : ''}</div><div class="hint mt-1">${b ? `<a href="/budgets.html">See how the month is going</a>` : 'Sets a limit for the current month.'}</div>`;
+}
+async function onBudgetAction(e) {
+  const b = e.target.closest('[data-act="budget-save"],[data-act="budget-clear"]'); if (!b) return;
+  const root = b.closest('.drawer') || document;
+  try {
+    if (b.dataset.act === 'budget-save') {
+      const input = $('#side-budget-amt', root); const v = Number(input.value);
+      if (!(v > 0)) { ui.fieldError(input, 'Enter a limit above zero'); return; }
+      await ui.busy(b, async () => { const r = await api('/api/budgets', { method: 'POST', body: { category_id: Number(b.dataset.id), month: new Date().toISOString().slice(0, 7), amount: v } }); toast(`Budget saved · ${fmtMoney(r.amount, state.currency)} a month`, { type: 'success' }); }, { rethrow: true });
+    } else {
+      await ui.busy(b, async () => { await api(`/api/budgets/${b.dataset.bid}`, { method: 'DELETE' }); toast('Budget removed', { type: 'success' }); }, { rethrow: true });
+    }
+    const cat = findCat(state.selected); if (cat) loadSideBudget(cat, root);
+  } catch { /* toasted by busy */ }
+}
+document.body.addEventListener('click', onBudgetAction);
 async function loadSideTrend(cat, root = document) {
   const months = lastMonths(6);
   const level = cat.depth === 0 ? 'top' : 'sub';

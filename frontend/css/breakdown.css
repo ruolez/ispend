@@ -23,7 +23,12 @@
 .bd-delta.is-bad { color: var(--danger); }
 .bd-delta.is-good { color: var(--success); }
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
-@media (max-width: 768px) { .bd-share, .col-delta { display: none; } .bd-name { min-width: 0; } }
+.bd-budget { display: inline-flex; align-items: center; gap: 8px; }
+.bd-budget .share-bar > span { background: var(--accent); }
+.bd-budget.is-ahead .share-bar > span { background: var(--warning); }
+.bd-budget.is-over .share-bar > span { background: var(--danger); }
+.bd-budget.is-over .pct { color: var(--danger-text); }
+@media (max-width: 768px) { .bd-share, .col-delta, .col-budget { display: none; } .bd-name { min-width: 0; } }
 /* phone: one card per category, share bar on its own line */
 @media (max-width: 640px) {
   .bd-wrap { overflow-x: visible; }
@@ -37,7 +42,7 @@
   .bd-table td.col-total { grid-area: total; white-space: nowrap; text-align: right; }
   .bd-table td.bd-share { grid-area: share; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .bd-table td.bd-share .share-bar { flex: 1 1 auto; width: auto; }
-  .bd-table td.col-count, .bd-table td.col-delta, .bd-table tr.totals-row td.bd-share { display: none; }
+  .bd-table td.col-count, .bd-table td.col-delta, .bd-table td.col-budget, .bd-table tr.totals-row td.bd-share { display: none; }
   .bd-table tr.totals-row td { font-weight: 600; }
 }
 

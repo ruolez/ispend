@@ -181,7 +181,8 @@ async function renderCatTable(res) {
     try { prev = await cached(`bycat-prev-${res.range.prev_start}-${res.range.prev_end}-${JSON.stringify(acctQuery())}`, `/api/reports/by-category${toQuery({ from: res.range.prev_start, to: res.range.prev_end, level: 'sub', ...acctQuery() })}`); } catch { prev = { categories: [] }; }
   }
   const categories = await store.categoriesFlat();
-  renderBreakdown(host, { rows: res.categories, prevRows: prev.categories, total: res.total, currency: state.currency, range: { start: res.range.start, end: res.range.end }, categories, storageKey: 'ispend.breakdown.reports', upIsGood: isInc() });
+  const budgets = isInc() ? null : await budgetsForRange(res.range.start, res.range.end, state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {});
+  renderBreakdown(host, { rows: res.categories, prevRows: prev.categories, total: res.total, currency: state.currency, range: { start: res.range.start, end: res.range.end }, categories, storageKey: 'ispend.breakdown.reports', upIsGood: isInc(), budgets });
 }
 function wireRowLinks(tb) {
   tb.onclick = (e) => { const tr = e.target.closest('tr[data-href]'); if (tr && !e.target.closest('a,button')) location.href = tr.dataset.href; };

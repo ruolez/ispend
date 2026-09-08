@@ -32,7 +32,7 @@ initNav('transactions').then(async (me) => { /* read qs(), hydrate, load() */ })
 
 `initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), removes `[data-admin-only]` elements for non-admins, applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
 
-Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, insights, settings. Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
+Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings. Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
 
 ## theme.js — `window.Theme`
 | Call | Purpose |
@@ -145,6 +145,9 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Breakpoints (the only widths allowed, checked by `css_audit.py --check`): 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, card-mode tables), 640 (2-col stat grid, stacked headers), 480 (compact stats). Type sizes are rem tokens (`--fs-*`); radii `--r-xs|sm|md|lg|xl|pill`; never px literals for either.
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
+
+## Budgets
+`/api/budgets` (one row per category and month, `POST` upserts, `POST /copy {from,to}`), `/api/budgets/progress?month=` (`items[{category_id, budget, spent, remaining, pct, projected, pace_status}]`, `totals`, `unbudgeted`). `budgetsForRange(start, end)` (breakdown.js) returns a Map for a single-month range so the breakdown table can show a Budget column; the dashboard card and the category side panel call the same endpoints.
 
 ## Saved views
 Transactions keeps `saved_views` in the account preferences (`[{id, name, query, pinned, page}]`, query = the filter string). `views.apply(v)` rewrites the URL and reloads; `?view=<id>` marks the active view and is dropped as soon as a filter changes. Pinned views paint under the Transactions link (`nav.js paintPinnedViews`, event `ispend:views-changed`).

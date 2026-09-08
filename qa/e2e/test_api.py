@@ -43,7 +43,7 @@ GET_ROUTES = [
     "/api/transactions/1/events", "/api/review/count", "/api/review", "/api/rules", "/api/rules/1", "/api/merchants",
     "/api/reports/dashboard", "/api/reports/summary", "/api/reports/by-category", "/api/reports/monthly",
     "/api/reports/trends", "/api/reports/top-merchants", "/api/reports/month-over-month", "/api/reports/recurring",
-    "/api/ai/status", "/api/insights",
+    "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress",
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
@@ -65,6 +65,7 @@ MUTATING_ROUTES = [
     ("POST", "/api/merchants/learn"), ("POST", "/api/reports/recurring/dismiss"),
     ("DELETE", "/api/reports/recurring/dismiss/x"), ("POST", "/api/ai/categorize"), ("POST", "/api/insights/generate"),
     ("POST", "/api/insights/anomalies/1/dismiss"), ("DELETE", "/api/insights/anomalies/1/dismiss"),
+    ("POST", "/api/budgets"), ("PUT", "/api/budgets/1"), ("DELETE", "/api/budgets/1"), ("POST", "/api/budgets/copy"),
 ]
 
 
@@ -270,8 +271,10 @@ def victim(u1, seeded):
     cats = u1.get("/api/categories?flat=1").json()
     own_cat = next(c for c in cats if c["id"] == seeded["rule_category"])
     merchants = u1.get("/api/merchants").json()
+    budget = u1.post("/api/budgets", json={"category_id": own_cat["id"], "amount": 123.45, "month": "2030-01"})
+    assert budget.status_code == 201, budget.text
     return {
-        "txn": txn, "txn_ids": [t["id"] for t in items], "statement": seeded["checking_statement"],
+        "budget": budget.json()["id"], "txn": txn, "txn_ids": [t["id"] for t in items], "statement": seeded["checking_statement"],
         "rule": seeded["rule_id"], "category": own_cat, "account": seeded["checking"],
         "merchant_key": txn["merchant_key"], "memory_keys": [m["merchant_key"] for m in merchants],
         "cat_order": [(c["id"], c["sort_order"]) for c in cats],
@@ -313,15 +316,17 @@ class TestIsolation:
         ("DELETE", "/api/categories/{cat}", None),
         ("PUT", "/api/accounts/{acct}", {"name": "pwned"}),
         ("DELETE", "/api/accounts/{acct}?force=true", None),
+        ("PUT", "/api/budgets/{budget}", {"amount": 1}),
+        ("DELETE", "/api/budgets/{budget}", None),
     ])
     def test_foreign_object_by_id_is_404(self, u2, victim, method, path, body):
         url = path.format(txn=victim["txn"]["id"], st=victim["statement"], rule=victim["rule"],
-                          cat=victim["category"]["id"], acct=victim["account"])
+                          cat=victim["category"]["id"], acct=victim["account"], budget=victim["budget"])
         r = u2.request(method, url, json=body)
         assert r.status_code == 404, (method, url, r.status_code, r.text)
         assert "pwned" not in r.text
 
-    def test_foreign_objects_not_modified_or_deleted(self, u1, victim):
+    def test_foreign_objects_not_modified_or_deleted(self, u1, u2, victim):
         # runs after the parametrized attacks above (pytest keeps file order)
         assert u1.get(f"/api/transactions/{victim['txn']['id']}").status_code == 200
         assert u1.get(f"/api/statements/{victim['statement']}").json()["status"] == "committed"
@@ -330,6 +335,9 @@ class TestIsolation:
         assert next(c for c in cats if c["id"] == victim["category"]["id"])["name"] == victim["category"]["name"]
         accts = u1.get("/api/accounts").json()
         assert any(a["id"] == victim["account"] and a["name"] == "QA Chase Checking" for a in accts)
+        mine = u1.get("/api/budgets", params={"month": "2030-01"}).json()["budgets"]
+        assert any(b["id"] == victim["budget"] and b["amount"] == 123.45 for b in mine)
+        assert u2.get("/api/budgets", params={"month": "2030-01"}).json()["budgets"] == []
 
     def test_foreign_ids_in_bulk_review_pair(self, u2, u1, victim):
         before = _txn_snapshot(u1, victim["txn"]["id"])
@@ -1441,6 +1449,62 @@ class TestReview:
 # ======================================================================================
 # Accounts
 # ======================================================================================
+
+class TestBudgets:
+    def test_crud_progress_and_copy(self, u1, manual):
+        y = manual["year"]
+        cat_a, cat_b, m = manual["cat_a"]["id"], manual["cat_b"]["id"], f"{y}-08"
+        r = u1.post("/api/budgets", json={"category_id": cat_a, "month": m, "amount": "100", "note": " gym "})
+        assert r.status_code == 201, r.text
+        b = r.json()
+        assert (b["category_id"], b["month"], b["amount"], b["note"]) == (cat_a, m, 100.0, "gym")
+        r = u1.post("/api/budgets", json={"category_id": cat_a, "month": m, "amount": 80})
+        assert r.status_code == 200 and r.json()["id"] == b["id"] and r.json()["amount"] == 80.0 and r.json()["note"] is None
+        assert u1.post("/api/budgets", json={"category_id": cat_b, "month": m, "amount": 300}).status_code == 201
+        listed = u1.get("/api/budgets", params={"month": m}).json()
+        assert sorted(x["category_id"] for x in listed["budgets"]) == sorted([cat_a, cat_b]) and m in listed["months_with_budgets"]
+        p = u1.get("/api/budgets/progress", params={"month": m}).json()
+        by = {i["category_id"]: i for i in p["items"]}
+        assert (by[cat_a]["budget"], by[cat_a]["spent"], by[cat_a]["remaining"], by[cat_a]["pct"]) == (80.0, 40.0, 40.0, 50.0)
+        assert (by[cat_b]["budget"], by[cat_b]["spent"], by[cat_b]["pace_status"]) == (300.0, 275.5, "on_track")
+        assert p["totals"] == {"budget": 380.0, "spent": 315.5, "remaining": 64.5, "pct": 83.0, "pace_status": "on_track"}
+        assert (p["days_in_month"], p["days_elapsed"], p["elapsed_pct"], p["month"]) == (31, 31, 100.0, m)
+        assert p["unbudgeted"]["count"] == 0 and p["unbudgeted"]["spent"] == 0.0  # 7.25 is uncategorized, not a category
+        assert [i["category_id"] for i in p["items"]] == [cat_b, cat_a]  # highest percent used first
+        p2 = u1.get("/api/budgets/progress", params={"month": m, "account_id": manual["sav"]}).json()
+        assert p2["totals"]["spent"] == 0.0 and all(i["spent"] == 0.0 for i in p2["items"])
+        # validation
+        r = u1.post("/api/budgets", json={"category_id": cat_a, "month": m, "amount": 0})
+        assert (r.status_code, r.json()) == (400, {"error": "amount must be greater than zero"})
+        r = u1.post("/api/budgets", json={"category_id": cat_by_slug(u1, "transfers.internal")["id"], "month": m, "amount": 5})
+        assert (r.status_code, r.json()) == (400, {"error": "Transfers cannot be budgeted"})
+        assert u1.post("/api/budgets", json={"category_id": cat_a, "month": "2026-13", "amount": 5}).status_code == 400
+        assert u1.get("/api/budgets/progress", params={"month": "nope"}).status_code == 400
+        # parent / child overlap
+        sub = u1.post("/api/categories", json={"name": "QA Sub A", "parent_id": cat_a}).json()
+        r = u1.post("/api/budgets", json={"category_id": sub["id"], "month": m, "amount": 5})
+        assert r.status_code == 400 and "not both" in r.json()["error"]
+        # copy forward: existing target rows are skipped
+        nxt = f"{y}-09"
+        assert u1.post("/api/budgets", json={"category_id": cat_a, "month": nxt, "amount": 1}).status_code == 201
+        assert u1.post("/api/budgets/copy", json={"from": m, "to": nxt}).json() == {"copied": 1, "skipped": 1}
+        assert u1.post("/api/budgets/copy", json={"from": m, "to": m}).status_code == 400
+        assert u1.post("/api/budgets/copy", json={"from": "2001-01", "to": nxt}).status_code == 400
+        # update / delete
+        r = u1.put(f"/api/budgets/{b['id']}", json={"amount": "55.5", "note": "x"})
+        assert (r.json()["amount"], r.json()["note"]) == (55.5, "x")
+        assert u1.put(f"/api/budgets/{b['id']}", json={"amount": -1}).status_code == 400
+        assert u1.delete(f"/api/budgets/{b['id']}").json() == {"ok": True}
+        assert u1.delete(f"/api/budgets/{b['id']}").status_code == 404
+        for x in u1.get("/api/budgets", params={"month": m}).json()["budgets"] + u1.get("/api/budgets", params={"month": nxt}).json()["budgets"]:
+            u1.delete(f"/api/budgets/{x['id']}")
+        u1.delete(f"/api/categories/{sub['id']}")
+
+    def test_empty_user_progress_is_zero(self, u2):
+        p = u2.get("/api/budgets/progress").json()
+        assert p["items"] == [] and p["totals"]["budget"] == 0.0 and p["unbudgeted"] == {"spent": 0.0, "count": 0, "categories": []}
+        assert u2.get("/api/budgets").json()["budgets"] == []
+
 
 class TestAccounts:
     def test_crud_and_validation(self, u1):

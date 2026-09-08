@@ -2,6 +2,8 @@
 .cat-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--sp-4); align-items: start; }
 @media (max-width: 960px) { .cat-layout { grid-template-columns: 1fr; } .cat-side { position: static !important; } }
 .cat-side { position: sticky; top: 72px; }
+.side-budget { margin-bottom: var(--sp-4); }
+.side-budget-row .input { max-width: 140px; }
 @media (max-width: 960px) { .cat-side { display: none; } } /* the selection opens a drawer instead */
 .cat-side-drawer .side-actions { flex-direction: column; align-items: stretch; }
 .cat-tree-head { display: grid; grid-template-columns: minmax(0, 1fr) 110px 120px 116px; gap: 8px; padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
