@@ -994,6 +994,14 @@ class TestTransactions:
         if r["paired"]:
             u1.post("/api/transactions/bulk", json={"ids": [x["id"] for x in r["before"]], "action": "restore", "items": r["before"]})
 
+    def test_list_facets_count_excluded_rows(self, u1, manual):
+        tid = manual["txns"][6]["id"]
+        assert u1.post("/api/transactions/bulk", json={"ids": [tid], "action": "exclude"}).json()["updated"] == 1
+        st = u1.get("/api/transactions", params={"range": "all", "account_id": manual["acct"]}).json()["facets"]["status"]
+        assert st["excluded"] == 1 and set(st) == {"uncategorized", "suggested", "transfer", "excluded"}
+        assert u1.post("/api/transactions/bulk", json={"ids": [tid], "action": "include"}).json()["updated"] == 1
+        assert u1.get("/api/transactions", params={"range": "all", "account_id": manual["acct"]}).json()["facets"]["status"]["excluded"] == 0
+
     def test_bulk_delete_and_single_delete(self, u1, manual):
         a = manual["acct"]
         t1 = add_txn(u1, a, f"{manual['year']}-05-01", "-1.00", "QA TEMP ONE")

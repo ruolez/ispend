@@ -16,7 +16,7 @@ const EVENT_TEXT = {
 const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off' };
 
 const tx = {
-  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' },
+  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '' },
   items: [], byId: new Map(), cursor: null, total: 0, sumIn: 0, sumOut: 0, facets: null,
   loading: false, done: false, seq: 0,
   selection: new Set(), focus: -1,
@@ -40,6 +40,8 @@ initNav('transactions').then(async () => {
   $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { searchDebounced.cancel(); tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
   $('#f-clear').addEventListener('click', clearFilters);
   $('#f-accounts').addEventListener('click', openAccountFilter);
+  $('#f-views').addEventListener('click', openViewsMenu);
+  $('#f-amount').addEventListener('click', openAmountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   tx.flowSeg = ui.segmented($('#f-flow'), { allowNone: true, onChange: (b) => { tx.filters.flow = b ? b.dataset.flow : ''; applyFilters(); } });
   $('#tx-table thead').addEventListener('click', (e) => { const th = e.target.closest('th.sortable'); if (th) toggleSort(th.dataset.sort); });
@@ -94,18 +96,22 @@ function readUrl() {
   tx.filters.sort = q.sort || SORT_DEFAULT;
   tx.filters.statement = q.statement || '';
   tx.filters.transfers = q.transfers || '';
+  tx.filters.min = AMOUNT_RE.test(q.min || '') ? q.min : '';
+  tx.filters.max = AMOUNT_RE.test(q.max || '') ? q.max : '';
+  tx.filters.view = q.view || '';
 }
+const AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
 function writeUrl() {
   const f = tx.filters;
-  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, open: null });
+  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, open: null });
 }
 function queryParams(extra = {}) {
   const f = tx.filters;
-  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, ...extra };
+  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, ...extra };
 }
 function hasFilters() {
   const f = tx.filters;
-  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || (f.range && !['this-month', 'all'].includes(f.range.preset));
+  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || (f.range && !['this-month', 'all'].includes(f.range.preset));
 }
 function emptyListHtml() {
   if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
@@ -113,11 +119,126 @@ function emptyListHtml() {
   return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
 }
 function clearFilters() {
-  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '' }; // clearing shows everything, not just this month
+  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '' }; // clearing shows everything, not just this month
   $('#f-q').value = '';
   applyFilters();
 }
-function applyFilters() { writeUrl(); paintToolbar(); reload(); }
+function applyFilters({ keepView = false } = {}) { if (!keepView) tx.filters.view = ''; writeUrl(); paintToolbar(); reload(); }
+
+/* ---------- saved views (account preference `saved_views`) ---------- */
+const views = {
+  list() { const p = (window.currentUser && window.currentUser.preferences) || {}; return Array.isArray(p.saved_views) ? p.saved_views : []; },
+  byId(id) { return views.list().find((v) => v.id === id) || null; },
+  current() {
+    const f = tx.filters;
+    return toQuery({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, min: f.min || null, max: f.max || null, transfers: f.transfers || null }) || '?range=this-month';
+  },
+  async save(list) {
+    const p = await api('/api/auth/me/preferences', { method: 'PUT', body: { saved_views: list } });
+    if (window.currentUser) window.currentUser.preferences = p;
+    window.dispatchEvent(new CustomEvent('ispend:views-changed'));
+    return p.saved_views || [];
+  },
+  apply(v) {
+    const params = new URLSearchParams(v.query.replace(/^\?/, ''));
+    params.set('view', v.id);
+    history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+    rememberQuery();
+    readUrl();
+    $('#f-q').value = tx.filters.q;
+    periodSet(tx.filters.range);
+    applyFilters({ keepView: true });
+  },
+};
+function openViewsMenu() {
+  const list = views.list();
+  const items = [{ label: 'Saved views', header: true }];
+  if (!list.length) items.push({ label: 'No saved views yet', disabled: true });
+  list.forEach((v) => items.push({ label: v.name, icon: v.pinned ? 'star' : 'filter', checked: v.id === tx.filters.view, onClick: () => views.apply(v) }));
+  items.push({ divider: true }, { label: 'Save current view…', icon: 'plus', onClick: openSaveView }, { label: 'Manage views…', icon: 'sliders', disabled: !list.length, onClick: openManageViews });
+  ui.menu($('#f-views'), items, { placement: 'bottom-start' });
+}
+function openSaveView() {
+  const m = ui.modal({
+    title: 'Save current view',
+    html: `<form id="sv-form"><div class="field"><label for="sv-name" data-required>Name</label><input id="sv-name" class="input" maxlength="60" placeholder="e.g. Big Amazon orders" autofocus autocomplete="off"><div class="hint">Saves the range, filters, search and sort you have right now. Up to 20 views.</div></div>
+      <label class="switch"><input type="checkbox" id="sv-pin"><span class="switch-track"></span>Pin to the sidebar</label><button type="submit" hidden></button></form>`,
+    actions: [{ label: 'Cancel' }, { label: 'Save view', primary: true, onClick: async () => {
+      if (!ui.validate(m.el, [{ sel: '#sv-name', message: 'Give the view a name' }])) return false;
+      const id = `v_${uid()}`;
+      const v = { id, name: m.el.querySelector('#sv-name').value.trim(), query: views.current(), pinned: m.el.querySelector('#sv-pin').checked, page: 'transactions' };
+      await views.save([...views.list(), v]);
+      tx.filters.view = id;
+      writeUrl(); paintToolbar();
+      toast(`View “${v.name}” saved`, { type: 'success' });
+    } }],
+  });
+  m.el.querySelector('#sv-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
+}
+function openManageViews() {
+  const m = ui.modal({ title: 'Saved views', size: 'lg', html: '<div id="mv-list"></div>', actions: [{ label: 'Done', primary: true }] });
+  const paint = () => {
+    const list = views.list();
+    m.el.querySelector('#mv-list').innerHTML = list.length ? `<div class="list">${list.map((v) => `<div class="list-item mv-row" data-view="${esc(v.id)}">
+        <input class="input input-sm grow" value="${esc(v.name)}" maxlength="60" aria-label="View name" data-mv="name">
+        <label class="switch switch-sm" data-tip="Show in the sidebar"><input type="checkbox" data-mv="pin" ${v.pinned ? 'checked' : ''}><span class="switch-track"></span>Pinned</label>
+        <button type="button" class="btn btn-icon btn-ghost btn-sm" data-mv="delete" aria-label="Delete ${esc(v.name)}">${icon('trash')}</button></div>`).join('')}</div>` : ui.emptyState({ icon: 'filter', title: 'No saved views' });
+  };
+  paint();
+  const update = async (id, fields) => { await views.save(views.list().map((v) => (v.id === id ? { ...v, ...fields } : v))); paintToolbar(); };
+  m.el.addEventListener('change', async (e) => {
+    const row = e.target.closest('[data-view]'); if (!row) return;
+    const id = row.dataset.view;
+    try {
+      if (e.target.dataset.mv === 'pin') await update(id, { pinned: e.target.checked });
+      if (e.target.dataset.mv === 'name') { const name = e.target.value.trim(); if (!name) { ui.fieldError(e.target, 'Name is required'); return; } await update(id, { name }); }
+    } catch (err) { toast(err.message, { type: 'error' }); paint(); }
+  });
+  m.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-mv="delete"]'); if (!b) return;
+    const id = b.closest('[data-view]').dataset.view;
+    const prev = views.list();
+    const gone = prev.find((v) => v.id === id);
+    try {
+      await views.save(prev.filter((v) => v.id !== id));
+      if (tx.filters.view === id) { tx.filters.view = ''; writeUrl(); }
+      paint(); paintToolbar();
+      ui.undoable(`View “${gone ? gone.name : ''}” deleted`, async () => { await views.save(prev); paint(); paintToolbar(); });
+    } catch (err) { toast(err.message, { type: 'error' }); }
+  });
+}
+/* ---------- amount filter (absolute amounts, both bounds optional) ---------- */
+function amountLabel() {
+  const f = tx.filters; const cur = tx.displayCurrency || 'USD';
+  if (f.min && f.max) return `${fmtMoney(Number(f.min), cur)} – ${fmtMoney(Number(f.max), cur)}`;
+  if (f.min) return `≥ ${fmtMoney(Number(f.min), cur)}`;
+  if (f.max) return `≤ ${fmtMoney(Number(f.max), cur)}`;
+  return 'Any amount';
+}
+function openAmountFilter() {
+  const el = document.createElement('div');
+  el.className = 'menu amount-filter';
+  el.innerHTML = `<div class="menu-label">Amount</div>
+    <div class="field"><label for="fa-min">At least</label><input id="fa-min" class="input input-sm num" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" value="${esc(tx.filters.min)}"></div>
+    <div class="field"><label for="fa-max">At most</label><input id="fa-max" class="input input-sm num" type="number" min="0" step="0.01" inputmode="decimal" placeholder="No limit" value="${esc(tx.filters.max)}"><div class="hint">Compares the amount without its sign.</div></div>
+    <div class="row gap-2"><button type="button" class="btn btn-ghost btn-sm" data-act="clear">Clear</button><button type="button" class="btn btn-primary btn-sm ml-auto" data-act="apply">Apply</button></div>`;
+  ui.linkHints(el);
+  const anchor = $('#f-amount');
+  const pop = ui.popover(anchor, el, { onClose: () => anchor.focus() });
+  const clean = (v) => { const n = Number(v); return v.trim() !== '' && Number.isFinite(n) && n >= 0 ? n.toFixed(2).replace(/\.00$/, '') : ''; };
+  const apply = () => {
+    const min = clean(el.querySelector('#fa-min').value), max = clean(el.querySelector('#fa-max').value);
+    if (!ui.validate(el, [{ sel: '#fa-max', test: () => !min || !max || Number(max) >= Number(min) || 'Must be at least the lower bound' }])) return;
+    tx.filters.min = min; tx.filters.max = max;
+    pop.close('pick'); applyFilters();
+  };
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="apply"]')) apply();
+    if (e.target.closest('[data-act="clear"]')) { tx.filters.min = ''; tx.filters.max = ''; pop.close('pick'); applyFilters(); }
+  });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+  requestAnimationFrame(() => el.querySelector('#fa-min').focus());
+}
 function toggleSort(key) {
   const cur = tx.filters.sort;
   if (key === 'date') tx.filters.sort = cur === '-date' ? 'date' : '-date';
@@ -133,6 +254,13 @@ function paintToolbar() {
   const acctBtn = $('#f-accounts');
   acctBtn.innerHTML = `${icon('landmark', 'ico-sm')}<span>${f.acct.length ? (f.acct.length === 1 && acctOf(f.acct[0]) ? esc(acctOf(f.acct[0]).name) : `${f.acct.length} accounts`) : 'All accounts'}</span>${icon('chevron-down', 'ico-sm')}`;
   acctBtn.classList.toggle('active', !!f.acct.length);
+  const viewBtn = $('#f-views');
+  const activeView = f.view ? views.byId(f.view) : null;
+  viewBtn.innerHTML = `${icon(activeView ? 'star' : 'filter', 'ico-sm')}<span>${activeView ? esc(activeView.name) : 'Views'}</span>${icon('chevron-down', 'ico-sm')}`;
+  viewBtn.classList.toggle('active', !!activeView);
+  const amtBtn = $('#f-amount');
+  amtBtn.innerHTML = `${icon('hash', 'ico-sm')}<span>${esc(amountLabel())}</span>${icon('chevron-down', 'ico-sm')}`;
+  amtBtn.classList.toggle('active', !!(f.min || f.max));
   const catBtn = $('#f-categories');
   let catLabel = 'All categories';
   if (f.cat.length === 1) catLabel = f.cat[0] === 'none' ? 'Uncategorized' : (catOf(f.cat[0]) || {}).name || 'Category';
@@ -159,7 +287,7 @@ function paintToolbar() {
   });
   $('#btn-export').href = '/api/transactions/export' + toQuery(queryParams());
   syncSegScroll();
-  $('#tx-sub').textContent = f.statement ? 'Rows imported from one statement.' : 'Every charge across your accounts.';
+  $('#tx-sub').textContent = f.statement ? 'Rows imported from one statement.' : activeView ? `View: ${activeView.name}` : 'Every charge across your accounts.';
 }
 /* On narrow screens the status seg scrolls sideways: fade its clipped edge and keep the active button in view. */
 function syncSegScroll() {
@@ -265,7 +393,7 @@ function rowHtml(it, idx) {
   return `<tr class="tx-row ${it.is_transfer ? 'is-transfer' : ''} ${it.is_excluded ? 'is-excluded' : ''} ${idx === tx.focus ? 'is-focused' : ''}" data-id="${it.id}" data-idx="${idx}" aria-selected="${tx.selection.has(it.id)}" tabindex="-1">
     <td class="col-check"><input type="checkbox" class="check" data-select="${it.id}" ${tx.selection.has(it.id) ? 'checked' : ''} aria-label="Select"></td>
     <td class="col-date num">${fmtDate(it.txn_date)}</td>
-    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" title="${esc(it.notes)}">${icon('pencil', 'ico-sm')}</span>` : ''}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" title="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
+    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" title="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
     <td class="col-cat">${catCellHtml(it)}</td>
     <td class="col-acct">${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="truncate">${esc(a.name)}</span></span>` : ''}</td>
     <td class="col-amt right"><span class="amt ${amtCls}">${fmtMoney(it.amount, cur, { sign: 'always' })}</span></td>
@@ -350,9 +478,10 @@ function registerShortcuts() {
   ui.shortcuts.register('Enter', () => { const it = focusedItem(); if (it) openDrawer(it.id); }, { when: noLayer, description: 'Open details' });
   ui.shortcuts.register('t', () => { const it = focusedItem(); if (it) updateItem(it.id, { is_transfer: !it.is_transfer }, it.is_transfer ? 'Unmarked as transfer' : 'Marked as transfer'); }, { when: noLayer, description: 'Toggle transfer' });
   ui.shortcuts.register('n', () => { const it = focusedItem(); if (it) openDrawer(it.id, { focusNotes: true }); }, { when: noLayer, description: 'Edit note' });
+  ui.shortcuts.register('v', () => openViewsMenu(), { when: noLayer, description: 'Saved views' });
   ui.shortcuts.register('a', () => { const it = focusedItem(); if (it && it.category_status === 'suggested') bulk([it.id], 'accept_suggestion'); }, { when: noLayer, description: 'Accept suggestion' });
   ui.shortcuts.register('Escape', () => { if (tx.selection.size) { tx.selection.clear(); paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
-  window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['Esc', 'Clear selection']] }];
+  window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['v', 'Saved views'], ['Esc', 'Clear selection']] }];
 }
 
 /* ---------- row interactions ---------- */

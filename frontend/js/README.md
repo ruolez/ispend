@@ -146,5 +146,8 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
 
+## Saved views
+Transactions keeps `saved_views` in the account preferences (`[{id, name, query, pinned, page}]`, query = the filter string). `views.apply(v)` rewrites the URL and reloads; `?view=<id>` marks the active view and is dropped as soon as a filter changes. Pinned views paint under the Transactions link (`nav.js paintPinnedViews`, event `ispend:views-changed`).
+
 ## Query memory
 `setQs()` also calls `rememberQuery()`: each page's last query (minus transient keys such as `open`, `statement`) is kept in sessionStorage. `initNav()` calls `restoreQuery()` before page scripts read `qs()`, and sidebar links carry `savedQuery(href)`, so filters, sorts, ranges and tabs survive navigating away and back within the session. Pages read state from `qs()` as before; nothing else to do.

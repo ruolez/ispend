@@ -43,6 +43,23 @@ function setSidebarMode(mode) {
 }
 applySidebarMode();
 
+/* Saved Transactions views marked "pinned" sit under the Transactions link (hidden in rail mode). */
+function paintPinnedViews(me) {
+  $$('.nav-item--sub').forEach((el) => el.remove());
+  const anchor = $('.sb-nav .nav-item[data-page="transactions"]');
+  if (!anchor) return;
+  const list = (((me && me.preferences) || {}).saved_views || []).filter((v) => v.pinned);
+  const active = document.body.dataset.page === 'transactions' ? new URLSearchParams(location.search).get('view') : null;
+  list.slice().reverse().forEach((v) => {
+    const a = document.createElement('a');
+    a.className = 'nav-item nav-item--sub';
+    a.href = `/transactions.html${v.query}&view=${encodeURIComponent(v.id)}`;
+    a.dataset.view = v.id;
+    if (v.id === active) a.setAttribute('aria-current', 'page');
+    a.innerHTML = `${icon('star', 'ico-sm')}<span class="label">${esc(v.name)}</span>`;
+    anchor.after(a);
+  });
+}
 function navItemHtml(i, activePage) {
   return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
@@ -170,6 +187,8 @@ async function initNav(activePage) {
   }
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);
+  paintPinnedViews(me);
+  window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
   return me;
 }
 
