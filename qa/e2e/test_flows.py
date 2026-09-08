@@ -180,6 +180,20 @@ def toast_text_all(page):
     return [t.inner_text() for t in page.locator(".toast").all()]
 
 
+def click_undo(page):
+    """Undo on the newest toast (older undo toasts may still be on screen)."""
+    page.locator(".toast .toast-action", has_text="Undo").last.click()
+
+
+def dismiss_toasts(page):
+    """Close every toast through the DOM: a toast mid-animation is never "stable" enough for a click."""
+    for _ in range(10):
+        if not page.locator(".toast").count():
+            return
+        page.evaluate("document.querySelectorAll('.toast .toast-close').forEach((b) => b.click())")
+        page.wait_for_timeout(120)
+
+
 def confirm_modal(page):
     m = page.locator(".modal")
     m.wait_for(state="visible", timeout=5000)
@@ -447,6 +461,16 @@ def test_f2_accounts(page, qapi):
     F.note(f"toasts after Archive: {toast_text_all(page)}")
     shot(page, "F2-account-archived")
     F.check([a for a in qapi.get("/api/accounts?all=1") if a["id"] == S["acct_savings"]][0]["is_active"] is False, "archive persisted")
+    t = toast(page, "Account archived")
+    F.check("Undo" in t, "undo offered on archive")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(600)
+    F.check([a for a in qapi.get("/api/accounts?all=1") if a["id"] == S["acct_savings"]][0]["is_active"] is True, "undo restored the account")
+    page.locator(f'tr[data-id="{S["acct_savings"]}"] [data-act="account-menu"]').click()
+    menu_click(page, "Archive")
+    page.wait_for_selector(f'tr[data-id="{S["acct_savings"]}"] .badge:has-text("Archived")', timeout=5000)
+    dismiss_toasts(page)
     page.locator(f'tr[data-id="{S["acct_savings"]}"] [data-act="account-menu"]').click()
     menu_click(page, "Restore")
     page.wait_for_timeout(600)
@@ -1105,11 +1129,39 @@ def test_f4_transactions(page, qapi):
     F.check("Undo" in t, "undo action offered on bulk toast")
     F.check(all(qapi.get(f"/api/transactions/{i}")["category_id"] is not None for i in ids), "bulk categorize applied")
     shot(page, "F4-bulk-toast")
-    page.locator(".toast .toast-action", has_text="Undo").click()
+    click_undo(page)
     toast(page, "Undone")
     page.wait_for_timeout(500)
     F.check(all(qapi.get(f"/api/transactions/{i}")["category_id"] is None for i in ids), "undo restored uncategorized")
     F.note(f"after undo the rows are still listed under the Uncategorized filter: {page.locator('#tx-body tr[data-id]').count()} rows visible")
+    # --- bulk exclude / transfer + undo restore the exact previous state ---
+    rows = page.locator("#tx-body tr[data-id]")
+    ids = [int(rows.nth(i).get_attribute("data-id")) for i in range(2)]
+    before = {i: qapi.get(f"/api/transactions/{i}") for i in ids}
+    rows.nth(0).locator("input[data-select]").check()
+    rows.nth(1).locator("input[data-select]").check()
+    bar.wait_for(state="visible", timeout=5000)
+    bar.locator("[data-bulk='exclude']").click()
+    t = toast(page, "Excluded from reports")
+    F.check("Undo" in t, "undo offered on bulk exclude")
+    F.check(all(qapi.get(f"/api/transactions/{i}")["is_excluded"] for i in ids), "bulk exclude applied")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(500)
+    F.check(all(qapi.get(f"/api/transactions/{i}")["is_excluded"] is False for i in ids), "undo restored is_excluded")
+    dismiss_toasts(page)
+    rows.nth(0).locator("input[data-select]").check()
+    rows.nth(1).locator("input[data-select]").check()
+    bar.wait_for(state="visible", timeout=5000)
+    bar.locator("[data-bulk='set_transfer']").click()
+    t = toast(page, "Marked as transfer")
+    F.check("Undo" in t and qapi.get(f"/api/transactions/{ids[0]}")["is_transfer"] is True, "bulk transfer applied with undo")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(500)
+    after = {i: qapi.get(f"/api/transactions/{i}") for i in ids}
+    F.check(all((after[i]["is_transfer"], after[i]["category_id"], after[i]["is_excluded"]) == (before[i]["is_transfer"], before[i]["category_id"], before[i]["is_excluded"]) for i in ids), f"undo restored category and flags: {[(before[i]['category_id'], after[i]['category_id']) for i in ids]}")
+    F.check(any(e["kind"] == "manual" and (e.get("detail") or {}).get("restored") for e in after[ids[0]]["events"]), "restore recorded in the row history")
     page.locator("#f-status [data-status='all']").click()
     page.wait_for_timeout(700)
 
@@ -1258,6 +1310,29 @@ def test_f5_review(page, qapi):
     F.check(f"{q['remaining_items'] - g0['count']}" in page.locator("#rv-progress").inner_text(), "progress decremented")
     shot(page, "F5-after-resolve", full=True)
 
+    # undo the resolve: rows go back to uncategorized, the rule disappears, the card returns
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(700)
+    F.check(all(qapi.get(f"/api/transactions/{i}")["category_id"] is None for i in g0["ids"][:3]), "undo uncategorized the group again")
+    F.check(not any(r["pattern"] == g0["key"] for r in qapi.get("/api/rules")), "undo removed the rule it had created")
+    F.check(page.locator(f".rv-card[data-key='{g0['key']}']").count() == 1, "undo brought the card back")
+    F.eq(pill_value(page), qapi.get("/api/review/count")["total"], "pill updated after undo")
+    dismiss_toasts(page)
+    # redo the resolve so the rest of the flow sees the rule
+    cards = page.locator(".rv-card")
+    if not cards.first.locator("[data-cfield='always']").is_checked():
+        cards.first.locator(".rv-always .switch-track").click()
+    cards.first.locator("[data-cfield='always']").blur()
+    page.keyboard.press("c")
+    page.wait_for_selector(".cat-picker input", timeout=5000)
+    page.locator(".cat-picker input").type("Groceries")
+    page.wait_for_timeout(200)
+    page.keyboard.press("Enter")
+    t = toast(page, "Groceries")
+    F.check("rule created" in t, "redo created the rule again")
+    page.wait_for_timeout(700)
+
     # resolve another group with the default ('always' OFF) -> no rule
     q2 = qapi.get("/api/review?mode=merchant&limit=100")
     F.check(len(q2["groups"]) >= 3, f"groups remain after one resolve: {len(q2['groups'])}")
@@ -1401,7 +1476,8 @@ def test_f6_rules(page, qapi):
         F.note(f"drag and drop threw: {e}")
     shot(page, "F6-reordered", full=True)
 
-    # edit via modal
+    # edit via modal (clear the undo toasts first: the stack shows three at a time and queues the rest)
+    dismiss_toasts(page)
     rid = rule_order(page)[0]
     page.locator(f".rule[data-id='{rid}'] [data-act='menu']").click()
     menu_click(page, "Edit")
@@ -1425,6 +1501,15 @@ def test_f6_rules(page, qapi):
     sw.click()
     page.wait_for_timeout(500)
     F.check([r for r in qapi.get("/api/rules") if r["id"] == rid][0]["is_active"] is False, "disable switch persisted")
+    t = toast(page, "Rule disabled")
+    F.check("Undo" in t, "undo offered on rule toggle")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(500)
+    F.check([r for r in qapi.get("/api/rules") if r["id"] == rid][0]["is_active"] is True, "undo re-enabled the rule")
+    page.locator(f".rule[data-id='{rid}'] .rule-on .switch-track").click()
+    page.wait_for_timeout(600)
+    F.check([r for r in qapi.get("/api/rules") if r["id"] == rid][0]["is_active"] is False, "rule disabled again for the rest of the flow")
     F.note(f"toasts after toggling a rule off: {toast_text_all(page)}")
     sw.click()
     page.wait_for_timeout(400)

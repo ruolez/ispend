@@ -124,6 +124,7 @@ async function onInlineChange(e) {
   const value = el.type === 'checkbox' ? el.checked : el.value;
   const ok = await saveRule(id, { [field]: value }, { silent: field === 'is_active' });
   if (field === 'is_active') row.classList.toggle('is-off', !value);
+  if (ok && field === 'is_active') ui.undoable(value ? 'Rule enabled' : 'Rule disabled', async () => { await saveRule(id, { is_active: !value }, { silent: true }); render(); });
   if (!ok) render();
 }
 async function commitPattern(input) {
@@ -183,8 +184,13 @@ async function applyRule(r, onlyUncategorized) {
 }
 
 /* ---------- Reorder ---------- */
-async function reorder(ids) {
-  try { await api('/api/rules/reorder', { method: 'PUT', body: { ids } }); await load(); } catch (err) { toast(err.message, { type: 'error' }); }
+async function reorder(ids, { silent = false } = {}) {
+  const prev = state.rules.map((r) => r.id);
+  try {
+    await api('/api/rules/reorder', { method: 'PUT', body: { ids } });
+    await load();
+    if (!silent) ui.undoable('Rules reordered', () => reorder(prev, { silent: true }));
+  } catch (err) { toast(err.message, { type: 'error' }); }
 }
 function moveRule(id, dir) {
   const ids = state.rules.map((r) => r.id); const i = ids.indexOf(id); const j = i + dir;
@@ -396,9 +402,11 @@ async function commitMerchantName(input) {
   await saveMerchant(m, { category_id: m.category_id, display_name: v, rename_all: true }, `Renamed to ${v}`);
 }
 async function saveMerchant(m, body, label, showApplied) {
+  const prev = { category_id: m.category_id, is_transfer: m.is_transfer };
   try {
     const r = await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'PUT', body: { category_id: m.category_id, is_transfer: m.is_transfer, ...body } });
     if (showApplied) toast(r.applied ? `${plural(r.applied, 'transaction')} updated` : 'Every transaction already had this category', { type: 'success' });
+    else if (label && 'category_id' in body) ui.undoable(label, () => saveMerchant({ ...m }, prev, null));
     else if (label) toast(label, { type: 'success', duration: 1800 });
     if (body.apply_existing || body.rename_all) window.dispatchEvent(new Event('ispend:transactions-changed'));
     await loadMerchants();

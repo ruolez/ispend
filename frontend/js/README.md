@@ -87,6 +87,8 @@ const seg = ui.segmented(segEl, { onChange: (btn) => setRange(btn.dataset.range)
 // Menus and multiFilter lists support ArrowUp/Down (wrapping), Home/End and first-letter type-ahead; focus returns to the anchor on close.
 toast('Saved', { type:'success'|'error'|'info', action:{ label:'Undo', fn }, duration });   // window.toast; ≤3 visible, the rest queue; repeats bump a ×n counter
 ui.undoable('3 excluded', async () => restore(before));   // success toast with a single-use Undo → 'Undone' (or an error toast)
+// Undo contract: POST /api/transactions/bulk, /api/review/resolve, /pair and /auto-pair return `before` (util.SNAPSHOT_FIELDS per row);
+// POST /bulk {action:'restore', ids, items: before} writes it back. Every reversible action gets Undo, confirms stay for delete/security.
 await ui.busy(btn, async () => api(...));                  // disables + spins the button while fn runs; errors toast and resolve undefined ({ silent, rethrow })
 ui.fieldError(inputEl, 'Name is required' | null);         // inline .field-error + aria-invalid + aria-describedby under the control's .field
 ui.validate(formEl, [{ sel:'#name', message:'Name is required' }, { sel:'#amt', test:(v) => Number(v) > 0 || 'Enter an amount' }]) // paints errors, focuses the first; false when anything failed → `return false` from a modal action

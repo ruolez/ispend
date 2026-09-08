@@ -150,14 +150,14 @@ function focusedPair() {
 }
 async function pairOne(p) {
   try {
-    await api('/api/transactions/pair', { method: 'POST', body: { a_id: p.a.id, b_id: p.b.id } });
+    const r = await api('/api/transactions/pair', { method: 'POST', body: { a_id: p.a.id, b_id: p.b.id } });
     rv.paired += 1;
     // both rows are now paired: drop every other candidate that used either of them
     const used = new Set([p.a.id, p.b.id]);
     const el = $(`.rv-card[data-key="${CSS.escape(pairKey(p))}"]`);
     rv.pairs = rv.pairs.filter((x) => !used.has(x.a.id) && !used.has(x.b.id));
     rv.pairCount = visiblePairs().length; paintPairCount();
-    toast('Paired as a transfer', { type: 'success' });
+    ui.undoable('Paired as a transfer', async () => { await restoreRows(r.before); rv.paired = Math.max(0, rv.paired - 1); await loadTransfers(); window.dispatchEvent(new Event('ispend:transactions-changed')); });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     if (el) { el.style.maxHeight = `${el.offsetHeight}px`; requestAnimationFrame(() => el.classList.add('is-leaving')); }
     setTimeout(() => { renderTransfers(); setFocus(Math.min(rv.focus, $$('.rv-card').length - 1)); }, 260);
@@ -177,7 +177,8 @@ async function pairAllConfident() {
   await ui.busy($('#btn-pair-all'), async () => {
     const r = await api('/api/transactions/auto-pair', { method: 'POST', body: { min_confidence: 0.9 } });
     rv.paired += r.paired || 0;
-    toast(`${plural(r.paired || 0, 'transfer')} paired`, { type: 'success' });
+    if (r.paired) ui.undoable(`${plural(r.paired, 'transfer')} paired`, async () => { await restoreRows(r.before); rv.paired = Math.max(0, rv.paired - r.paired); await loadTransfers(); window.dispatchEvent(new Event('ispend:transactions-changed')); });
+    else toast('No transfers paired', { type: 'info' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     await loadTransfers();
   });
@@ -329,15 +330,34 @@ function ruleFor(g, categoryId) {
 async function resolve(g, body, label) {
   const ids = includedIds(g);
   if (!ids.length) { toast('Every charge in this group is unchecked', { type: 'error' }); return; }
+  const idx = rv.groups.indexOf(g);
+  const snap = { ...g, ids: [...g.ids], count: g.count, excluded: new Set(), rows: null, expanded: false, patternOpen: false };
+  const whole = ids.length === g.ids.length;
   try {
     const r = await api('/api/review/resolve', { method: 'POST', body: { ids, ...body } });
-    rv.done += r.updated || ids.length;
-    rv.remainingItems = Math.max(0, rv.remainingItems - (r.updated || ids.length));
-    if (ids.length === g.ids.length) { rv.remaining = Math.max(0, rv.remaining - 1); leave(g); }
+    const n = r.updated || ids.length;
+    rv.done += n;
+    rv.remainingItems = Math.max(0, rv.remainingItems - n);
+    if (whole) { rv.remaining = Math.max(0, rv.remaining - 1); leave(g); }
     else { g.ids = g.ids.filter((id) => g.excluded.has(id)); g.count = g.ids.length; g.excluded = new Set(); g.rows = null; g.expanded = false; render(); }
-    toast(`${label}${r.rule_id ? ' · rule created' : ''}`, { type: 'success' });
+    ui.undoable(`${label}${r.rule_id ? ' · rule created' : ''}`, async () => {
+      await restoreRows(r.before, r.ids || ids);
+      if (r.rule_id) await api(`/api/rules/${r.rule_id}`, { method: 'DELETE' }).catch(() => {});
+      rv.done = Math.max(0, rv.done - n);
+      rv.remainingItems += n;
+      if (whole) { rv.remaining += 1; rv.groups.splice(Math.min(Math.max(idx, 0), rv.groups.length), 0, snap); }
+      else Object.assign(g, { ids: snap.ids, count: snap.count, excluded: new Set(), rows: null });
+      render();
+      setFocus(Math.min(Math.max(idx, 0), $$('.rv-card').length - 1));
+      window.dispatchEvent(new Event('ispend:transactions-changed'));
+    });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
   } catch (err) { toast(err.message, { type: 'error' }); }
+}
+/* Write a `before` snapshot back (see util.SNAPSHOT_FIELDS): the exact inverse of a resolve or pairing. */
+async function restoreRows(before, ids) {
+  if (!before || !before.length) return;
+  await api('/api/transactions/bulk', { method: 'POST', body: { ids: ids || before.map((b) => b.id), action: 'restore', items: before } });
 }
 function leave(g) {
   const el = $(`.rv-card[data-key="${CSS.escape(groupKey(g))}"]`);

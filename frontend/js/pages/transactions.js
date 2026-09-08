@@ -8,7 +8,7 @@ const EVENT_TEXT = {
   merchant: (d, c) => `Remembered merchant → ${c(d)}`,
   builtin: (d, c) => `Suggested ${c(d)} (built-in hints)`,
   ai: (d, c) => `AI suggested ${c(d)}${d && d.confidence != null ? ` (${Math.round(d.confidence * 100)}%)` : ''}`,
-  manual: (d, c) => d && d.accepted ? `Suggestion accepted → ${c(d)}` : d && d.rejected ? 'Suggestion rejected' : d && d.category_id == null ? 'Category cleared' : `Changed to ${c(d)}`,
+  manual: (d, c) => d && d.restored ? 'Change undone' : d && d.accepted ? `Suggestion accepted → ${c(d)}` : d && d.rejected ? 'Suggestion rejected' : d && d.category_id == null ? 'Category cleared' : `Changed to ${c(d)}`,
   transfer: (d) => d && d.is_transfer === false ? 'Unmarked as transfer' : 'Marked as transfer',
   note: () => 'Note updated',
   excluded: (d) => d && d.is_excluded ? 'Excluded from reports' : 'Included in reports',
@@ -402,50 +402,62 @@ async function openPickerFor(id, anchor) {
 /* ---------- mutations ---------- */
 async function setCategory(ids, categoryId) {
   const prev = ids.map((id) => ({ id, category_id: tx.byId.get(id)?.category_id ?? null, status: tx.byId.get(id)?.category_status, source: tx.byId.get(id)?.category_source }));
+  const local = ids.map(snapshotOf);
   ids.forEach((id) => { const it = tx.byId.get(id); if (it) { it.category_id = categoryId; it.category_status = categoryId ? 'confirmed' : 'none'; it.category_source = categoryId ? 'manual' : null; rerenderRow(id); } });
   const c = catOf(categoryId);
   try {
+    let before = local;
     if (ids.length === 1) await api(`/api/transactions/${ids[0]}`, { method: 'PUT', body: { category_id: categoryId } });
-    else await api('/api/transactions/bulk', { method: 'POST', body: { ids, action: categoryId ? 'categorize' : 'uncategorize', category_id: categoryId } });
-    toast(`${ids.length === 1 ? 'Categorized' : `${fmtNumber(ids.length)} categorized`} as ${c ? c.name : 'uncategorized'}`, { type: 'success', action: { label: 'Undo', fn: () => undoCategory(prev) } });
+    else { const r = await api('/api/transactions/bulk', { method: 'POST', body: { ids, action: categoryId ? 'categorize' : 'uncategorize', category_id: categoryId } }); if (r && r.before) before = r.before; }
+    ui.undoable(`${ids.length === 1 ? 'Categorized' : `${fmtNumber(ids.length)} categorized`} as ${c ? c.name : 'uncategorized'}`, () => restoreItems(before));
     afterChange();
   } catch (err) {
     prev.forEach((p) => { const it = tx.byId.get(p.id); if (it) { it.category_id = p.category_id; it.category_status = p.status; it.category_source = p.source; rerenderRow(p.id); } });
     toast(err.message, { type: 'error', action: { label: 'Retry', fn: () => setCategory(ids, categoryId) } });
   }
 }
-async function undoCategory(prev) {
-  const groups = new Map();
-  prev.forEach((p) => { const k = String(p.category_id); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p.id); });
-  try {
-    for (const [k, ids] of groups) {
-      const cid = k === 'null' ? null : Number(k);
-      await api('/api/transactions/bulk', { method: 'POST', body: { ids, action: cid ? 'categorize' : 'uncategorize', category_id: cid, learn: false } });
-      ids.forEach((id) => { const it = tx.byId.get(id); const p = prev.find((x) => x.id === id); if (it) { it.category_id = cid; it.category_status = p.status; it.category_source = p.source; rerenderRow(id); } });
-    }
-    toast('Undone', { type: 'info' });
-    afterChange();
-  } catch (err) { toast(err.message, { type: 'error' }); }
+/* The fields a bulk change can alter (mirrors util.SNAPSHOT_FIELDS on the server). A local snapshot
+   backs the single-row PUT paths; bulk responses carry an exact server-side `before`. */
+const SNAPSHOT_FIELDS = ['category_id', 'category_status', 'category_source', 'category_rule_id', 'category_confidence', 'ai_rationale', 'is_transfer', 'is_excluded', 'transfer_pair_id'];
+function snapshotOf(id) {
+  const it = tx.byId.get(id) || {};
+  const s = { id };
+  SNAPSHOT_FIELDS.forEach((k) => { s[k] = it[k] == null ? null : it[k]; });
+  return s;
+}
+async function restoreItems(before) {
+  const ids = before.map((b) => b.id);
+  await api('/api/transactions/bulk', { method: 'POST', body: { ids, action: 'restore', items: before } });
+  await refreshItems(ids);
+  refreshTotals();
+  afterChange();
 }
 async function updateItem(id, body, msg) {
+  const before = ('is_transfer' in body || 'is_excluded' in body) ? snapshotOf(id) : null;
   try {
     const updated = await api(`/api/transactions/${id}`, { method: 'PUT', body });
     Object.assign(tx.byId.get(id) || {}, updated);
     rerenderRow(id);
-    if (msg) toast(msg, { type: 'success' });
+    if (msg && before) ui.undoable(msg, () => restoreItems([before]));
+    else if (msg) toast(msg, { type: 'success' });
     afterChange();
-    if ('is_transfer' in body || 'is_excluded' in body) refreshTotals();
+    if (before) refreshTotals();
     return updated;
   } catch (err) { toast(err.message, { type: 'error' }); return null; }
 }
-async function bulk(ids, action, extra = {}) {
+async function bulk(ids, action, extra = {}, { silent = false } = {}) {
   try {
     const r = await api('/api/transactions/bulk', { method: 'POST', body: { ids, action, ...extra } });
     if (action === 'delete') { removeRows(ids); tx.total -= ids.length; paintSummary(); refreshTotals(); }
     else if (ids.length > 20) { await reload(); }
     else { await refreshItems(ids); refreshTotals(); }
-    const labels = { accept_suggestion: 'Suggestion accepted', reject_suggestion: 'Suggestion rejected', set_transfer: 'Marked as transfer', unset_transfer: 'Unmarked as transfer', exclude: 'Excluded from reports', include: 'Included in reports', delete: 'Deleted', categorize: 'Categorized', uncategorize: 'Category cleared' };
-    toast(`${labels[action] || 'Updated'}${ids.length > 1 ? ` · ${fmtNumber(r.updated)} rows` : ''}`, { type: 'success' });
+    const labels = { accept_suggestion: 'Suggestion accepted', reject_suggestion: 'Suggestion rejected', set_transfer: 'Marked as transfer', unset_transfer: 'Unmarked as transfer', exclude: 'Excluded from reports', include: 'Included in reports', delete: 'Deleted', categorize: 'Categorized', uncategorize: 'Category cleared', flip_sign: 'Sign flipped' };
+    const msg = `${labels[action] || 'Updated'}${ids.length > 1 ? ` · ${fmtNumber(r.updated)} rows` : ''}`;
+    if (!silent) {
+      if (action === 'flip_sign') ui.undoable(msg, () => bulk(ids, 'flip_sign', {}, { silent: true }));
+      else if (r && r.before && r.before.length) ui.undoable(msg, () => restoreItems(r.before));
+      else toast(msg, { type: 'success' });
+    }
     afterChange();
   } catch (err) { toast(err.message, { type: 'error' }); }
 }

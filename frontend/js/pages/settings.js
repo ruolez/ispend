@@ -331,13 +331,20 @@ function openUserModal() {
 function openUserMenuFor(anchor, u) {
   const isMe = u.id === state.me.id;
   ui.menu(anchor, [
-    { label: u.role === 'admin' ? 'Make regular user' : 'Make admin', icon: 'shield', disabled: isMe, onClick: async () => { await api(`/api/users/${u.id}`, { method: 'PUT', body: { role: u.role === 'admin' ? 'user' : 'admin' } }); loadUsers(); } },
+    { label: u.role === 'admin' ? 'Make regular user' : 'Make admin', icon: 'shield', disabled: isMe, onClick: async () => {
+      const promote = u.role !== 'admin';
+      if (!(await ui.confirm({ title: promote ? `Make ${u.username} an admin?` : `Remove admin from ${u.username}?`, body: promote ? 'Admins manage users and can publish the shared AI key. The change applies on their next request.' : 'They keep their data but lose user management and the shared AI key on their next request.', confirmText: promote ? 'Make admin' : 'Remove admin' }))) return;
+      await api(`/api/users/${u.id}`, { method: 'PUT', body: { role: promote ? 'admin' : 'user' } }); toast('Role updated', { type: 'success' }); loadUsers();
+    } },
     { label: 'Reset password', icon: 'lock', onClick: () => {
       const m = ui.modal({ title: `Reset password for ${u.username}`, html: `<div class="field"><label for="rp">New password</label><input id="rp" class="input" type="password" minlength="10" autofocus></div>`,
         actions: [{ label: 'Cancel' }, { label: 'Reset', primary: true, onClick: async () => { await api(`/api/users/${u.id}/password`, { method: 'PUT', body: { password: m.el.querySelector('#rp').value } }); toast('Password reset', { type: 'success' }); } }] });
     } },
     { divider: true },
-    { label: u.is_active ? 'Deactivate' : 'Activate', icon: u.is_active ? 'zap-off' : 'zap', disabled: isMe, onClick: async () => { await api(`/api/users/${u.id}`, { method: 'PUT', body: { is_active: !u.is_active } }); loadUsers(); } },
+    { label: u.is_active ? 'Deactivate' : 'Activate', icon: u.is_active ? 'zap-off' : 'zap', disabled: isMe, onClick: async () => {
+      if (u.is_active && !(await ui.confirm({ title: `Deactivate ${u.username}?`, body: 'They are signed out at once and cannot sign in until reactivated. Their data is kept.', confirmText: 'Deactivate', danger: true }))) return;
+      await api(`/api/users/${u.id}`, { method: 'PUT', body: { is_active: !u.is_active } }); toast(u.is_active ? 'User deactivated' : 'User activated', { type: 'success' }); loadUsers();
+    } },
     { label: 'Delete permanently', icon: 'trash', danger: true, disabled: isMe, onClick: async () => {
       if (!(await ui.confirm({ title: `Delete ${u.username}?`, body: `This permanently deletes the user and all ${fmtNumber(u.txn_count)} of their transactions, accounts, categories and rules.`, confirmText: 'Delete user', danger: true }))) return;
       await api(`/api/users/${u.id}?permanent=true`, { method: 'DELETE' }); toast('User deleted'); loadUsers();
@@ -376,7 +383,7 @@ async function onAction(e) {
       { label: 'Edit', icon: 'pencil', onClick: () => openAccountModal(acct) },
       { label: 'View transactions', icon: 'list', href: `/transactions.html?acct=${acct.id}` },
       { divider: true },
-      { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); toast(acct.is_active ? 'Account archived' : 'Account restored', { type: 'success' }); loadAccounts(); } },
+      { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); ui.undoable(acct.is_active ? 'Account archived' : 'Account restored', async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: acct.is_active } }); store.invalidate('accounts'); loadAccounts(); }); loadAccounts(); } },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => {
         const body = acct.txn_count ? `This deletes the account and its ${plural(acct.txn_count, 'transaction')}. This cannot be undone.` : 'This account has no transactions.';
         if (!(await ui.confirm({ title: `Delete ${acct.name}?`, body, confirmText: 'Delete', danger: true }))) return;
