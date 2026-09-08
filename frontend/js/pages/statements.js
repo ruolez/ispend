@@ -43,8 +43,8 @@ function renderStatements() {
     host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'No statements yet', body: 'Upload a CSV, Excel or PDF statement from your bank or card. iSpend detects the format, checks for duplicates and categorizes what it can.', action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements"><thead><tr>
-      <th>File</th><th class="hide-mobile">Bank</th><th>Account</th><th class="hide-mobile">Period</th><th>Status</th><th class="right hide-mobile">Rows</th><th class="hide-mobile">Uploaded</th><th class="hide-mobile">By</th><th class="col-actions"><span class="sr-only">Actions</span></th>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements tbl--cards"><thead><tr>
+      <th class="col-file">File</th><th class="col-bank hide-mobile">Bank</th><th class="col-account">Account</th><th class="col-period">Period</th><th class="col-status">Status</th><th class="right col-rows">Rows</th><th class="col-uploaded">Uploaded</th><th class="col-by hide-mobile">By</th><th class="col-actions"><span class="sr-only">Actions</span></th>
     </tr></thead><tbody>${stState.rows.map(statementRow).join('')}</tbody></table></div>`;
 }
 
@@ -54,21 +54,21 @@ function statementRow(s) {
   const imported = stats.imported != null ? stats.imported : (s.status === 'committed' ? s.txn_count : null);
   const skipped = (stats.skipped_duplicates || 0) + (stats.skipped_invalid || 0) + (stats.excluded_by_user || 0);
   let rows = '—';
-  if (s.status === 'committed') rows = `<span class="st-counts"><b>${fmtNumber(imported)}</b> imported${skipped ? `<span class="muted"> · ${fmtNumber(skipped)} skipped</span>` : ''}</span>`;
-  else if (s.status === 'previewed') rows = `<span class="st-counts">${fmtNumber(stats.rows_total || stats.rows_valid || 0)} found${stats.dupes_existing ? `<span class="muted"> · ${fmtNumber(stats.dupes_existing)} dup</span>` : ''}</span>`;
+  if (s.status === 'committed') rows = `<span class="st-counts"><b>${fmtNumber(imported)}</b> imported${skipped ? `<span class="muted">${fmtNumber(skipped)} skipped</span>` : ''}</span>`;
+  else if (s.status === 'previewed') rows = `<span class="st-counts">${fmtNumber(stats.rows_total || stats.rows_valid || 0)} found${stats.dupes_existing ? `<span class="muted">${fmtNumber(stats.dupes_existing)} duplicates</span>` : ''}</span>`;
   const period = s.period_start ? `${fmtDate(s.period_start)} – ${fmtDate(s.period_end || s.period_start)}` : '—';
   const isClickable = s.status === 'previewed' || s.status === 'committed';
   const href = s.status === 'previewed' ? `/import.html?statement=${s.id}` : s.status === 'committed' ? `/transactions.html?statement=${s.id}&range=all` : null;
   return `<tr data-id="${s.id}" class="${isClickable ? 'is-clickable' : ''}">
-    <td><div class="st-file"><span class="st-file-icon ${esc(s.file_kind)}">${icon(KIND_ICON[s.file_kind] || 'file')}</span>
+    <td class="col-file"><div class="st-file"><span class="st-file-icon ${esc(s.file_kind)}">${icon(KIND_ICON[s.file_kind] || 'file')}</span>
       <div class="merchant">${href ? `<a class="st-file-name row-link" href="${href}" data-tip="${esc(s.original_filename)}">${esc(s.original_filename)}</a>` : `<span class="st-file-name" title="${esc(s.original_filename)}">${esc(s.original_filename)}</span>`}<span class="st-file-meta">${esc(String(s.file_kind || '').toUpperCase())} · ${fmtBytes(s.file_size)}${s.ocr_applied ? ' · OCR' : ''}</span></div></div></td>
-    <td class="hide-mobile">${esc(bankLabel(s.bank_profile))}</td>
-    <td>${s.account_name ? esc(s.account_name) : '<span class="text-4">Not set</span>'}</td>
-    <td class="hide-mobile text-2">${period}</td>
-    <td><span class="st-status"><span class="badge ${st.cls}" aria-label="Status: ${esc(st.label)}${st.spin ? ', in progress' : ''}"${st.spin ? ' aria-busy="true"' : ''}>${st.spin ? '<span class="spinner" aria-hidden="true"></span>' : ''}${esc(st.label)}</span>${s.status === 'error' && s.error_message ? `<span class="text-3 fs-xs truncate" style="max-width:220px" title="${esc(s.error_message)}">${esc(s.error_message)}</span>` : ''}</span></td>
-    <td class="right hide-mobile">${rows}</td>
-    <td class="hide-mobile text-3" title="${esc(fmtDateTime(s.created_at))}">${fmtRelative(s.created_at)}</td>
-    <td class="hide-mobile text-3">${s.username ? `<span class="row gap-2"><span class="avatar avatar-xs" aria-hidden="true">${esc(initials(s.username))}</span><span>${esc(s.username)}</span></span>` : '—'}</td>
+    <td class="col-bank hide-mobile">${esc(bankLabel(s.bank_profile))}</td>
+    <td class="col-account" data-label="Account">${s.account_name ? esc(s.account_name) : '<span class="text-4">Not set</span>'}</td>
+    <td class="col-period text-2" data-label="Period">${period}</td>
+    <td class="col-status" data-label="Status"><span class="st-status"><span class="badge ${st.cls}" aria-label="Status: ${esc(st.label)}${st.spin ? ', in progress' : ''}"${st.spin ? ' aria-busy="true"' : ''}>${st.spin ? '<span class="spinner" aria-hidden="true"></span>' : ''}${esc(st.label)}</span>${s.status === 'error' && s.error_message ? `<span class="text-3 fs-xs truncate" style="max-width:220px" title="${esc(s.error_message)}">${esc(s.error_message)}</span>` : ''}</span></td>
+    <td class="right col-rows" data-label="Rows">${rows}</td>
+    <td class="col-uploaded text-3" data-label="Uploaded" title="${esc(fmtDateTime(s.created_at))}">${fmtRelative(s.created_at)}</td>
+    <td class="col-by hide-mobile text-3">${s.username ? `<span class="row gap-2"><span class="avatar avatar-xs" aria-hidden="true">${esc(initials(s.username))}</span><span>${esc(s.username)}</span></span>` : '—'}</td>
     <td class="col-actions"><div class="row-actions">${s.status === 'previewed' ? `<a class="btn btn-xs btn-secondary" href="/import.html?statement=${s.id}" data-stop>Continue</a>` : ''}<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${s.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }

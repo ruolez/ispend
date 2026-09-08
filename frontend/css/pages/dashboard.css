@@ -40,7 +40,17 @@
 
 .dash-empty { padding: var(--sp-6); }
 .dash-empty .empty { padding-top: var(--sp-6); }
-@media (max-width: 640px) { .page-head .page-actions { width: 100%; justify-content: space-between; } }
+@media (max-width: 640px) {
+  .page-head .page-actions { width: 100%; justify-content: space-between; }
+  .month-nav { flex: 1 1 auto; }
+  .month-nav #month-btn { flex: 1 1 auto; }
+  .recent .rt-meta { flex-wrap: wrap; }
+  .recent .rt-meta .truncate { max-width: none; }
+  .inc-row--src { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name num" "sub sub"; }
+  .inc-row--src .inc-name { grid-area: name; }
+  .inc-row--src .sub { grid-area: sub; white-space: normal; }
+  .inc-row--src .num { grid-area: num; }
+}
 
 .stat-delta { white-space: nowrap; }
 @media (max-width: 480px) { #monthly-hint { display: none; } }

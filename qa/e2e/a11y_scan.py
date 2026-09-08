@@ -233,8 +233,8 @@ def main():
                     rec['focus'] = tab_focus(page, 15)
                     results['admin_runs'].append(rec)
                     print(f"[admin {theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} lowc={len(rec.get('walk', {}).get('contrast', []))} small={len(rec.get('walk', {}).get('small', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
-                    # read-only layer states on the wide viewport
-                    if w == 1440:
+                    # read-only layer states on the wide viewport and on the phone (bottom sheets)
+                    if w in (1440, 390):
                         states = []
                         if pg == 'index':
                             states.append(('user-menu', lambda: page.click('#tb-user')))

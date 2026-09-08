@@ -22,7 +22,13 @@
 .tbl.report-tbl tbody tr.is-clickable:hover .name { color: var(--accent); }
 .totals-row td { font-weight: 600; background: var(--surface-2); }
 .chart-toolbar { display: flex; align-items: center; gap: var(--sp-2); }
-@media (max-width: 640px) { .filter-row .hint { display: none; } .spark-cell, .col-avg, .col-count { display: none; } }
+@media (max-width: 640px) {
+  .filter-row .hint { display: none; }
+  .spark-cell, .col-avg, .col-count { display: none; }
+  .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent); }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-row > * { flex: 0 0 auto; }
+}
 
 /* compare tab: two month pickers */
 .compare-row { display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }

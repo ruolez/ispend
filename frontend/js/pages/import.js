@@ -318,10 +318,10 @@ function previewTable(s) {
     (r.problems || []).forEach((p) => badges.push(`<span class="badge badge-danger" tabindex="0" data-tip="${esc(p)}">${esc(p.length > 24 ? p.slice(0, 22) + '…' : p)}</span>`));
     return `<tr data-row="${r.id}" class="${excluded ? 'is-excluded' : ''}">
       <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid && !r.duplicate_of ? 'checked' : ''} ${!r.is_valid || r.duplicate_of ? 'disabled' : ''} ${r.duplicate_of ? 'title="Already imported: duplicates are always skipped"' : ''} aria-label="Include row"></td>
-      <td class="num nowrap">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
-      <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
-      <td>${r.is_valid ? catChip(r.category_id, r.category_source, r.id) : ''}</td>
-      <td class="right"><span class="amt ${r.amount > 0 ? 'amt--income' : 'amt--expense'}">${r.amount != null ? fmtMoney(r.amount, cur, { sign: 'always' }) : '<span class="text-danger">—</span>'}</span></td>
+      <td class="num nowrap col-date">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
+      <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw" data-date="${r.txn_date ? esc(fmtDate(r.txn_date)) : ''}">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
+      <td class="col-cat">${r.is_valid ? catChip(r.category_id, r.category_source, r.id) : ''}</td>
+      <td class="right col-amt"><span class="amt ${r.amount > 0 ? 'amt--income' : 'amt--expense'}">${r.amount != null ? fmtMoney(r.amount, cur, { sign: 'always' }) : '<span class="text-danger">—</span>'}</span></td>
     </tr>`;
   }).join('');
   return `<div class="preview-head">

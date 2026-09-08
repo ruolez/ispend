@@ -4,6 +4,8 @@
 .ins-grid > * { min-width: 0; }
 .rec-table td { vertical-align: middle; }
 .rec-table .col-last, .rec-table .rec-next .when, .rec-table .rec-amt { white-space: nowrap; }
+.rec-table .col-merchant { min-width: 170px; }
+.rec-merchant a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-table th:last-child, .rec-table td:last-child { width: 36px; }
 .rec-merchant { display: flex; flex-direction: column; min-width: 0; }
 .rec-merchant a { color: var(--text-1); font-weight: 500; text-decoration: none; }
@@ -52,5 +54,11 @@ tr:hover .rec-dismiss, tr:focus-within .rec-dismiss { opacity: 1; }
 .ai-meta { font-size: var(--fs-xs); color: var(--text-4); margin-top: var(--sp-4); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .ai-thinking { display: flex; flex-direction: column; gap: 10px; }
 .ai-thinking .hint { display: flex; align-items: center; gap: 8px; }
-@media (max-width: 640px) { .rec-table .col-last, .rec-table .col-cadence { display: none; } .rec-dismiss { opacity: 1; } }
+@media (max-width: 768px) {
+  .rec-table .col-last, .rec-table .col-cadence { display: none; }
+  .rec-dismiss { opacity: 1; }
+  .rec-table .col-merchant { min-width: 0; padding-right: 36px; }
+  .rec-table .rec-amt, .rec-table .rec-next { flex-direction: row; align-items: center; gap: 6px; }
+  .rec-table th:last-child, .rec-table td:last-child { width: auto; }
+}
 

@@ -50,7 +50,7 @@ initNav('transactions').then(async () => {
   document.body.addEventListener('click', (e) => { const b = e.target.closest('[data-act="reload"]'); if (b) reload(); });
   store.on('categories-changed', async () => { await loadRefs(); rerenderAll(); });
   setupObserver();
-  window.addEventListener('resize', debounce(setupObserver, 200));
+  window.addEventListener('resize', debounce(() => { setupObserver(); syncSegScroll(); }, 200));
   registerShortcuts();
   paintToolbar();
   await reload();
@@ -158,7 +158,16 @@ function paintToolbar() {
     th.setAttribute('aria-sort', s === `-${k}` ? 'descending' : s === k ? 'ascending' : 'none');
   });
   $('#btn-export').href = '/api/transactions/export' + toQuery(queryParams());
+  syncSegScroll();
   $('#tx-sub').textContent = f.statement ? 'Rows imported from one statement.' : 'Every charge across your accounts.';
+}
+/* On narrow screens the status seg scrolls sideways: fade its clipped edge and keep the active button in view. */
+function syncSegScroll() {
+  $$('#tx-toolbar .seg').forEach((seg) => {
+    seg.classList.toggle('is-scrollable', seg.scrollWidth > seg.clientWidth + 1);
+    const on = seg.querySelector('.seg-btn.active');
+    if (on && seg.classList.contains('is-scrollable')) on.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  });
 }
 function openAccountFilter() {
   const counts = new Map(((tx.facets || {}).accounts || []).map((a) => [a.id, a.n]));

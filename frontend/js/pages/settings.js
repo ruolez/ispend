@@ -40,7 +40,7 @@ function showTab() {
 /* ---------- Accounts ---------- */
 async function loadAccounts() {
   const host = $('#accounts-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
   try {
     [state.accounts, state.institutions] = await Promise.all([api('/api/accounts?all=1'), api('/api/accounts/institutions').catch(() => [])]);
   } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-accounts' }); return; }
@@ -49,7 +49,7 @@ async function loadAccounts() {
     return;
   }
   const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k || '—';
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.accounts.map((a) => `<tr data-id="${a.id}" class="${a.is_active ? '' : 'text-3'}">
       <td><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1 fw-500">${esc(a.name)}</span>${a.last4 ? `<span class="text-4 mono">•${esc(a.last4)}</span>` : ''}${a.is_active ? '' : '<span class="badge badge-neutral">Archived</span>'}</span></td>
       <td data-label="Institution">${esc(instLabel(a.institution))}</td>
@@ -301,9 +301,9 @@ function paintRadios(group) { $$('.radio-item', group).forEach((l) => l.classLis
 /* ---------- Users ---------- */
 async function loadUsers() {
   const host = $('#users-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
   try { state.users = await api('/api/users'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-users' }); return; }
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.users.map((u) => `<tr data-id="${u.id}">
       <td><span class="row gap-2"><span class="avatar">${esc(initials(u.username))}</span><span class="fw-500">${esc(u.username)}</span>${u.id === state.me.id ? '<span class="badge badge-accent">You</span>' : ''}</span></td>
       <td data-label="Role"><span class="badge ${u.role === 'admin' ? 'badge-info' : 'badge-neutral'}">${esc(u.role)}</span></td>

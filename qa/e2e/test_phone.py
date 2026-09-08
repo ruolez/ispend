@@ -59,8 +59,8 @@ GROUPS_JS = """
 """
 
 # Pages whose phone layout still clips a table or wraps an amount (audit A1-A7); Phase 4 removes these.
-OVERFLOW_XFAIL = {"index", "insights", "reports"}
-WRAP_XFAIL = {"index", "reports"}
+OVERFLOW_XFAIL = set()
+WRAP_XFAIL = set()
 KEYBOARD_XFAIL = set()
 
 
@@ -253,3 +253,60 @@ def test_rem_scale(make_context):
     assert sizes == {"body": 14, "btn": 13, "th": 11, "stat": 26}, sizes
     scaled = page.evaluate("() => { document.documentElement.style.fontSize = '20px'; const v = parseFloat(getComputedStyle(document.querySelector('.btn')).fontSize); document.documentElement.style.fontSize = ''; return v; }")
     assert abs(scaled - 16.25) < 0.01, scaled
+
+
+# ---------------------------------------------------------------------------------------------
+# phone parity (Phase 4)
+
+def test_kpi_grid_2x2_390(make_context):
+    """Stat cards sit two per row on a phone and their values stay on one line."""
+    for key in ("index", "insights"):
+        _, page, _ = make_context("admin", "light", "390")
+        page.goto(PAGES[key])
+        wait_loaded(page)
+        rects = page.evaluate("() => Array.from(document.querySelectorAll('.stat-grid > .stat')).map((s) => { const r = s.getBoundingClientRect(); const v = s.querySelector('.stat-value').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(v.height) }; })")
+        assert len(rects) >= 3, f"{key}: {rects}"
+        assert rects[0]["top"] == rects[1]["top"] and rects[2]["top"] > rects[0]["top"], f"{key}: cards are not 2 per row: {rects}"
+        assert all(r["h"] <= 30 for r in rects), f"{key}: a stat value wraps: {rects}"
+
+
+def test_card_mode_tables_390(make_context):
+    """Breakdown, recurring, statements and import-preview tables become cards on a phone: no sideways scroll."""
+    _, page, _ = make_context("admin", "light", "390")
+    for key, table in (("index", ".bd-table"), ("insights", ".rec-table"), ("statements", ".tbl-statements")):
+        page.goto(PAGES[key])
+        wait_loaded(page)
+        st = page.evaluate("(sel) => { const t = document.querySelector(sel); if (!t) return null; const th = t.querySelector('thead'); const w = t.closest('.tbl-wrap') || t.parentElement; return { thead: th ? getComputedStyle(th).display : 'none', sw: w.scrollWidth, cw: w.clientWidth }; }", table)
+        assert st, f"{key}: {table} not rendered"
+        assert st["thead"] == "none" and st["sw"] <= st["cw"] + 1, f"{key} {table}: {st}"
+    ctx, page, _ = make_context("qa_tester", "light", "390")
+    fixture = open("/Users/ruolez/Desktop/Dev/ispend/backend/tests/fixtures/chase_card.csv", "rb").read()
+    r = ctx.request.post("/api/statements", multipart={"file": {"name": "chase_card.csv", "mimeType": "text/csv", "buffer": fixture}})
+    assert r.ok, r.text()
+    sid = r.json()["id"]
+    try:
+        for _ in range(60):
+            body = ctx.request.get(f"/api/statements/{sid}").json()
+            if body["status"] in ("previewed", "error"):
+                break
+            page.wait_for_timeout(300)
+        assert body["status"] == "previewed", body.get("error_message")
+        page.goto(f"/import.html?statement={sid}")
+        page.wait_for_selector(".tbl-preview tr[data-row]", timeout=15000)
+        st = page.evaluate("() => { const t = document.querySelector('.tbl-preview'); const w = t.closest('.tbl-wrap'); return { thead: getComputedStyle(t.querySelector('thead')).display, sw: w.scrollWidth, cw: w.clientWidth, right: Math.round(t.getBoundingClientRect().right), vw: innerWidth }; }")
+        assert st["thead"] == "none" and st["sw"] <= st["cw"] + 1 and st["right"] <= st["vw"] + 1, st
+    finally:
+        ctx.request.delete(f"/api/statements/{sid}")
+
+
+def test_bottom_sheet_pickers_390(make_context):
+    """Popovers open as bottom sheets on a phone: full width, inside the viewport, presets and Apply visible."""
+    _, page, _ = make_context("admin", "light", "390")
+    page.goto(PAGES["transactions"])
+    wait_loaded(page)
+    page.click("#f-range")
+    page.wait_for_selector(".popover--sheet [data-preset]", timeout=5000)
+    box = page.evaluate("() => { const p = document.querySelector('.popover--sheet'); const r = p.getBoundingClientRect(); return { x: r.x, right: r.right, bottom: r.bottom, vw: innerWidth, vh: innerHeight, apply: !!p.querySelector('[data-act=apply]') && p.querySelector('[data-act=apply]').getBoundingClientRect().height > 0 }; }")
+    assert box["x"] >= 0 and box["right"] <= box["vw"] + 1 and box["bottom"] <= box["vh"] + 1 and box["apply"], box
+    page.keyboard.press("Escape")
+    page.wait_for_selector(".popover", state="detached", timeout=3000)

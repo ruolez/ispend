@@ -191,11 +191,15 @@ const ui = (() => {
   }
 
   /* ---------- Popover ---------- */
-  function popover(anchor, el, { placement = 'bottom-start', offset = 6, onClose, closeOnOutside = true, matchWidth = false } = {}) {
+  /* On phones (≤640px) every popover becomes a bottom sheet unless noSheet is set. */
+  function popover(anchor, el, { placement = 'bottom-start', offset = 6, onClose, closeOnOutside = true, matchWidth = false, noSheet = false } = {}) {
+    const sheet = !noSheet && window.matchMedia('(max-width: 640px)').matches;
     el.classList.add('popover');
+    if (sheet) el.classList.add('popover--sheet');
     root('popover-root').appendChild(el);
-    if (matchWidth) el.style.minWidth = `${anchor.getBoundingClientRect().width}px`;
+    if (matchWidth && !sheet) el.style.minWidth = `${anchor.getBoundingClientRect().width}px`;
     function position() {
+      if (sheet) return;
       const r = anchor.getBoundingClientRect();
       const w = el.offsetWidth, h = el.offsetHeight;
       const vw = window.innerWidth, vh = window.innerHeight;

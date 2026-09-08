@@ -8,10 +8,13 @@
 .st-status { display: inline-flex; align-items: center; gap: 6px; }
 .st-counts { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .st-counts .muted { color: var(--text-4); }
+.tbl-statements .col-period, .tbl-statements .col-uploaded { white-space: nowrap; }
+/* rows: count on one line, the skipped/dup note underneath so the column never widens the table */
+.tbl-statements .st-counts { display: inline-flex; flex-direction: column; align-items: flex-end; white-space: nowrap; line-height: 1.3; }
+.tbl-statements .st-counts .muted { font-size: var(--fs-xs); }
+.tbl-statements .col-file { max-width: 360px; }
+.tbl-statements .col-actions { width: 84px; } /* room for Continue + menu so a hover never widens the table */
 @media (max-width: 768px) {
-  .tbl-statements thead { display: none; }
-  .tbl-statements tr { display: grid; grid-template-columns: 1fr auto; padding: 10px 12px; gap: 4px 10px; border-bottom: 1px solid var(--border); }
-  .tbl-statements td { display: block; padding: 0; border: 0; height: auto; }
-  .tbl-statements td.col-actions { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
-  .tbl-statements td.hide-mobile { display: none; }
+  .tbl-statements .col-file { max-width: none; }
+  .tbl-statements .col-actions { width: auto; }
 }

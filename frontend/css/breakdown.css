@@ -24,6 +24,22 @@
 .bd-delta.is-good { color: var(--success); }
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
 @media (max-width: 768px) { .bd-share, .col-delta { display: none; } .bd-name { min-width: 0; } }
+/* phone: one card per category, share bar on its own line */
+@media (max-width: 640px) {
+  .bd-wrap { overflow-x: visible; }
+  .bd-table thead { display: none; }
+  .bd-table, .bd-table tbody { display: block; width: 100%; }
+  .bd-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name total" "share share"; gap: 2px 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .bd-table tr.bd-child { padding-left: 28px; }
+  .bd-table tr:last-child { border-bottom: 0; }
+  .bd-table td { display: block; padding: 0; border: 0; height: auto; }
+  .bd-table td.bd-name { grid-area: name; min-width: 0; }
+  .bd-table td.col-total { grid-area: total; white-space: nowrap; text-align: right; }
+  .bd-table td.bd-share { grid-area: share; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bd-table td.bd-share .share-bar { flex: 1 1 auto; width: auto; }
+  .bd-table td.col-count, .bd-table td.col-delta, .bd-table tr.totals-row td.bd-share { display: none; }
+  .bd-table tr.totals-row td { font-weight: 600; }
+}
 
 .bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-xs); color: inherit; cursor: pointer; }
 .bd-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

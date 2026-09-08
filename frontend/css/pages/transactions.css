@@ -67,6 +67,7 @@
   .tbl-tx td.col-date { display: none; }
   .tbl-tx td.col-merchant { grid-area: merchant; }
   .tbl-tx td.col-merchant .merchant-raw::before { content: attr(data-date) ' · '; }
+  .tbl-tx td.col-merchant .merchant-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .tbl-tx td.col-cat { grid-area: cat; }
   .tbl-tx td.col-acct { grid-area: acct; }
   .tbl-tx td.col-amt { grid-area: amt; text-align: right; font-weight: 600; }

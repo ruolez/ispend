@@ -353,6 +353,7 @@ button.catchip--empty:hover { color: var(--text-1); border-style: solid; }
 .row-actions > .btn-icon { opacity: 0.45; transition: opacity var(--dur-1); } /* icon actions stay discoverable at rest; text buttons keep full contrast */
 tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon, .row-actions > .btn-icon:focus-visible { opacity: 1; }
 .tbl-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.seg.is-scrollable { mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent); } /* the clipped edge fades so a scrolling seg reads as scrollable */
 .tbl-summary { display: flex; gap: var(--sp-4); flex-wrap: wrap; font-size: var(--fs-base); color: var(--text-3); padding: 0 2px; margin-bottom: var(--sp-2); }
 .tbl-summary b { color: var(--text-1); font-weight: 600; }
 .tbl-sentinel { height: 1px; }
@@ -414,6 +415,8 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
 .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
 .menu-label { padding: 8px 10px 4px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-4); }
 .menu-search { padding: 4px 4px 6px; }
+.drp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.drp-custom { border-left: 1px solid var(--border); padding-left: 10px; }
 .menu-opts { max-height: calc(70vh - 96px); overflow-y: auto; overscroll-behavior: contain; }
 .menu-item .check-fake { width: 16px; height: 16px; flex: 0 0 auto; border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--surface); position: relative; }
 .menu-item[aria-checked="true"] .check-fake { background: var(--accent); border-color: var(--accent); }
@@ -568,10 +571,38 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
   .floatbar { bottom: 72px; }
   .field-row { flex-direction: column; gap: 0; }
 }
+@media (max-width: 768px) {
+  /* .tbl--cards: one card per row, header labels painted from td[data-label]; the actions cell pins top-right */
+  .tbl--cards thead { display: none; }
+  .tbl--cards, .tbl--cards tbody, .tbl--cards tr { display: block; width: 100%; }
+  .tbl--cards tr { position: relative; padding: 10px 44px 10px 12px; border-bottom: 1px solid var(--border); }
+  .tbl--cards tr:last-child { border-bottom: 0; }
+  .tbl--cards td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 2px 0; border: 0; height: auto; width: auto; max-width: none; text-align: left; white-space: normal; }
+  .tbl--cards td.right { text-align: left; }
+  .tbl--cards td[data-label]::before { content: attr(data-label); color: var(--text-4); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; flex: 0 0 auto; }
+  .tbl--cards td:first-child { font-size: var(--fs-md); margin-bottom: 4px; }
+  .tbl--cards td.col-actions { position: absolute; top: 8px; right: 6px; width: auto; padding: 0; margin: 0; } /* beats .tbl .col-actions { width: 1% } */
+  .tbl--cards td.col-actions .row-actions, .tbl--cards td.col-actions .row-actions > .btn-icon { opacity: 1; }
+  .tbl--cards td.hide-mobile { display: none; }
+}
 @media (max-width: 640px) {
   .stat-grid { grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
-  .page-actions .btn span.label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* icon-only, name kept */
   .card-head { flex-wrap: wrap; min-height: 0; }
+  .page-head { flex-direction: column; align-items: stretch; }
+  .page-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .page-actions > .seg { flex: 1 1 100%; display: flex; }
+  .page-actions > .seg > .seg-btn { flex: 1 1 auto; }
+  .page-actions > .btn-primary, .page-actions > .btn-secondary { flex: 1 1 auto; }
+  /* sheets sit above the 60px bottom nav so its targets stay unobscured (axe target-size) */
+  .popover--sheet { top: auto !important; left: var(--sp-2) !important; right: var(--sp-2); bottom: calc(60px + var(--sp-2) + env(safe-area-inset-bottom)); width: auto !important; min-width: 0; max-height: calc(100vh - 60px - 48px); overflow-y: auto; border-radius: var(--r-xl); animation: toast-in var(--dur-3) var(--ease-out); }
+  .popover--sheet .drp-grid { grid-template-columns: 1fr; }
+  .popover--sheet .drp-custom { border-left: 0; padding-left: 0; }
+}
+@media (max-width: 480px) {
+  .stat { padding: 12px 14px; min-height: 84px; gap: 4px; }
+  .stat-value { font-size: var(--fs-xl); }
+  .stat-spark { display: none; }
+  .stat-delta { font-size: var(--fs-xs); }
 }
 @media (hover: none) {
   .row-actions, .row-actions > .btn-icon, .cat-actions, .rule-actions, .rec-dismiss, .tbl-tx .row-actions { opacity: 1; }

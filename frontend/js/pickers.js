@@ -178,9 +178,9 @@ function dateRangePicker({ anchor, value = { preset: 'this-month' }, onChange, a
   el.style.width = '360px';
   const cur = rangeDates(value);
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div class="drp-grid">
       <div role="radiogroup" aria-label="Preset ranges">${RANGE_PRESETS.filter((p) => allowAll || p.key !== 'all').map((p) => `<button type="button" class="menu-item" data-preset="${p.key}" role="radio" aria-checked="${value.preset === p.key}"><span class="grow">${esc(p.label)}</span>${value.preset === p.key ? `<span class="menu-check">${icon('check')}</span>` : ''}</button>`).join('')}</div>
-      <div style="border-left:1px solid var(--border);padding-left:10px">
+      <div class="drp-custom">
         <div class="menu-label" style="padding-left:0">Custom</div>
         <div class="field" style="margin-bottom:8px"><label for="drp-from">From</label><input type="date" id="drp-from" class="input input-sm" data-f="from" value="${esc(cur.from || '')}"></div>
         <div class="field" style="margin-bottom:8px"><label for="drp-to">To</label><input type="date" id="drp-to" class="input input-sm" data-f="to" value="${esc(cur.to || '')}"></div>

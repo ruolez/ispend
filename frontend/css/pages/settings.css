@@ -31,15 +31,5 @@
 .ai-stats .v { font-size: var(--fs-lg); font-weight: 600; margin-top: 2px; }
 @media (max-width: 768px) {
   #settings-panels .tbl td, #settings-panels .tbl th { white-space: normal; }
-  #settings-panels .tbl thead { display: none; }
-  #settings-panels .tbl, #settings-panels .tbl tbody, #settings-panels .tbl tr { display: block; width: 100%; }
-  #settings-panels .tbl tr { position: relative; padding: 10px 44px 10px 12px; border-bottom: 1px solid var(--border); }
-  #settings-panels .tbl tr:last-child { border-bottom: 0; }
-  #settings-panels .tbl td { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; border: 0; height: auto; width: auto; text-align: left; }
-  #settings-panels .tbl td.right { text-align: left; }
-  #settings-panels .tbl td[data-label]::before { content: attr(data-label); color: var(--text-4); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; align-self: center; }
-  #settings-panels .tbl td.col-actions { position: absolute; top: 8px; right: 6px; padding: 0; }
-  #settings-panels .tbl td.col-actions .row-actions { opacity: 1; }
-  #settings-panels .tbl td:first-child { font-size: var(--fs-md); margin-bottom: 4px; }
   .ai-stats { grid-template-columns: 1fr; }
 }

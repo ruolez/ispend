@@ -68,7 +68,7 @@
           <td class="bd-share"><span class="share-bar" style="--c:${color(p.color)}"><span style="width:${(share * 100).toFixed(1)}%"></span></span><span class="pct">${fmtPct(share)}</span></td>
           <td class="right num col-count">${fmtNumber(p.count)}</td>
           <td class="right col-delta">${deltaHtml(p.total, p.prev, cur, upIsGood)}</td>
-          <td class="right num fw-500">${fmtMoney(p.total, cur)}</td></tr>`;
+          <td class="right num fw-500 col-total">${fmtMoney(p.total, cur)}</td></tr>`;
         if (!hasKids || !open) return head;
         const kids = [];
         if (p.own > 0 && p.children.length) kids.push({ id: p.id, name: `Directly in ${p.name}`, total: p.own, count: p.ownCount, prev: null, direct: true, color: p.color });
@@ -78,11 +78,11 @@
           <td class="bd-share"><span class="share-bar is-sub" style="--c:${color(c.color || p.color)}"><span style="width:${grand ? (c.total / grand * 100).toFixed(1) : 0}%"></span></span><span class="pct text-4">${fmtPct(grand ? c.total / grand : 0)}</span></td>
           <td class="right num col-count text-3">${fmtNumber(c.count)}</td>
           <td class="right col-delta">${c.direct ? '' : deltaHtml(c.total, c.prev, cur, upIsGood)}</td>
-          <td class="right num">${fmtMoney(c.total, cur)}</td></tr>`).join('');
+          <td class="right num col-total">${fmtMoney(c.total, cur)}</td></tr>`).join('');
       }).join('');
       host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl bd-table">
-        ${showHeader ? `<thead><tr><th>Category</th><th>Share</th><th class="right col-count">Transactions</th><th class="right col-delta">vs previous</th><th class="right">Total</th></tr></thead>` : ''}
-        <tbody>${rowsHtml}<tr class="totals-row"><td>Total</td><td></td><td class="right num col-count">${fmtNumber(tree.reduce((s, p) => s + p.count, 0))}</td><td></td><td class="right num">${fmtMoney(grand, cur)}</td></tr></tbody></table></div>
+        ${showHeader ? `<thead><tr><th>Category</th><th>Share</th><th class="right col-count">Transactions</th><th class="right col-delta">vs previous</th><th class="right col-total">Total</th></tr></thead>` : ''}
+        <tbody>${rowsHtml}<tr class="totals-row"><td class="bd-name">Total</td><td class="bd-share"></td><td class="right num col-count">${fmtNumber(tree.reduce((s, p) => s + p.count, 0))}</td><td class="col-delta"></td><td class="right num col-total">${fmtMoney(grand, cur)}</td></tr></tbody></table></div>
         <div class="bd-foot"><button type="button" class="btn btn-ghost btn-xs" data-bd="toggle-all">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
     };
     const toggle = (id) => { if (expanded.has(id)) expanded.delete(id); else expanded.add(id); writeExpanded(key, expanded); draw(); };
