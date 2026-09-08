@@ -103,3 +103,104 @@ def test_seg_tabs_keyboard(make_context, page_key):
         first = page.evaluate(f"() => document.activeElement === document.querySelector(\"{root} [role=radio], {root} [role=tab]\")")
         assert first, f"{page_key} group {g['id'] or g['idx']}: Home did not focus the first item"
         page.keyboard.press("Escape")
+
+
+# ---------------------------------------------------------------------------------------------
+# shared primitives (Phase 1)
+
+def test_global_error_net(make_context):
+    """A rejected promise outside any try/catch surfaces as an error toast (and is still logged)."""
+    _, page, rec = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    page.evaluate("() => { Promise.reject(new Error('qa boom')); }")
+    page.wait_for_selector(".toast-error", timeout=3000)
+    assert "qa boom" in page.locator(".toast-error").first.inner_text()
+    page.evaluate("() => { Promise.reject(new Error('qa boom')); }")
+    page.wait_for_timeout(300)
+    assert page.locator(".toast-error").count() == 1, "the same message within 5 s must not stack"
+    assert any("qa boom" in c["text"] for c in rec.console), "the browser log still carries the rejection"
+
+
+def test_login_expired_notice(make_context):
+    """A browser that signed in before is told its session expired; a fresh one just sees the form."""
+    ctx, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    ctx.clear_cookies()
+    page.goto(PAGES["transactions"])
+    page.wait_for_url(lambda u: "/login.html" in u, timeout=8000)
+    assert "reason=expired" in page.url and "next=%2Ftransactions.html" in page.url
+    assert page.locator("#login-notice").is_visible()
+    assert "expired" in page.locator("#login-notice").inner_text().lower()
+    assert not page.locator("#login-error").is_visible()
+    _, fresh, _ = make_context("anon", "light", "1440")
+    fresh.goto(PAGES["transactions"])
+    fresh.wait_for_url(lambda u: "/login.html" in u, timeout=8000)
+    assert "reason=" not in fresh.url
+    assert not fresh.locator("#login-notice").is_visible()
+
+
+def test_toast_queue(make_context):
+    """More than three toasts queue instead of dropping; identical repeats bump a counter."""
+    _, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    page.evaluate("() => { for (let i = 0; i < 6; i++) toast('qa toast ' + i, { duration: 900 }); }")
+    assert page.locator("#toast-root .toast").count() == 3
+    page.wait_for_timeout(1400)
+    texts = page.locator("#toast-root .toast").all_inner_texts()
+    assert any("qa toast 3" in t for t in texts), f"queued toasts never appeared: {texts}"
+    page.wait_for_timeout(1400)
+    assert page.locator("#toast-root .toast").count() == 0, "queued toasts should have expired by now"
+    page.evaluate("() => { toast('qa same'); toast('qa same'); toast('qa same'); }")
+    page.wait_for_timeout(100)
+    same = page.locator("#toast-root .toast", has_text="qa same")
+    assert same.count() == 1 and "×3" in same.first.inner_text()
+
+
+def test_field_error_primitive(make_context):
+    """ui.fieldError / ui.validate paint an inline message wired through aria-invalid + aria-describedby."""
+    _, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    state = page.evaluate("""() => {
+      const f = document.createElement('div'); f.className = 'field';
+      f.innerHTML = '<label for="qa-in" data-required>Name</label><input class="input" id="qa-in"><div class="hint">A hint</div>';
+      document.getElementById('main').appendChild(f);
+      ui.linkHints(f);
+      const ok = ui.validate(f, [{ sel: '#qa-in', message: 'Name is required' }]);
+      const inp = f.querySelector('#qa-in');
+      const box = f.querySelector('.field-error');
+      const out = { ok, invalid: inp.getAttribute('aria-invalid'), described: inp.getAttribute('aria-describedby'), msg: box && box.textContent.trim(), focused: document.activeElement === inp, boxId: box && box.id, hintId: f.querySelector('.hint').id };
+      inp.value = 'x';
+      out.ok2 = ui.validate(f, [{ sel: '#qa-in', message: 'Name is required' }]);
+      out.cleared = !f.querySelector('.field-error') && !inp.hasAttribute('aria-invalid');
+      out.described2 = inp.getAttribute('aria-describedby');
+      f.remove();
+      return out;
+    }""")
+    assert state["ok"] is False and state["msg"] == "Name is required" and state["invalid"] == "true" and state["focused"]
+    assert set(state["described"].split()) == {state["boxId"], state["hintId"]}
+    assert state["ok2"] is True and state["cleared"] and state["described2"] == state["hintId"]
+
+
+def test_tooltip_focus(make_context):
+    """[data-tip] shows a role=tooltip bubble on focus and hover, linked by aria-describedby; Escape hides it."""
+    _, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    page.evaluate("() => { const b = document.createElement('button'); b.id = 'qa-tip'; b.className = 'btn'; b.textContent = 'Tip'; b.setAttribute('data-tip', 'Hello tooltip'); document.getElementById('main').prepend(b); }")
+    page.focus("#qa-tip")
+    page.wait_for_selector("#ui-tip:visible", timeout=2000)
+    assert page.locator("#ui-tip").inner_text() == "Hello tooltip"
+    assert page.get_attribute("#qa-tip", "aria-describedby") == "ui-tip"
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(100)
+    assert not page.locator("#ui-tip").is_visible() and not page.get_attribute("#qa-tip", "aria-describedby")
+    page.hover("#qa-tip")
+    page.wait_for_selector("#ui-tip:visible", timeout=2000)
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(200)
+    assert not page.locator("#ui-tip").is_visible()
+    assert page.locator(".popover").count() == 0, "the tooltip must not count as an open layer"

@@ -74,6 +74,7 @@ const ui = (() => {
     const el = backdrop.querySelector('.modal');
     const body = el.querySelector('.modal-body');
     if (typeof html === 'string') body.innerHTML = html; else body.appendChild(html);
+    linkHints(body);
     const foot = el.querySelector('.modal-foot');
     const prevFocus = document.activeElement;
     let closed = false;
@@ -95,16 +96,11 @@ const ui = (() => {
         b.type = 'button';
         b.className = `btn ${a.primary ? 'btn-primary' : a.danger ? 'btn-danger-solid' : 'btn-secondary'}${a.cls ? ' ' + a.cls : ''}`;
         b.textContent = a.label;
-        b.addEventListener('click', async () => {
+        b.addEventListener('click', () => {
           if (!a.onClick) return handle.close(a.value);
           if (b.disabled) return;
-          b.classList.add('is-loading');
-          b.disabled = true; // a form Enter relays here through .click(); a disabled button ignores it
-          try {
-            const r = await a.onClick(handle);
-            if (r !== false && a.keepOpen !== true) handle.close(r);
-          } catch (err) { toast(err.message || String(err), { type: 'error' }); }
-          finally { b.classList.remove('is-loading'); b.disabled = false; }
+          // busy() disables the button, so a form Enter relayed through .click() cannot double-submit
+          busy(b, async () => { const r = await a.onClick(handle); if (r !== false && a.keepOpen !== true) handle.close(r); });
         });
         foot.appendChild(b);
       });
@@ -140,7 +136,7 @@ const ui = (() => {
   /* ---------- Drawer (one at a time) ---------- */
   let currentDrawer = null;
   function drawer({ title = '', html = '', foot = '', width, onClose } = {}) {
-    if (currentDrawer) currentDrawer.close({ replaced: true });
+    if (currentDrawer) currentDrawer.forceClose({ replaced: true });
     const host = root('drawer-root');
     const wrap = document.createElement('div');
     wrap.innerHTML = `
@@ -161,7 +157,15 @@ const ui = (() => {
     let dirty = false;
     const handle = {
       el, body, foot: footEl,
-      close(reason) {
+      /* Esc, the X button and the backdrop all ask before discarding unsaved edits (setDirty(true)).
+         Page code that has just saved calls setDirty(false) first, or forceClose(). */
+      async close(reason) {
+        if (closed) return;
+        if (dirty && !(reason && reason.force) && !(await confirm({ title: 'Discard changes?', body: 'You have unsaved changes.', confirmText: 'Discard', danger: true }))) return false;
+        handle.forceClose(reason);
+        return true;
+      },
+      forceClose(reason) {
         if (closed) return; closed = true;
         popLayer(handle); untrap();
         Array.from(wrap.children).forEach((c) => c.remove()); wrap.remove();
@@ -176,10 +180,7 @@ const ui = (() => {
       setDirty(v) { dirty = !!v; },
     };
     el.querySelector('.drawer-close').addEventListener('click', () => handle.close());
-    wrap.querySelector('.drawer-backdrop').addEventListener('click', async () => {
-      if (dirty && !(await confirm({ title: 'Discard changes?', body: 'You have unsaved changes.', confirmText: 'Discard', danger: true }))) return;
-      handle.close();
-    });
+    wrap.querySelector('.drawer-backdrop').addEventListener('click', () => handle.close());
     host.appendChild(wrap);
     setInert(true);
     const untrap = trapFocus(el);
@@ -338,38 +339,53 @@ const ui = (() => {
 
   /* ---------- Tabs & segmented controls (WAI-ARIA, roving tabindex, arrow keys) ---------- */
   let rovingSeq = 0;
-  function rovingGroup(container, items, { attr, activeClass = 'active', onChange, initial }) {
-    let current = Math.max(0, items.findIndex((el) => el.getAttribute(attr) === 'true' || el.classList.contains(activeClass)));
+  /* allowNone: the group may have no selection (index -1); clicking the active item clears it and
+     onChange(null, -1) fires. Re-initialising the same container replaces the previous listeners,
+     so pages may call tabs()/segmented() again after re-rendering the buttons. */
+  function rovingGroup(container, items, { attr, activeClass = 'active', onChange, initial, allowNone = false }) {
+    if (container._roving) container._roving.dispose();
+    let current = items.findIndex((el) => el.getAttribute(attr) === 'true' || el.classList.contains(activeClass));
     if (typeof initial === 'number') current = initial;
+    if (current < 0 && !allowNone) current = 0;
+    if (current < -1) current = -1;
     const paint = () => items.forEach((el, i) => {
       const on = i === current;
       el.setAttribute(attr, on ? 'true' : 'false');
       el.classList.toggle(activeClass, on);
-      el.setAttribute('tabindex', on ? '0' : '-1');
+      el.setAttribute('tabindex', on || (current < 0 && i === 0) ? '0' : '-1');
     });
     const select = (target, { focus = true, silent = false } = {}) => {
       const i = typeof target === 'number' ? target : items.indexOf(target);
-      if (i < 0 || i >= items.length) return;
+      if (i >= items.length || i < -1 || (i === -1 && !allowNone)) return;
       const changed = i !== current;
       current = i; paint();
-      if (focus) items[i].focus();
-      if (changed && !silent && onChange) onChange(items[i], i);
+      if (focus && i >= 0) items[i].focus();
+      if (changed && !silent && onChange) onChange(i >= 0 ? items[i] : null, i);
     };
-    container.addEventListener('keydown', (e) => {
+    const onKey = (e) => {
       const i = items.indexOf(document.activeElement);
       if (i < 0) return;
       const map = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 };
       if (!(e.key in map)) return;
       e.preventDefault();
       select((map[e.key] + items.length) % items.length);
-    });
-    container.addEventListener('click', (e) => { const i = items.findIndex((el) => el.contains(e.target)); if (i >= 0) select(i); });
+    };
+    const onClick = (e) => {
+      const i = items.findIndex((el) => el.contains(e.target));
+      if (i < 0) return;
+      if (allowNone && i === current) select(-1, { focus: false }); else select(i);
+    };
+    container.addEventListener('keydown', onKey);
+    container.addEventListener('click', onClick);
+    container.toggleAttribute('data-allow-none', allowNone);
     paint();
-    return { select, current: () => current, items };
+    const handle = { select, current: () => current, items, dispose() { container.removeEventListener('keydown', onKey); container.removeEventListener('click', onClick); if (container._roving === handle) container._roving = null; } };
+    container._roving = handle;
+    return handle;
   }
   /* container holds role=tab buttons (or any `.tab`/`.seg-btn` children); panels referenced by
      `aria-controls`/`data-panel` get role=tabpanel + aria-labelledby. onChange(tabEl, index). */
-  function tabs(container, { onChange, selector = '[role="tab"]', initial } = {}) {
+  function tabs(container, { onChange, selector = '[role="tab"]', initial, allowNone } = {}) {
     if (!container) return null;
     container.setAttribute('role', 'tablist');
     const items = $$(selector, container);
@@ -379,37 +395,188 @@ const ui = (() => {
       const panel = panelId && document.getElementById(panelId);
       if (panel) { el.setAttribute('aria-controls', panelId); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', el.id); if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '0'); }
     });
-    return rovingGroup(container, items, { attr: 'aria-selected', onChange, initial });
+    return rovingGroup(container, items, { attr: 'aria-selected', onChange, initial, allowNone });
   }
   /* container gets role=radiogroup; each .seg-btn becomes role=radio with aria-checked. onChange(btn, index). */
-  function segmented(container, { onChange, selector = '.seg-btn', initial } = {}) {
+  function segmented(container, { onChange, selector = '.seg-btn', initial, allowNone } = {}) {
     if (!container) return null;
     container.setAttribute('role', 'radiogroup');
     const items = $$(selector, container);
     items.forEach((el) => { el.setAttribute('role', 'radio'); el.removeAttribute('aria-selected'); el.removeAttribute('aria-pressed'); });
-    return rovingGroup(container, items, { attr: 'aria-checked', onChange, initial });
+    return rovingGroup(container, items, { attr: 'aria-checked', onChange, initial, allowNone });
   }
 
   /* ---------- Toasts ---------- */
-  function toastFn(message, { type = 'info', action, duration } = {}) {
+  /* At most three toasts are visible; later ones queue and appear as earlier ones leave. A repeat of
+     the newest toast's text bumps a ×n counter instead of stacking. Errors never queue: they evict
+     the oldest non-error toast. */
+  const TOAST_MAX = 3;
+  const toastQueue = [];
+  function toastFn(message, opts = {}) {
+    const { type = 'info', action, duration } = opts;
     const host = root('toast-root');
     host.setAttribute('aria-live', 'polite');
-    while (host.children.length >= 3) host.firstChild.remove();
+    const visible = Array.from(host.children).filter((c) => !c.classList.contains('is-leaving'));
+    const last = visible[visible.length - 1];
+    if (last && !action && last.dataset.msg === message && last.dataset.type === type && !last.querySelector('.toast-action')) {
+      const n = Number(last.dataset.count || 1) + 1;
+      last.dataset.count = String(n);
+      let c = last.querySelector('.toast-count');
+      if (!c) { c = document.createElement('span'); c.className = 'toast-count'; last.querySelector('.toast-msg').after(c); }
+      c.textContent = `×${n}`;
+      last._restart();
+      return { close: last._remove, el: last };
+    }
+    if (visible.length >= TOAST_MAX) {
+      if (type === 'error') {
+        (visible.find((c) => c.dataset.type !== 'error') || visible[0])._remove();
+      } else {
+        const tail = toastQueue[toastQueue.length - 1];
+        if (tail && tail.message === message && tail.opts.type === type && !tail.opts.action) { tail.count += 1; return { close() {}, el: null }; }
+        const pending = { message, opts, handle: null, count: 1 };
+        toastQueue.push(pending);
+        return { close() { const i = toastQueue.indexOf(pending); if (i >= 0) toastQueue.splice(i, 1); else if (pending.handle) pending.handle.close(); }, get el() { return pending.handle ? pending.handle.el : null; } };
+      }
+    }
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
+    el.dataset.msg = message; el.dataset.type = type;
     el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     el.innerHTML = `${icon(type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info')}<div class="toast-msg">${esc(message)}</div>
       ${action ? `<button type="button" class="toast-action">${esc(action.label)}</button>` : ''}
       <button type="button" class="toast-close" aria-label="Dismiss">${icon('x', 'ico-sm')}</button>`;
-    let timer = null;
-    const remove = () => { clearTimeout(timer); el.classList.add('is-leaving'); setTimeout(() => el.remove(), 180); };
+    let timer = null, removed = false;
+    const drain = () => { const next = toastQueue.shift(); if (!next) return; next.handle = toastFn(next.message, next.opts); for (let k = 1; k < next.count; k++) toastFn(next.message, next.opts); };
+    const remove = () => { if (removed) return; removed = true; clearTimeout(timer); el.classList.add('is-leaving'); setTimeout(() => { el.remove(); drain(); }, 180); };
+    const ms = duration ?? (action ? 7000 : type === 'error' ? 6000 : 4000);
+    const start = () => { clearTimeout(timer); if (ms > 0) timer = setTimeout(remove, ms); };
+    el._remove = remove; el._restart = start;
     el.querySelector('.toast-close').addEventListener('click', remove);
     if (action) el.querySelector('.toast-action').addEventListener('click', () => { remove(); action.fn && action.fn(); });
     host.appendChild(el);
-    const ms = duration ?? (action ? 7000 : type === 'error' ? 6000 : 4000);
-    if (ms > 0) timer = setTimeout(remove, ms);
+    start();
     return { close: remove, el };
   }
+  /* Success toast with a single-use Undo action: undoFn runs once, then "Undone" (or an error toast). */
+  function undoable(message, undoFn, { type = 'success', duration = 8000, done = 'Undone' } = {}) {
+    let used = false;
+    return toastFn(message, { type, duration, action: { label: 'Undo', fn: async () => {
+      if (used) return; used = true;
+      try { await undoFn(); toastFn(done, { type: 'info' }); }
+      catch (err) { toastFn(`Could not undo: ${err.message || err}`, { type: 'error' }); }
+    } } });
+  }
+  /* Run fn while the button is disabled and spinning; errors toast (unless silent) and resolve undefined. */
+  async function busy(btn, fn, { silent = false, rethrow = false } = {}) {
+    if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.classList.add('is-loading'); }
+    try { return await fn(); }
+    catch (err) {
+      if (!silent) toastFn(err.message || String(err), { type: 'error' });
+      if (rethrow) throw err;
+      return undefined;
+    } finally {
+      if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.classList.remove('is-loading'); }
+    }
+  }
+
+  /* ---------- Form fields: inline errors, hints, tooltips ---------- */
+  let fieldSeq = 0;
+  function describedBy(el, id, on) {
+    const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter((x) => x && x !== id);
+    if (on) ids.push(id);
+    if (ids.length) el.setAttribute('aria-describedby', ids.join(' ')); else el.removeAttribute('aria-describedby');
+  }
+  /* fieldError(control, 'Name is required') paints the message under the control's .field with
+     aria-invalid + aria-describedby; fieldError(control, null) clears it. */
+  function fieldError(control, message) {
+    if (!control) return;
+    const field = control.closest('.field') || control.parentElement;
+    let box = field ? field.querySelector(':scope > .field-error') : null;
+    if (message) {
+      if (!box) { box = document.createElement('div'); box.className = 'field-error'; box.id = `fe-${++fieldSeq}`; box.setAttribute('role', 'status'); field.appendChild(box); }
+      box.innerHTML = `${icon('alert-circle', 'ico-sm')}<span></span>`;
+      box.lastChild.textContent = message;
+      control.setAttribute('aria-invalid', 'true'); control.classList.add('is-invalid'); field.classList.add('is-invalid');
+      describedBy(control, box.id, true);
+    } else {
+      if (box) { describedBy(control, box.id, false); box.remove(); }
+      control.removeAttribute('aria-invalid'); control.classList.remove('is-invalid');
+      if (field) field.classList.remove('is-invalid');
+    }
+  }
+  /* validate(root, [{ sel, test: (value, el) => true | 'message', message }]) → true when every rule
+     passes; otherwise paints the first failing message per field and focuses the first invalid one.
+     Without `test`, a rule requires a non-empty value. */
+  function validate(root, rules) {
+    let first = null;
+    rules.forEach((r) => {
+      const el = typeof r.sel === 'string' ? root.querySelector(r.sel) : r.sel;
+      if (!el) return;
+      const value = 'value' in el && el.tagName !== 'BUTTON' ? String(el.value || '').trim() : (el.dataset.value || '').trim();
+      const res = r.test ? r.test(value, el) : value !== '';
+      const msg = res === true ? null : (typeof res === 'string' ? res : (r.message || 'Required'));
+      fieldError(el, msg);
+      if (msg && !first) first = el;
+    });
+    if (first) first.focus();
+    return !first;
+  }
+  /* Wire every .field's .hint to its control through aria-describedby (modal() does this for you). */
+  function linkHints(rootEl) {
+    const fields = rootEl.matches && rootEl.matches('.field') ? [rootEl, ...$$('.field', rootEl)] : $$('.field', rootEl);
+    fields.forEach((f) => {
+      const hint = f.querySelector(':scope > .hint');
+      const ctl = f.querySelector('input,select,textarea,button,[role="combobox"]');
+      if (!hint || !ctl) return;
+      if (!hint.id) hint.id = `hint-${++fieldSeq}`;
+      describedBy(ctl, hint.id, true);
+    });
+  }
+  /* Tooltips: any element with data-tip shows a shared role=tooltip bubble on hover and focus
+     (Escape hides; coarse pointers get 1.5 s after a tap). Keyboard/touch friendly, unlike title="". */
+  const tooltip = (() => {
+    let tip = null, target = null, showTimer = null, hideTimer = null;
+    function ensure() {
+      if (!tip) { tip = document.createElement('div'); tip.className = 'tooltip'; tip.id = 'ui-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; root('popover-root').appendChild(tip); }
+      return tip;
+    }
+    function place(el) {
+      if (!document.contains(el)) return hide();
+      const r = el.getBoundingClientRect(); const w = tip.offsetWidth, h = tip.offsetHeight;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let top = r.top - 6 - h;
+      if (top < 8) top = r.bottom + 6;
+      if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+      let left = r.left + r.width / 2 - w / 2;
+      if (left + w > vw - 8) left = vw - 8 - w;
+      if (left < 8) left = 8;
+      tip.style.top = `${Math.round(top)}px`; tip.style.left = `${Math.round(left)}px`;
+    }
+    function show(el) {
+      const text = el.getAttribute('data-tip');
+      if (!text) return;
+      ensure(); clearTimeout(hideTimer); clearTimeout(showTimer);
+      if (target && target !== el) describedBy(target, 'ui-tip', false);
+      tip.textContent = text; tip.hidden = false; target = el; place(el);
+      describedBy(el, 'ui-tip', true);
+      if (matchMedia('(pointer: coarse)').matches) hideTimer = setTimeout(hide, 1500);
+    }
+    function hide() {
+      clearTimeout(showTimer); clearTimeout(hideTimer);
+      if (target) describedBy(target, 'ui-tip', false);
+      target = null;
+      if (tip) tip.hidden = true;
+    }
+    const owner = (e) => (e.target && e.target.closest ? e.target.closest('[data-tip]') : null);
+    document.addEventListener('mouseover', (e) => { const el = owner(e); if (!el || el === target) return; clearTimeout(showTimer); showTimer = setTimeout(() => show(el), 120); });
+    document.addEventListener('mouseout', (e) => { const el = owner(e); if (!el || (e.relatedTarget && el.contains(e.relatedTarget))) return; if (!target || target === el) hide(); });
+    document.addEventListener('focusin', (e) => { const el = owner(e); if (el) show(el); });
+    document.addEventListener('focusout', (e) => { const el = owner(e); if (el && target === el) hide(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && target) hide(); }, true);
+    document.addEventListener('mousedown', () => { if (target) hide(); }, true);
+    document.addEventListener('scroll', () => { if (target) place(target); }, true);
+    return { show, hide };
+  })();
 
   /* ---------- Skeletons / empty ---------- */
   function skeleton(width = '100%', height = 14, cls = '') { return `<span class="skel ${cls}" style="width:${typeof width === 'number' ? width + 'px' : width};height:${height}px"></span>`; }
@@ -473,8 +640,25 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;
+
+/* Global error net: a rejected promise or runtime error outside any try/catch still tells the user.
+   The browser keeps logging it (no preventDefault), so the QA recorders still see it. */
+(() => {
+  const recent = new Map();
+  const IGNORE = new Set(['Not authenticated', 'Upload cancelled']);
+  function report(err) {
+    const msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || 'Something went wrong';
+    if (IGNORE.has(msg)) return;
+    const now = Date.now();
+    if ((recent.get(msg) || 0) > now - 5000) return;
+    recent.set(msg, now);
+    toast(msg.length > 200 ? `${msg.slice(0, 200)}…` : msg, { type: 'error' });
+  }
+  window.addEventListener('unhandledrejection', (e) => report(e.reason));
+  window.addEventListener('error', (e) => { if (e.error || e.message) report(e.error || e.message); });
+})();
 const snackbar = (m, type) => toast(m, { type: type === 'error' ? 'error' : type === 'success' ? 'success' : 'info' });

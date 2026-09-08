@@ -14,6 +14,19 @@ paint();
 themeBtn.addEventListener('click', () => Theme.toggle());
 window.addEventListener('ispend:theme', paint);
 
+/* Sent back here by api.js after a 401 in a browser that had signed in before. */
+if (new URLSearchParams(location.search).get('reason') === 'expired') {
+  const note = document.getElementById('login-notice');
+  note.innerHTML = `${icon('info')}<div>Your session expired. Sign in again to continue.</div>`;
+  note.hidden = false;
+}
+const capsHint = document.getElementById('caps-hint');
+const pwField = document.getElementById('password');
+const paintCaps = (e) => { capsHint.hidden = !(e.getModifierState && e.getModifierState('CapsLock')); };
+pwField.addEventListener('keydown', paintCaps);
+pwField.addEventListener('keyup', paintCaps);
+pwField.addEventListener('blur', () => { capsHint.hidden = true; });
+
 /* Only same-origin paths may be followed after login ("//evil.com" and "/\\evil.com" both resolve off-site). */
 function safeNext(next) {
   if (!next) return '/index.html';

@@ -12,19 +12,38 @@ async function api(path, options = {}) {
     throw new Error('Network error — is the server reachable?');
   }
   if (res.status === 401 && !location.pathname.endsWith('/login.html')) {
-    const next = encodeURIComponent(location.pathname + location.search);
-    location.href = `/login.html?next=${next}`;
+    loginRedirect();
     throw new Error('Not authenticated');
   }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON */ }
   if (!res.ok) {
-    const err = new Error((data && data.error) || `Request failed (${res.status})`);
+    const err = new Error((data && data.error) || httpFallback(res.status));
     err.status = res.status;
     err.data = data;
     throw err;
   }
   return data;
+}
+
+/* Session gone: back to login. A browser that signed in before (ispend.uid survives until sign-out)
+   is told the session expired; a first-time visitor just sees the sign-in form. */
+function loginRedirect() {
+  let known = false;
+  try { known = !!localStorage.getItem('ispend.uid'); } catch { /* storage unavailable */ }
+  const next = encodeURIComponent(location.pathname + location.search);
+  location.href = `/login.html?next=${next}${known ? '&reason=expired' : ''}`;
+}
+const HTTP_FALLBACK = {
+  403: "You don't have permission to do that",
+  404: 'Not found',
+  409: 'That conflicts with something that already exists',
+  413: 'That file is too large',
+  429: 'Too many requests — wait a minute and try again',
+};
+function httpFallback(status, verb = 'Request failed') {
+  if (HTTP_FALLBACK[status]) return HTTP_FALLBACK[status];
+  return status >= 500 ? 'Server error — try again in a moment' : `${verb} (${status})`;
 }
 
 /* Upload with progress (XHR, because fetch has no upload progress). */
@@ -37,9 +56,9 @@ function apiUpload(path, formData, { onProgress } = {}) {
     xhr.addEventListener('load', () => {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
-      if (xhr.status === 401) { location.href = `/login.html?next=${encodeURIComponent(location.pathname + location.search)}`; return reject(new Error('Not authenticated')); }
+      if (xhr.status === 401) { loginRedirect(); return reject(new Error('Not authenticated')); }
       if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
-      const err = new Error((data && data.error) || `Upload failed (${xhr.status})`);
+      const err = new Error((data && data.error) || httpFallback(xhr.status, 'Upload failed'));
       err.status = xhr.status;
       reject(err);
     });

@@ -75,7 +75,7 @@ Cache is memory + sessionStorage, stale-while-revalidate. After mutating categor
 const m = ui.modal({ title, html, size:'lg'|'xl', width, dismissible, actions:[{ label, primary, danger, onClick: async (m) => {…} /* throw → error toast; return false → keep open */ }], onClose });
 m.close(); m.el; m.body; m.setTitle(t);
 const ok = await ui.confirm({ title, body, confirmText, cancelText, danger }); // body is escaped; pass html: for markup
-const d = ui.drawer({ title, html, foot, width, onClose }); d.setBody(html); d.setFoot(html); d.setTitle(t); d.setDirty(true); d.close();   // one drawer at a time
+const d = ui.drawer({ title, html, foot, width, onClose }); d.setBody(html); d.setFoot(html); d.setTitle(t); d.setDirty(true); await d.close(); d.forceClose();   // one drawer at a time; with setDirty(true) Esc, X and backdrop ask before discarding
 const p = ui.popover(anchorEl, contentEl, { placement:'bottom-start'|'bottom-end', matchWidth, onClose }); p.position(); p.close();
 ui.menu(anchorEl, [{ label, icon, onClick, href, checked, danger, disabled, shortcut }, { divider:true }, { label, header:true }]);
 ui.multiFilter(anchorEl, { title, options:[{value,label,count,color}], selected:new Set(), onChange(set), searchable });
@@ -85,13 +85,24 @@ const t = ui.tabs(tablistEl, { onChange: (tabEl, index) => showPanel(tabEl.datas
 // Segmented control (.seg with .seg-btn children): role=radiogroup/radio + aria-checked, same keyboard model.
 const seg = ui.segmented(segEl, { onChange: (btn) => setRange(btn.dataset.range) }); seg.current(); seg.select(i, { silent:true });
 // Menus and multiFilter lists support ArrowUp/Down (wrapping), Home/End and first-letter type-ahead; focus returns to the anchor on close.
-toast('Saved', { type:'success'|'error'|'info', action:{ label:'Undo', fn }, duration });   // window.toast, snackbar(msg,type) alias
+toast('Saved', { type:'success'|'error'|'info', action:{ label:'Undo', fn }, duration });   // window.toast; ≤3 visible, the rest queue; repeats bump a ×n counter
+ui.undoable('3 excluded', async () => restore(before));   // success toast with a single-use Undo → 'Undone' (or an error toast)
+await ui.busy(btn, async () => api(...));                  // disables + spins the button while fn runs; errors toast and resolve undefined ({ silent, rethrow })
+ui.fieldError(inputEl, 'Name is required' | null);         // inline .field-error + aria-invalid + aria-describedby under the control's .field
+ui.validate(formEl, [{ sel:'#name', message:'Name is required' }, { sel:'#amt', test:(v) => Number(v) > 0 || 'Enter an amount' }]) // paints errors, focuses the first; false when anything failed → `return false` from a modal action
+ui.linkHints(rootEl);                                      // .field .hint → aria-describedby (modal() does it for its body)
+// Tooltips: put data-tip="…" on any focusable control (never title=""); hover/focus show a role=tooltip bubble, Escape hides.
+setPageTitle('Sep 2026 · Chase');                          // document.title = "<Page> · Sep 2026 · Chase · iSpend" (defined by initNav)
 ui.skeleton(width, height) · ui.skeletonRows(n, cols) (tbody html) · ui.skeletonList(n)
 ui.emptyState({ icon, title, body, action:{ label, href } | { label, act:'data-act-name' } })
 ui.errorBox(message, { retry:'data-act-name' })
 ui.shortcuts.register('c', fn, { when: () => bool, description }) · two-key chords 'g d' · auto-disabled while typing · ui.shortcuts.isTyping()
 ui.shortcutsSheet(extraGroups) · ui.trapFocus(el) → untrap · ui.focusFirst(el) · ui.closeTop() · ui.layers (Esc closes topmost)
 ```
+Segmented controls accept `allowNone: true` (clicking the active button clears it, `onChange(null, -1)`); calling `ui.tabs`/`ui.segmented` again on the same container replaces the old listeners.
+
+Unhandled errors and rejected promises surface as an error toast (deduped for 5 s) and stay in the console. A 401 sends the browser to `/login.html?next=…&reason=expired` when this browser had signed in before.
+
 Layers (modal/drawer/popover/palette) trap focus, close on Esc, and restore focus to the opener. Set `handle.allowShortcuts = true` on a layer if page shortcuts should keep working while it is open.
 
 ## pickers.js
@@ -120,7 +131,7 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 ## CSS vocabulary (app.css)
 - Layout: `.page-head` (`h1` + `.page-sub` + `.page-actions`), `.card` (`.card-head` h2 + `.card-actions`, `.card-body`, `.card-foot`), `.grid.grid-2|grid-3|grid-2-1|grid-1-1`, `.row`, `.row-between`, `.col`, `.grow`, spacing `.mt-*`, `.mb-*`, `.gap-*`, text `.text-1..4`, `.fs-xs|sm|base|lg`, `.fw-500|600`, `.truncate`, `.mono`, `.num`, `.section-label`, `.hint`, `.divider`.
 - Buttons: `.btn` + `.btn-primary|secondary|ghost|danger|danger-solid`, sizes `.btn-sm|xs`, `.btn-icon`, `.btn-block`, state `.is-loading`.
-- Inputs: `.input`, `.select`, `.textarea`, `.input-sm`, `.input-group` (leading `.ico`, `.trailing` button + `.has-trailing`), `.field` (`label` + control + `.hint`), `.field-row`, `.check`, `.radio-list > .radio-item.is-checked`, `.switch` (`input` + `.switch-track`, `.switch-sm`), `kbd`/`.kbd`.
+- Inputs: `.input`, `.select`, `.textarea`, `.input-sm`, `.input-group` (leading `.ico`, `.trailing` button + `.has-trailing`), `.field` (`label[data-required]` + control + `.hint` + `.field-error`, `.is-invalid`), `.field-row`, `.check`, `.radio-list > .radio-item.is-checked`, `.switch` (`input` + `.switch-track`, `.switch-sm`), `kbd`/`.kbd`.
 - Badges/chips: `.badge.badge-success|danger|warning|info|neutral|accent`, `.pill` (`.pill-soft`, `.pill-warning`), `.chip` (`.active`, `.chip-ok|err|warn`), `.dot` (color via `style="--c:var(--c4)"`), `.catchip` (+ `.catchip--empty`, `.catchip--suggested`), `.cat-icon` (`.cat-icon-lg`), `.acct` + `.acct-mark`, amounts `.amt.amt--expense|income|transfer`.
 - Tables: `.tbl-wrap > table.tbl` (sticky `th`, `th.sortable[aria-sort]`, `.col-check`, `.col-actions` + `.row-actions`, `tr.is-focused`, `tr[aria-selected=true]`, `tr.is-clickable`), `.tbl-toolbar`, `.tbl-summary`, `.tbl-foot`, `.tbl-sentinel`, `.merchant > .merchant-name + .merchant-raw`. Density via `html[data-density=compact]`.
 - Stats/charts: `.stat-grid > .stat` (`.stat-label`, `.stat-value`, `.stat-delta.stat-delta--good|bad` + `.stat-delta-vs`, `canvas.stat-spark`, `.is-loading`), `.card.chart-card > .chart-body[style=--h] > canvas` + `.chart-legend`/`.legend-list`, `.seg > .seg-btn.active`.

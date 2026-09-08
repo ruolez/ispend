@@ -17,6 +17,7 @@
       <div class="login-mark" id="login-mark"></div>
       <h1>Welcome back</h1>
       <div class="login-sub">Sign in to iSpend to see where your money goes.</div>
+      <div class="notice notice-info login-notice" id="login-notice" role="status" hidden></div>
       <div class="error-box login-error" id="login-error" role="alert"></div>
       <form id="login-form" novalidate>
         <div class="field">
@@ -25,7 +26,8 @@
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <div class="input-group"><input class="input has-trailing" type="password" id="password" autocomplete="current-password" required><button type="button" class="btn btn-icon btn-ghost btn-sm trailing" id="login-pw-toggle" aria-label="Show password"></button></div>
+          <div class="input-group"><input class="input has-trailing" type="password" id="password" autocomplete="current-password" required aria-describedby="caps-hint"><button type="button" class="btn btn-icon btn-ghost btn-sm trailing" id="login-pw-toggle" aria-label="Show password"></button></div>
+          <div class="hint caps-hint" id="caps-hint" aria-live="polite" hidden>Caps Lock is on</div>
         </div>
         <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
       </form>

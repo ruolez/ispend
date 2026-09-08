@@ -52,7 +52,9 @@ async function initNav(activePage) {
   restoreQuery();
   const active = NAV_ITEMS.find((i) => i.page === activePage);
   document.body.dataset.page = activePage;
-  document.title = `${active ? active.label : 'iSpend'} · iSpend`;
+  /* setPageTitle('Sep 2026 · Chase') → "Dashboard · Sep 2026 · Chase · iSpend"; pages call it when their state changes. */
+  window.setPageTitle = (sub) => { document.title = `${[active ? active.label : 'iSpend', sub].filter(Boolean).join(' · ')} · iSpend`; };
+  setPageTitle('');
 
   // Skip link + sidebar
   const skipNav = document.createElement('nav'); skipNav.className = 'skip-nav'; skipNav.setAttribute('aria-label', 'Skip');
