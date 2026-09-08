@@ -330,6 +330,13 @@ button.catchip--empty:hover { color: var(--text-1); border-style: solid; }
 .amt--expense { color: var(--text-1); }
 .amt--income { color: var(--success); }
 .amt--transfer, .amt--excluded { color: var(--text-3); }
+/* tags: neutral chip with the tag's colour as a dot (keeps text contrast in both themes) */
+.tagchip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; max-width: 150px; vertical-align: middle; }
+.tagchip > .truncate { min-width: 0; }
+.tagchip--more { padding: 0 7px; }
+.tagchip .tagchip-x { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: -4px; border-radius: 50%; color: var(--text-3); }
+.tagchip .tagchip-x:hover { background: var(--surface); color: var(--danger); }
+.tagchips { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 
 /* ---------- Tables ---------- */
 .tbl-wrap { overflow: auto; max-width: 100%; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--sh-1); }

@@ -51,6 +51,7 @@ async function load() {
   }
   render();
   renderSide();
+  loadTags();
 }
 
 function countOf(c) { return (c.txn_count || 0) + (c.children || []).reduce((s, k) => s + (k.txn_count || 0), 0); }
@@ -248,6 +249,50 @@ async function onBudgetAction(e) {
   } catch { /* toasted by busy */ }
 }
 document.body.addEventListener('click', onBudgetAction);
+
+/* ---------- tags ---------- */
+const SWATCHES = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12'];
+async function loadTags() {
+  const host = $('#tags-list'); if (!host) return;
+  let tags = [];
+  try { tags = await store.tags({ force: true }); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-tags' }); return; }
+  host.innerHTML = tags.length ? tags.map((t) => `<div class="tag-row" data-tag="${t.id}"><button type="button" class="swatch-btn" style="--c:var(--${esc(t.color)})" data-tact="color" aria-label="Change colour of ${esc(t.name)}"></button><button type="button" class="tag-name row-link" data-tact="rename">${esc(t.name)}</button><a class="tag-count" href="/transactions.html${toQuery({ tag: t.id, range: 'all' })}">${plural(t.txn_count, 'transaction')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-tact="delete" aria-label="Delete tag ${esc(t.name)}">${icon('trash')}</button></div>`).join('')
+    : ui.emptyState({ icon: 'tag', title: 'No tags yet', body: 'Tags label transactions across categories: a trip, a project, something to reimburse. Add them from a transaction or here.', action: { label: 'New tag', act: 'new-tag' } });
+}
+async function onTagAction(e) {
+  const b = e.target.closest('[data-tact],[data-act="reload-tags"],[data-act="new-tag"]'); if (!b) return;
+  const act = b.dataset.tact || b.dataset.act;
+  const row = b.closest('[data-tag]'); const id = row ? Number(row.dataset.tag) : null;
+  const tags = await store.tags().catch(() => []); const t = tags.find((x) => x.id === id);
+  if (act === 'reload-tags') return loadTags();
+  if (act === 'new' || act === 'new-tag') return openTagModal();
+  if (act === 'rename' && t) return openTagModal(t);
+  if (act === 'color' && t) {
+    const el = document.createElement('div'); el.className = 'menu'; el.innerHTML = `<div class="menu-label">Colour</div><div class="swatches" style="padding:4px 8px 8px">${SWATCHES.map((s) => `<button type="button" class="swatch ${t.color === s ? 'active' : ''}" data-color="${s}" style="--c:var(--${s})" aria-label="${s}"></button>`).join('')}</div>`;
+    const pop = ui.popover(b, el, { onClose: () => b.focus() });
+    el.addEventListener('click', async (ev) => { const sw = ev.target.closest('[data-color]'); if (!sw) return; pop.close('pick'); try { await api(`/api/tags/${id}`, { method: 'PUT', body: { color: sw.dataset.color } }); store.invalidate('tags'); await loadTags(); } catch (err) { toast(err.message, { type: 'error' }); } });
+    return;
+  }
+  if (act === 'delete' && t) {
+    if (!(await ui.confirm({ title: `Delete tag “${t.name}”?`, body: t.txn_count ? `Removes it from ${plural(t.txn_count, 'transaction')}. The transactions themselves stay.` : 'This tag is not used yet.', confirmText: 'Delete', danger: true }))) return;
+    try { const r = await api(`/api/tags/${id}`, { method: 'DELETE' }); store.invalidate('tags'); toast(r.removed_from ? `Tag deleted · removed from ${plural(r.removed_from, 'transaction')}` : 'Tag deleted', { type: 'success' }); await loadTags(); }
+    catch (err) { toast(err.message, { type: 'error' }); }
+  }
+}
+function openTagModal(t) {
+  const m = ui.modal({
+    title: t ? 'Rename tag' : 'New tag',
+    html: `<form id="tag-form"><div class="field"><label for="tag-name" data-required>Name</label><input id="tag-name" class="input" maxlength="40" value="${esc(t ? t.name : '')}" placeholder="e.g. Trip 2026" autofocus autocomplete="off"></div><button type="submit" hidden></button></form>`,
+    actions: [{ label: 'Cancel' }, { label: t ? 'Save' : 'Create tag', primary: true, onClick: async () => {
+      if (!ui.validate(m.el, [{ sel: '#tag-name', message: 'Name is required' }])) return false;
+      const name = m.el.querySelector('#tag-name').value.trim();
+      if (t) await api(`/api/tags/${t.id}`, { method: 'PUT', body: { name } }); else await api('/api/tags', { method: 'POST', body: { name } });
+      store.invalidate('tags'); toast(t ? 'Tag renamed' : `Tag “${name}” created`, { type: 'success' }); await loadTags();
+    } }],
+  });
+  m.el.querySelector('#tag-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
+}
+document.body.addEventListener('click', onTagAction);
 async function loadSideTrend(cat, root = document) {
   const months = lastMonths(6);
   const level = cat.depth === 0 ? 'top' : 'sub';

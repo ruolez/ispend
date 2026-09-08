@@ -28,7 +28,7 @@ DENY_WORDS = [
     "delete", "remove", "commit", "save", "apply", "run", "merge", "reset", "logout", "sign out", "generate",
     "upload", "learn", "pair", "dismiss", "flip", "reparse", "renormalize", "re-detect", "discard", "undo",
     "forget", "roll back", "archive", "restore", "deactivate", "activate", "duplicate", "import", "accept", "reject",
-    "regenerate", "rename", "create", "copy", "set budget", "remove budget", "change limit",
+    "regenerate", "rename", "create", "copy", "set budget", "remove budget", "change limit", "tag", "new tag",
 ]
 
 

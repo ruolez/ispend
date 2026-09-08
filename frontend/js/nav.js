@@ -292,6 +292,8 @@ function openPalette() {
       try {
         const cats = await store.categoriesFlat();
         out.push(...cats.filter((c) => match(c.path)).slice(0, 5).map((c) => ({ group: 'Categories', label: c.path, color: c.color || c.parent_color, run: () => { location.href = `/transactions.html?cat=${c.id}`; } })));
+        const tags = await store.tags().catch(() => []);
+        out.push(...tags.filter((t) => match(t.name)).slice(0, 4).map((t) => ({ group: 'Tags', label: `#${t.name}`, color: t.color, run: () => { location.href = `/transactions.html?tag=${t.id}&range=all`; } })));
       } catch { /* ignore */ }
     }
     out.push(...pages.filter((p) => match(p.label)).slice(0, ql ? 4 : 6), ...actions.filter((a) => match(a.label)));

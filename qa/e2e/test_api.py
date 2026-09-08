@@ -43,7 +43,7 @@ GET_ROUTES = [
     "/api/transactions/1/events", "/api/review/count", "/api/review", "/api/rules", "/api/rules/1", "/api/merchants",
     "/api/reports/dashboard", "/api/reports/summary", "/api/reports/by-category", "/api/reports/monthly",
     "/api/reports/trends", "/api/reports/top-merchants", "/api/reports/month-over-month", "/api/reports/recurring",
-    "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress",
+    "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress", "/api/tags",
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
@@ -66,6 +66,7 @@ MUTATING_ROUTES = [
     ("DELETE", "/api/reports/recurring/dismiss/x"), ("POST", "/api/ai/categorize"), ("POST", "/api/insights/generate"),
     ("POST", "/api/insights/anomalies/1/dismiss"), ("DELETE", "/api/insights/anomalies/1/dismiss"),
     ("POST", "/api/budgets"), ("PUT", "/api/budgets/1"), ("DELETE", "/api/budgets/1"), ("POST", "/api/budgets/copy"),
+    ("POST", "/api/tags"), ("PUT", "/api/tags/1"), ("DELETE", "/api/tags/1"),
 ]
 
 
@@ -273,8 +274,10 @@ def victim(u1, seeded):
     merchants = u1.get("/api/merchants").json()
     budget = u1.post("/api/budgets", json={"category_id": own_cat["id"], "amount": 123.45, "month": "2030-01"})
     assert budget.status_code == 201, budget.text
+    tag = u1.post("/api/tags", json={"name": "QA victim tag"})
+    assert tag.status_code == 201, tag.text
     return {
-        "budget": budget.json()["id"], "txn": txn, "txn_ids": [t["id"] for t in items], "statement": seeded["checking_statement"],
+        "budget": budget.json()["id"], "tag": tag.json()["id"], "txn": txn, "txn_ids": [t["id"] for t in items], "statement": seeded["checking_statement"],
         "rule": seeded["rule_id"], "category": own_cat, "account": seeded["checking"],
         "merchant_key": txn["merchant_key"], "memory_keys": [m["merchant_key"] for m in merchants],
         "cat_order": [(c["id"], c["sort_order"]) for c in cats],
@@ -318,10 +321,15 @@ class TestIsolation:
         ("DELETE", "/api/accounts/{acct}?force=true", None),
         ("PUT", "/api/budgets/{budget}", {"amount": 1}),
         ("DELETE", "/api/budgets/{budget}", None),
+        ("PUT", "/api/tags/{tag}", {"name": "pwned"}),
+        ("DELETE", "/api/tags/{tag}", None),
+        ("PUT", "/api/transactions/{txn}", {"tag_ids": ["{tag}"]}),
     ])
     def test_foreign_object_by_id_is_404(self, u2, victim, method, path, body):
         url = path.format(txn=victim["txn"]["id"], st=victim["statement"], rule=victim["rule"],
-                          cat=victim["category"]["id"], acct=victim["account"], budget=victim["budget"])
+                          cat=victim["category"]["id"], acct=victim["account"], budget=victim["budget"], tag=victim["tag"])
+        if body and "tag_ids" in body:
+            body = {"tag_ids": [victim["tag"]]}
         r = u2.request(method, url, json=body)
         assert r.status_code == 404, (method, url, r.status_code, r.text)
         assert "pwned" not in r.text
@@ -338,6 +346,8 @@ class TestIsolation:
         mine = u1.get("/api/budgets", params={"month": "2030-01"}).json()["budgets"]
         assert any(b["id"] == victim["budget"] and b["amount"] == 123.45 for b in mine)
         assert u2.get("/api/budgets", params={"month": "2030-01"}).json()["budgets"] == []
+        assert any(t["id"] == victim["tag"] and t["name"] == "QA victim tag" for t in u1.get("/api/tags").json())
+        assert not any(t["id"] == victim["tag"] for t in u2.get("/api/tags").json())
 
     def test_foreign_ids_in_bulk_review_pair(self, u2, u1, victim):
         before = _txn_snapshot(u1, victim["txn"]["id"])
@@ -1036,7 +1046,7 @@ class TestTransactions:
         assert r.status_code == 200 and r.headers["Content-Type"].startswith("text/csv")
         assert "attachment; filename=transactions-" in r.headers["Content-Disposition"]
         rows = list(csv.reader(io.StringIO(r.text)))
-        assert rows[0] == ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer"]
+        assert rows[0] == ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags"]
         items, first = list_all(u1, account_id=a, **{"from": f"{y}-08-01", "to": f"{y}-08-31"})
         assert len(rows) - 1 == first["total"] == 5
         assert sorted(money(x[5]) for x in rows[1:]) == sorted(money(t["amount"]) for t in items)
@@ -1504,6 +1514,49 @@ class TestBudgets:
         p = u2.get("/api/budgets/progress").json()
         assert p["items"] == [] and p["totals"]["budget"] == 0.0 and p["unbudgeted"] == {"spent": 0.0, "count": 0, "categories": []}
         assert u2.get("/api/budgets").json()["budgets"] == []
+
+
+class TestTags:
+    def test_crud_filters_facets_and_export(self, u1, manual):
+        acct = manual["acct"]
+        a, b = manual["txns"][2], manual["txns"][5]
+        r = u1.post("/api/tags", json={"name": "  QA Trip "})
+        assert r.status_code == 201, r.text
+        trip = r.json()
+        assert trip["name"] == "QA Trip" and trip["color"] in {f"c{i}" for i in range(1, 13)} and trip["txn_count"] == 0
+        r = u1.post("/api/tags", json={"name": "qa trip"})
+        assert (r.status_code, r.json()) == (400, {"error": "A tag with that name already exists"})
+        work = u1.post("/api/tags", json={"name": "QA Work", "color": "c9"}).json()
+        assert u1.post("/api/tags", json={"name": "x", "color": "pink"}).status_code == 400
+        # attach through PUT, then bulk
+        got = u1.put(f"/api/transactions/{a['id']}", json={"tag_ids": [trip["id"], work["id"], trip["id"]]}).json()
+        assert got["tag_ids"] == sorted([trip["id"], work["id"]])
+        assert any(e["kind"] == "tag" for e in u1.get(f"/api/transactions/{a['id']}").json()["events"])
+        assert u1.post("/api/transactions/bulk", json={"ids": [b["id"]], "action": "tag", "tag_ids": [trip["id"]]}).json()["updated"] == 1
+        assert u1.get(f"/api/transactions/{b['id']}").json()["tag_ids"] == [trip["id"]]
+        # filters and facets
+        items, first = list_all(u1, account_id=acct, range="all", tag=trip["id"])
+        assert sorted(t["id"] for t in items) == sorted([a["id"], b["id"]])
+        assert {f["id"]: f["n"] for f in first["facets"]["tags"]} == {trip["id"]: 2, work["id"]: 1}
+        items, _ = list_all(u1, account_id=acct, range="all", tag=f"{trip['id']},{work['id']}", tag_mode="all")
+        assert [t["id"] for t in items] == [a["id"]]
+        items, _ = list_all(u1, account_id=acct, range="all", tag="none")
+        assert not any(t["id"] in (a["id"], b["id"]) for t in items)
+        listed = {t["id"]: t for t in u1.get("/api/tags").json()}
+        assert (listed[trip["id"]]["txn_count"], listed[work["id"]]["txn_count"]) == (2, 1)
+        # export carries the names
+        rows = list(csv.reader(io.StringIO(u1.get("/api/transactions/export", params={"account_id": acct, "range": "all", "tag": trip["id"]}).text)))
+        assert rows[0][-1] == "Tags" and sorted(r[-1] for r in rows[1:]) == ["QA Trip", "QA Trip; QA Work"]
+        # rename / recolour / foreign tag / untag / delete cascades
+        assert u1.put(f"/api/tags/{work['id']}", json={"name": "QA Office", "color": "c3"}).json()["name"] == "QA Office"
+        assert u1.put(f"/api/transactions/{a['id']}", json={"tag_ids": [999999]}).status_code == 404
+        assert u1.post("/api/transactions/bulk", json={"ids": [a["id"]], "action": "untag", "tag_ids": [work["id"]]}).json()["updated"] == 1
+        assert u1.get(f"/api/transactions/{a['id']}").json()["tag_ids"] == [trip["id"]]
+        assert u1.post("/api/transactions/bulk", json={"ids": [a["id"]], "action": "tag", "tag_ids": []}).status_code == 400
+        assert u1.delete(f"/api/tags/{trip['id']}").json() == {"ok": True, "removed_from": 2}
+        assert u1.get(f"/api/transactions/{a['id']}").json()["tag_ids"] == []
+        assert u1.delete(f"/api/tags/{work['id']}").json()["ok"] is True
+        assert u1.delete(f"/api/tags/{work['id']}").status_code == 404
 
 
 class TestAccounts:

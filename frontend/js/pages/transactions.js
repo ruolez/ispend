@@ -12,15 +12,16 @@ const EVENT_TEXT = {
   transfer: (d) => d && d.is_transfer === false ? 'Unmarked as transfer' : 'Marked as transfer',
   note: () => 'Note updated',
   excluded: (d) => d && d.is_excluded ? 'Excluded from reports' : 'Included in reports',
+  tag: (d) => d && d.removed ? 'Tags removed' : d && d.tag_ids && d.tag_ids.length ? 'Tags updated' : 'Tags cleared',
 };
-const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off' };
+const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off', tag: 'tag' };
 
 const tx = {
-  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '' },
+  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [] },
   items: [], byId: new Map(), cursor: null, total: 0, sumIn: 0, sumOut: 0, facets: null,
   loading: false, done: false, seq: 0,
   selection: new Set(), focus: -1,
-  cats: new Map(), accounts: new Map(), catsFlat: [],
+  cats: new Map(), accounts: new Map(), catsFlat: [], tags: new Map(),
   observer: null, drawer: null,
 };
 
@@ -41,6 +42,8 @@ initNav('transactions').then(async () => {
   $('#f-clear').addEventListener('click', clearFilters);
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-views').addEventListener('click', openViewsMenu);
+  $('#f-tags').addEventListener('click', openTagFilter);
+  store.on('tags-changed', async () => { await loadRefs(); rerenderAll(); paintToolbar(); });
   $('#f-amount').addEventListener('click', openAmountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
   tx.flowSeg = ui.segmented($('#f-flow'), { allowNone: true, onChange: (b) => { tx.filters.flow = b ? b.dataset.flow : ''; applyFilters(); } });
@@ -74,7 +77,8 @@ function setupObserver() {
 
 /* ---------- refs ---------- */
 async function loadRefs() {
-  const [flat, accts] = await Promise.all([store.categoriesFlat(), store.accounts()]);
+  const [flat, accts, tags] = await Promise.all([store.categoriesFlat(), store.accounts(), store.tags().catch(() => [])]);
+  tx.tags = new Map(tags.map((t) => [t.id, t]));
   tx.catsFlat = flat;
   tx.cats = new Map(flat.map((c) => [c.id, c]));
   tx.accounts = new Map(accts.map((a) => [a.id, a]));
@@ -99,19 +103,20 @@ function readUrl() {
   tx.filters.min = AMOUNT_RE.test(q.min || '') ? q.min : '';
   tx.filters.max = AMOUNT_RE.test(q.max || '') ? q.max : '';
   tx.filters.view = q.view || '';
+  tx.filters.tag = (q.tag || '').split(',').filter((t) => t === 'none' || /^\d+$/.test(t));
 }
 const AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
 function writeUrl() {
   const f = tx.filters;
-  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, open: null });
+  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, tag: f.tag, open: null });
 }
 function queryParams(extra = {}) {
   const f = tx.filters;
-  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, ...extra };
+  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, tag: f.tag, ...extra };
 }
 function hasFilters() {
   const f = tx.filters;
-  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || (f.range && !['this-month', 'all'].includes(f.range.preset));
+  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || f.tag.length || (f.range && !['this-month', 'all'].includes(f.range.preset));
 }
 function emptyListHtml() {
   if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
@@ -119,7 +124,7 @@ function emptyListHtml() {
   return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
 }
 function clearFilters() {
-  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '' }; // clearing shows everything, not just this month
+  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [] }; // clearing shows everything, not just this month
   $('#f-q').value = '';
   applyFilters();
 }
@@ -131,7 +136,7 @@ const views = {
   byId(id) { return views.list().find((v) => v.id === id) || null; },
   current() {
     const f = tx.filters;
-    return toQuery({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, min: f.min || null, max: f.max || null, transfers: f.transfers || null }) || '?range=this-month';
+    return toQuery({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, min: f.min || null, max: f.max || null, transfers: f.transfers || null, tag: f.tag }) || '?range=this-month';
   },
   async save(list) {
     const p = await api('/api/auth/me/preferences', { method: 'PUT', body: { saved_views: list } });
@@ -261,6 +266,10 @@ function paintToolbar() {
   const amtBtn = $('#f-amount');
   amtBtn.innerHTML = `${icon('hash', 'ico-sm')}<span>${esc(amountLabel())}</span>${icon('chevron-down', 'ico-sm')}`;
   amtBtn.classList.toggle('active', !!(f.min || f.max));
+  const tagBtn = $('#f-tags');
+  const tagLabel = !f.tag.length ? 'All tags' : f.tag.length === 1 ? (f.tag[0] === 'none' ? 'Untagged' : (tx.tags.get(Number(f.tag[0])) || {}).name || 'Tag') : `${f.tag.length} tags`;
+  tagBtn.innerHTML = `${icon('tag', 'ico-sm')}<span>${esc(tagLabel)}</span>${icon('chevron-down', 'ico-sm')}`;
+  tagBtn.classList.toggle('active', !!f.tag.length);
   const catBtn = $('#f-categories');
   let catLabel = 'All categories';
   if (f.cat.length === 1) catLabel = f.cat[0] === 'none' ? 'Uncategorized' : (catOf(f.cat[0]) || {}).name || 'Category';
@@ -317,6 +326,30 @@ function openCategoryFilter() {
     opts.push({ value: String(c.id), label: c.name, indent: c.depth || 0, count: n, color: c.color || c.parent_color });
   });
   ui.multiFilter($('#f-categories'), { title: 'Categories', options: opts, selected, searchable: true, onChange: (set) => { tx.filters.cat = Array.from(set); applyFilters(); } });
+}
+function openTagFilter() {
+  const counts = new Map(((tx.facets || {}).tags || []).map((t) => [String(t.id), t.n]));
+  const selected = new Set(tx.filters.tag);
+  const opts = [{ value: 'none', label: 'Untagged' }, ...Array.from(tx.tags.values()).map((t) => ({ value: String(t.id), label: t.name, color: t.color, count: counts.get(String(t.id)) || 0 }))];
+  if (!tx.tags.size) { toast('No tags yet · add one from a transaction', { type: 'info' }); return; }
+  ui.multiFilter($('#f-tags'), { title: 'Tags', options: opts, selected, searchable: tx.tags.size > 8, onChange: (set) => { tx.filters.tag = Array.from(set); applyFilters(); } });
+}
+function tagChipsHtml(it, { removable = false } = {}) {
+  const ids = (it.tag_ids || []).filter((id) => tx.tags.has(id));
+  if (!ids.length) return '';
+  const shown = removable ? ids : ids.slice(0, 2);
+  return `<span class="tagchips">${shown.map((id) => { const t = tx.tags.get(id); return `<span class="tagchip" data-tag-id="${id}"><i class="dot" style="--c:var(--${esc(t.color)})"></i><span class="truncate">${esc(t.name)}</span>${removable ? `<button type="button" class="tagchip-x" data-untag="${id}" aria-label="Remove tag ${esc(t.name)}">${icon('x', 'ico-sm')}</button>` : ''}</span>`; }).join('')}${!removable && ids.length > 2 ? `<span class="tagchip tagchip--more" data-tip="${esc(ids.slice(2).map((id) => tx.tags.get(id).name).join(', '))}">+${ids.length - 2}</span>` : ''}</span>`;
+}
+async function setTags(it, tagIds, d) {
+  const before = [...(it.tag_ids || [])];
+  try {
+    const updated = await api(`/api/transactions/${it.id}`, { method: 'PUT', body: { tag_ids: tagIds } });
+    Object.assign(tx.byId.get(it.id) || it, updated);
+    rerenderRow(it.id);
+    if (d) await refreshDrawer(it, d);
+    afterChange();
+    return before;
+  } catch (err) { toast(err.message, { type: 'error' }); return null; }
 }
 function paintDensity() { const t = Theme.density() === 'compact' ? 'Comfortable rows' : 'Compact rows'; $('#btn-density').innerHTML = icon(Theme.density() === 'compact' ? 'list' : 'menu'); $('#btn-density').title = t; $('#btn-density').setAttribute('aria-label', t); }
 
@@ -393,7 +426,7 @@ function rowHtml(it, idx) {
   return `<tr class="tx-row ${it.is_transfer ? 'is-transfer' : ''} ${it.is_excluded ? 'is-excluded' : ''} ${idx === tx.focus ? 'is-focused' : ''}" data-id="${it.id}" data-idx="${idx}" aria-selected="${tx.selection.has(it.id)}" tabindex="-1">
     <td class="col-check"><input type="checkbox" class="check" data-select="${it.id}" ${tx.selection.has(it.id) ? 'checked' : ''} aria-label="Select"></td>
     <td class="col-date num">${fmtDate(it.txn_date)}</td>
-    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" title="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
+    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}${tagChipsHtml(it)}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" title="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
     <td class="col-cat">${catCellHtml(it)}</td>
     <td class="col-acct">${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="truncate">${esc(a.name)}</span></span>` : ''}</td>
     <td class="col-amt right"><span class="amt ${amtCls}">${fmtMoney(it.amount, cur, { sign: 'always' })}</span></td>
@@ -447,7 +480,8 @@ function paintSelection() {
   bar.innerHTML = `<span><span class="n">${fmtNumber(n)}</span> selected${partial}</span><span class="sep"></span>
     <button type="button" class="btn btn-primary btn-sm" data-bulk="categorize">${icon('tag', 'ico-sm')}Categorize</button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="set_transfer">${icon('arrow-left-right', 'ico-sm')}Transfer</button>
-    <button type="button" class="btn btn-ghost btn-sm" data-bulk="exclude">${icon('eye-off', 'ico-sm')}Exclude</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="exclude">${icon('eye-off', 'ico-sm')}<span class="label">Exclude</span></button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="tag" aria-haspopup="true">${icon('tag', 'ico-sm')}<span class="label">Tag</span></button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="more">${icon('more-horizontal', 'ico-sm')}</button>
     <span class="sep"></span><button type="button" class="btn btn-ghost btn-sm" data-bulk="clear" data-tip="Clear selection (Esc)" aria-label="Clear selection">${icon('x', 'ico-sm')}</button>`;
 }
@@ -514,6 +548,7 @@ function openRowMenu(anchor, id) {
     it.category_status === 'suggested' ? { label: 'Accept suggestion', icon: 'check', onClick: () => bulk([id], 'accept_suggestion') } : null,
     { label: it.is_transfer ? 'Not a transfer' : 'Mark as transfer', icon: 'arrow-left-right', onClick: () => updateItem(id, { is_transfer: !it.is_transfer }, it.is_transfer ? 'Unmarked as transfer' : 'Marked as transfer') },
     { label: it.is_excluded ? 'Include in reports' : 'Exclude from reports', icon: it.is_excluded ? 'eye' : 'eye-off', onClick: () => updateItem(id, { is_excluded: !it.is_excluded }, it.is_excluded ? 'Included in reports' : 'Excluded from reports') },
+    { label: 'Tags…', icon: 'tag', onClick: () => tagPicker({ anchor, selected: new Set(it.tag_ids || []), onChange: debounce((set) => setTags(it, Array.from(set)), 300) }) },
     { label: 'Create rule from this…', icon: 'sliders', onClick: () => openRuleModal(id) },
     { label: `All from ${it.merchant_name}`, icon: 'search', onClick: () => { $('#f-q').value = it.merchant_name; tx.filters.q = it.merchant_name; applyFilters(); } },
     { divider: true },
@@ -580,10 +615,11 @@ async function bulk(ids, action, extra = {}, { silent = false } = {}) {
     if (action === 'delete') { removeRows(ids); tx.total -= ids.length; paintSummary(); refreshTotals(); }
     else if (ids.length > 20) { await reload(); }
     else { await refreshItems(ids); refreshTotals(); }
-    const labels = { accept_suggestion: 'Suggestion accepted', reject_suggestion: 'Suggestion rejected', set_transfer: 'Marked as transfer', unset_transfer: 'Unmarked as transfer', exclude: 'Excluded from reports', include: 'Included in reports', delete: 'Deleted', categorize: 'Categorized', uncategorize: 'Category cleared', flip_sign: 'Sign flipped' };
+    const labels = { accept_suggestion: 'Suggestion accepted', reject_suggestion: 'Suggestion rejected', set_transfer: 'Marked as transfer', unset_transfer: 'Unmarked as transfer', exclude: 'Excluded from reports', include: 'Included in reports', delete: 'Deleted', categorize: 'Categorized', uncategorize: 'Category cleared', flip_sign: 'Sign flipped', tag: 'Tagged', untag: 'Tags removed' };
     const msg = `${labels[action] || 'Updated'}${ids.length > 1 ? ` · ${fmtNumber(r.updated)} rows` : ''}`;
     if (!silent) {
       if (action === 'flip_sign') ui.undoable(msg, () => bulk(ids, 'flip_sign', {}, { silent: true }));
+      else if (action === 'tag' || action === 'untag') ui.undoable(msg, () => bulk(ids, action === 'tag' ? 'untag' : 'tag', extra, { silent: true }));
       else if (r && r.before && r.before.length) ui.undoable(msg, () => restoreItems(r.before));
       else toast(msg, { type: 'success' });
     }
@@ -608,12 +644,14 @@ function onBulkClick(e) {
     case 'categorize': return categoryPicker({ anchor: b, allowNone: true, onPick: (cat) => setCategory(ids, cat ? cat.id : null) });
     case 'set_transfer': return bulk(ids, 'set_transfer');
     case 'exclude': return bulk(ids, 'exclude');
+    case 'tag': { let prev = new Set(); return tagPicker({ anchor: b, selected: new Set(), onChange: (set) => { const added = Array.from(set).filter((x) => !prev.has(x)); const removed = Array.from(prev).filter((x) => !set.has(x)); prev = new Set(set); if (added.length) bulk(ids, 'tag', { tag_ids: added }); if (removed.length) bulk(ids, 'untag', { tag_ids: removed }); } }); }
     case 'clear': { tx.selection.clear(); paintSelection(); return; }
     case 'more': return ui.menu(b, [
       { label: 'Accept suggestions', icon: 'check', onClick: () => bulk(ids, 'accept_suggestion') },
       { label: 'Reject suggestions', icon: 'x', onClick: () => bulk(ids, 'reject_suggestion') },
       { label: 'Not a transfer', icon: 'arrow-left-right', onClick: () => bulk(ids, 'unset_transfer') },
       { label: 'Include in reports', icon: 'eye', onClick: () => bulk(ids, 'include') },
+      { label: 'Remove all tags', icon: 'tag', disabled: !tx.tags.size, onClick: () => bulk(ids, 'untag', { tag_ids: Array.from(tx.tags.keys()) }) },
       { label: 'Flip sign (charge ⇄ payment)', icon: 'arrow-left-right', onClick: () => bulk(ids, 'flip_sign') },
       { divider: true },
       { label: 'Delete…', icon: 'trash', danger: true, onClick: () => deleteItems(ids) },
@@ -685,6 +723,7 @@ function drawerHtml(it) {
     <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button></div></div>
     <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" data-tip="Rename this merchant everywhere">Rename all</button></div>
       <div class="txd-raw mt-2" title="Original statement text">${esc(it.description_raw)}</div></div>
+    <div class="txd-section"><div class="section-label">Tags</div><div class="row gap-2 wrap" id="txd-tags">${tagChipsHtml(it, { removable: true })}<button type="button" class="btn btn-ghost btn-sm" data-dact="tags" aria-haspopup="true">${icon('tag', 'ico-sm')}${(it.tag_ids || []).length ? 'Edit tags' : 'Add tag'}</button></div></div>
     <div class="txd-section"><div class="section-label">Notes</div><textarea class="textarea" id="txd-notes" rows="2" aria-label="Notes" placeholder="Add a note…">${esc(it.notes || '')}</textarea></div>
     <div class="txd-section txd-flags">
       <label class="switch"><span>Transfer between my accounts</span><input type="checkbox" data-dflag="is_transfer" ${it.is_transfer ? 'checked' : ''}><span class="switch-track"></span></label>
@@ -699,8 +738,11 @@ function onDrawerClick(e, it, d) {
   const b = e.target.closest('[data-dact]');
   const other = e.target.closest('[data-open-other]');
   if (other) return openDrawer(Number(other.dataset.openOther));
+  const untag = e.target.closest('[data-untag]');
+  if (untag) { const id = Number(untag.dataset.untag); return setTags(it, (it.tag_ids || []).filter((x) => x !== id), d); }
   if (!b) return;
   switch (b.dataset.dact) {
+    case 'tags': return tagPicker({ anchor: b, selected: new Set(it.tag_ids || []), onChange: debounce((set) => setTags(it, Array.from(set), d), 300) });
     case 'pick': return categoryPicker({ anchor: b, value: it.category_id, allowNone: !!it.category_id, suggestedId: it.category_status === 'suggested' ? it.category_id : null, onPick: async (cat) => { await setCategory([it.id], cat ? cat.id : null); await refreshDrawer(it, d); } });
     case 'accept': return bulk([it.id], 'accept_suggestion').then(() => refreshDrawer(it, d));
     case 'reject': return bulk([it.id], 'reject_suggestion').then(() => refreshDrawer(it, d));

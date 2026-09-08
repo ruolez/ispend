@@ -208,6 +208,51 @@ function dateRangePicker({ anchor, value = { preset: 'this-month' }, onChange, a
   return pop;
 }
 
+/* Tag picker: multi-select with inline create. onChange(selectedSet) fires on every toggle. */
+async function tagPicker({ anchor, selected = new Set(), onChange, allowCreate = true, title = 'Tags' } = {}) {
+  let tags = await store.tags().catch(() => []);
+  const el = document.createElement('div');
+  el.className = 'menu tag-picker';
+  el.style.width = '260px';
+  const render = (q = '') => {
+    const ql = q.trim().toLowerCase();
+    const rows = tags.filter((t) => !ql || t.name.toLowerCase().includes(ql));
+    const exact = tags.some((t) => t.name.toLowerCase() === ql);
+    return `<div class="menu-search"><input class="input input-sm" placeholder="${tags.length ? 'Search or create…' : 'New tag…'}" value="${esc(q)}" aria-label="${esc(title)}" autocomplete="off"></div>
+      <div class="menu-opts" role="group" aria-label="${esc(title)}">${rows.map((t) => `<button type="button" class="menu-item" role="checkbox" aria-checked="${selected.has(t.id)}" data-tag="${t.id}"><span class="check-fake" aria-hidden="true"></span><i class="dot" style="--c:var(--${esc(t.color)})"></i><span class="grow truncate">${esc(t.name)}</span></button>`).join('')}${!rows.length && !ql ? '<div class="palette-empty">No tags yet · type a name to create one</div>' : ''}${allowCreate && ql && !exact ? `<button type="button" class="menu-item" data-create="1">${icon('plus')}<span class="grow">Create “${esc(q.trim())}”</span></button>` : ''}</div>`;
+  };
+  el.innerHTML = render();
+  const pop = ui.popover(anchor, el, { onClose: () => { if (anchor && anchor.isConnected && anchor.focus) anchor.focus(); } });
+  const refocus = (v) => { const i = el.querySelector('input'); i.focus(); i.setSelectionRange(v.length, v.length); };
+  el.addEventListener('input', (e) => { if (e.target.matches('input')) { const v = e.target.value; el.innerHTML = render(v); refocus(v); } });
+  el.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-tag]'); const c = e.target.closest('[data-create]');
+    if (b) { const id = Number(b.dataset.tag); if (selected.has(id)) selected.delete(id); else selected.add(id); b.setAttribute('aria-checked', String(selected.has(id))); onChange && onChange(selected); return; }
+    if (c) {
+      const name = el.querySelector('input').value.trim();
+      try {
+        const t = await api('/api/tags', { method: 'POST', body: { name } });
+        store.invalidate('tags'); tags = await store.tags({ force: true });
+        selected.add(t.id); el.innerHTML = render(''); refocus(''); onChange && onChange(selected);
+      } catch (err) { toast(err.message, { type: 'error' }); }
+    }
+  });
+  el.addEventListener('keydown', (e) => {
+    const opts = $$('[data-tag],[data-create]', el);
+    const input = el.querySelector('input');
+    if (document.activeElement === input) {
+      if (e.key === 'ArrowDown' && opts.length) { e.preventDefault(); opts[0].focus(); }
+      if (e.key === 'Enter') { e.preventDefault(); const c = el.querySelector('[data-create]'); if (c) c.click(); else if (opts.length === 1) opts[0].click(); }
+      return;
+    }
+    const i = opts.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); (opts[i + 1] || opts[0]).focus(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); if (i <= 0) input.focus(); else opts[i - 1].focus(); }
+  });
+  requestAnimationFrame(() => el.querySelector('input').focus());
+  return pop;
+}
+
 /* Small helper to render a range trigger button and wire the picker. */
 function mountRangeButton(btn, value, onChange) {
   btn.innerHTML = `${icon('calendar', 'ico-sm')}<span>${esc(rangeLabel(value))}</span>${icon('chevron-down', 'ico-sm')}`;

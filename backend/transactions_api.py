@@ -22,7 +22,8 @@ bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
 ITEM_FIELDS = """t.id, t.account_id, t.statement_id, t.txn_date, t.posted_date, t.amount, t.currency, t.balance,
     t.description_raw, t.description_clean, t.merchant_key, t.merchant_name,
     t.category_id, t.category_status, t.category_source, t.category_rule_id, t.category_confidence,
-    t.is_transfer, t.transfer_pair_id, t.is_excluded, t.notes, t.created_at, t.updated_at"""
+    t.is_transfer, t.transfer_pair_id, t.is_excluded, t.notes, t.created_at, t.updated_at,
+    COALESCE((SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) FROM transaction_tags tt WHERE tt.transaction_id = t.id), ARRAY[]::int[]) AS tag_ids"""
 
 RANGES = ("this-week", "last-week", "this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all")
 STATUSES = ("all", "uncategorized", "suggested", "confirmed", "transfer", "excluded")
@@ -182,7 +183,38 @@ def build_filters(args, user_id):
     if merchant_key:
         sql += " AND t.merchant_key = %s"
         params.append(merchant_key)
+    tag = (args.get("tag") or "").strip()
+    if tag == "none":
+        sql += " AND NOT EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id)"
+    elif tag:
+        tag_ids = parse_int_list(tag)
+        if tag_ids and args.get("tag_mode") == "all":
+            for tid in tag_ids:
+                sql += " AND EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag_id = %s)"
+                params.append(tid)
+        elif tag_ids:
+            sql += " AND EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag_id = ANY(%s))"
+            params.append(tag_ids)
     return sql, params
+
+
+def _own_tag_ids(uid, raw):
+    """Validated list of the user's tag ids from a body value; None when one is not theirs."""
+    ids = sorted(set(parse_int_list(raw)))
+    if not ids:
+        return []
+    own = {r["id"] for r in (db.query("SELECT id FROM tags WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])}
+    return ids if own == set(ids) else None
+
+
+def _set_tags(uid, txn_ids, tag_ids):
+    """Replace the tags on txn_ids (single-row PUT) and record one event per row."""
+    with db.transaction():
+        db.execute("DELETE FROM transaction_tags WHERE transaction_id = ANY(%s)", (txn_ids,), commit=False)
+        if tag_ids:
+            db.execute_values("INSERT INTO transaction_tags (transaction_id, tag_id) VALUES %s ON CONFLICT DO NOTHING",
+                              [(t, g) for t in txn_ids for g in tag_ids], commit=False)
+    record_events([(t, "tag", {"tag_ids": tag_ids}, uid) for t in txn_ids])
 
 
 def encode_cursor(row, sort):
@@ -258,6 +290,10 @@ def list_transactions():
         f"SELECT t.category_id AS id, COUNT(*) AS n FROM transactions t WHERE{where} GROUP BY t.category_id ORDER BY n DESC",
         params,
     ) or []
+    tag_facets = db.query(
+        f"SELECT tt.tag_id AS id, COUNT(*) AS n FROM transactions t JOIN transaction_tags tt ON tt.transaction_id = t.id WHERE{where} GROUP BY tt.tag_id ORDER BY n DESC",
+        params,
+    ) or []
     currencies = [r["currency"] for r in (db.query(
         f"SELECT DISTINCT t.currency FROM transactions t WHERE{where} ORDER BY t.currency", params) or [])]
     return jsonify({
@@ -271,6 +307,7 @@ def list_transactions():
         "facets": {
             "accounts": [dict(r) for r in acct_facets],
             "categories": [dict(r) for r in cat_facets],
+            "tags": [dict(r) for r in tag_facets],
             "status": {
                 "uncategorized": totals.get("uncategorized", 0),
                 "suggested": totals.get("suggested", 0),
@@ -289,7 +326,8 @@ def export_csv():
     rows = db.query(
         f"""SELECT t.txn_date, a.name AS account, t.description_raw, t.merchant_name,
                    COALESCE(p.name || ' > ' || c.name, c.name) AS category, t.amount, t.currency, t.notes,
-                   t.is_transfer
+                   t.is_transfer,
+                   (SELECT string_agg(g.name, '; ' ORDER BY g.name) FROM transaction_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.transaction_id = t.id) AS tags
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
@@ -301,7 +339,7 @@ def export_csv():
     def generate():
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer"])
+        writer.writerow(["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags"])
         yield buf.getvalue()
         for r in rows:
             buf.seek(0)
@@ -309,7 +347,7 @@ def export_csv():
             writer.writerow([
                 r["txn_date"].isoformat(), csv_safe(r["account"]), csv_safe(r["description_raw"]),
                 csv_safe(r["merchant_name"]), csv_safe(r["category"] or ""), f"{r['amount']:.2f}", r["currency"],
-                csv_safe(r["notes"] or ""), "yes" if r["is_transfer"] else "",
+                csv_safe(r["notes"] or ""), "yes" if r["is_transfer"] else "", csv_safe(r["tags"] or ""),
             ])
             yield buf.getvalue()
 
@@ -513,6 +551,11 @@ def update_transaction(txn_id):
             if not cat:
                 return api_error("Category not found", 404)
         categorizer.apply_manual(uid, [txn_id], category_id, learn_memory=learn)
+    if "tag_ids" in data:
+        tag_ids = _own_tag_ids(uid, data.get("tag_ids"))
+        if tag_ids is None:
+            return api_error("Tag not found", 404)
+        _set_tags(uid, [txn_id], tag_ids)
     if "notes" in data:
         notes = (data.get("notes") or "").strip() or None
         db.execute("UPDATE transactions SET notes = %s, updated_at = now() WHERE id = %s", (notes, txn_id))
@@ -693,6 +736,19 @@ def bulk():
     elif action == "delete":
         _release_partners(own)
         updated = db.execute("DELETE FROM transactions WHERE id = ANY(%s)", (own,))
+    elif action in ("tag", "untag"):
+        tag_ids = _own_tag_ids(uid, data.get("tag_ids"))
+        if tag_ids is None:
+            return api_error("Tag not found", 404)
+        if not tag_ids:
+            return api_error("tag_ids are required")
+        if action == "tag":
+            db.execute_values("INSERT INTO transaction_tags (transaction_id, tag_id) VALUES %s ON CONFLICT DO NOTHING",
+                              [(t, g) for t in own for g in tag_ids])
+        else:
+            db.execute("DELETE FROM transaction_tags WHERE transaction_id = ANY(%s) AND tag_id = ANY(%s)", (own, tag_ids))
+        record_events([(t, "tag", {"tag_ids": tag_ids, "removed": action == "untag"}, uid) for t in own])
+        updated = len(own)
     elif action == "restore":
         try:
             updated = _restore(uid, own, data.get("items"))

@@ -78,6 +78,7 @@
   .tx-search { max-width: none; flex-basis: 100%; }
   .floatbar { bottom: 72px; }
 }
+@media (max-width: 640px) { .floatbar [data-bulk] .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 @media (max-width: 768px) {
   .tbl-toolbar .seg { max-width: 100%; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: thin; padding-bottom: 2px; }
   .tbl-toolbar .seg .seg-btn { scroll-snap-align: start; }

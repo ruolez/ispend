@@ -105,6 +105,18 @@ class BuildFiltersTest(unittest.TestCase):
                      "t.statement_id = %s"):
             self.assertIn(frag, sql)
 
+    def test_tag_filters(self):
+        sql, params = tapi.build_filters({"tag": "3,4"}, 1)
+        self.assertIn("tt.tag_id = ANY(%s)", sql)
+        self.assertEqual(params, [1, [3, 4]])
+        sql, params = tapi.build_filters({"tag": "3,4", "tag_mode": "all"}, 1)
+        self.assertEqual(sql.count("EXISTS (SELECT 1 FROM transaction_tags"), 2)
+        self.assertEqual(params, [1, 3, 4])
+        sql, params = tapi.build_filters({"tag": "none"}, 1)
+        self.assertIn("NOT EXISTS (SELECT 1 FROM transaction_tags", sql)
+        self.assertEqual(params, [1])
+        self.assertEqual(tapi.build_filters({"tag": "abc"}, 1), (" t.user_id = %s", [1]))
+
     def test_range_ignored_when_explicit_dates(self):
         sql, params = tapi.build_filters({"range": "last-year", "from": "2026-02-01"}, 1)
         self.assertEqual(params, [1, date(2026, 2, 1)])
@@ -170,6 +182,8 @@ class ListEndpointTest(unittest.TestCase):
                 return [{"id": None, "n": 1}, {"id": 5, "n": 2}]
             if "DISTINCT t.currency" in sql:
                 return [{"currency": "USD"}]
+            if "tt.tag_id AS id" in sql:
+                return [{"id": 3, "n": 2}]
             self.assertIn("LIMIT %s", sql)
             self.assertEqual(params[-1], 3)
             return items
@@ -180,6 +194,7 @@ class ListEndpointTest(unittest.TestCase):
         self.assertEqual([i["id"] for i in body["items"]], [5, 4])
         self.assertEqual(body["items"][0]["amount"], -1.5)
         self.assertIsNotNone(body["next_cursor"])
+        self.assertEqual(body["facets"]["tags"], [{"id": 3, "n": 2}])
         self.assertEqual(tapi.decode_cursor(body["next_cursor"], "-date"), (date(2026, 9, 1), 4))
         self.assertEqual(body["total"], 3)
         self.assertEqual(body["sum_out"], -4.5)
@@ -278,6 +293,25 @@ class ListEndpointTest(unittest.TestCase):
             res = self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "restore", "items": [{"id": 1, "category_id": 5}]})
         self.assertEqual(res.status_code, 400)
         self.assertFalse(any(c[0] == "execute" for c in fake.calls))
+
+    def test_bulk_tag_and_untag(self):
+        def handler(sql, params, one):
+            if "FROM tags WHERE user_id" in sql:
+                return [{"id": 7}]
+            return [{"id": 1}, {"id": 2}]
+        fake = FakeDB(handler)
+        with patch_db(fake):
+            body = json.loads(self.client.post("/api/transactions/bulk", json={"ids": [1, 2], "action": "tag", "tag_ids": [7]}).get_data())
+        self.assertEqual(body["updated"], 2)
+        ins = [c for c in fake.calls if c[0] == "execute_values" and "INSERT INTO transaction_tags" in c[1]][0]
+        self.assertEqual(ins[2], [(1, 7), (2, 7)])
+        with patch_db(fake):
+            self.client.post("/api/transactions/bulk", json={"ids": [1, 2], "action": "untag", "tag_ids": [7]})
+        self.assertTrue(any("DELETE FROM transaction_tags" in c[1] and c[2] == ([1, 2], [7]) for c in fake.calls))
+        fake2 = FakeDB(lambda sql, params, one: [] if "FROM tags WHERE user_id" in sql else [{"id": 1}])
+        with patch_db(fake2):
+            res = self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "tag", "tag_ids": [99]})
+        self.assertEqual(res.status_code, 404)
 
     def test_list_facets_include_excluded(self):
         def handler(sql, params, one):

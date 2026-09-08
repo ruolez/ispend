@@ -77,6 +77,7 @@ const store = (() => {
   const categories = (opts) => get('categories', '/api/categories', opts);
   const categoriesFlat = async (opts) => flatten(await categories(opts));
   const accounts = (opts) => get('accounts', '/api/accounts?all=1', opts);
+  const tags = (opts) => get('tags', '/api/tags', opts);
   const settings = (opts) => get('settings', '/api/settings/client', { ttl: 300000, ...(opts || {}) });
 
   /* Currency used for aggregate views: the user's preference, else the one currency all
@@ -94,5 +95,5 @@ const store = (() => {
     return Object.keys(weight).sort((a, b) => weight[b] - weight[a])[0] || 'USD';
   }
 
-  return { get, invalidate, on, emit, flatten, categories, categoriesFlat, accounts, settings, displayCurrency };
+  return { get, invalidate, on, emit, flatten, categories, categoriesFlat, accounts, tags, settings, displayCurrency };
 })();

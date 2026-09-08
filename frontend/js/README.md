@@ -64,7 +64,7 @@ Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to th
 |---|---|
 | `await store.categories()` | tree `[{id,parent_id,name,slug,kind,color,icon,txn_count,children:[…]}]` |
 | `await store.categoriesFlat()` | flattened, adds `parent_name`, `parent_color`, `path` (`Dining › Coffee`), `depth` |
-| `store.accounts()` (all incl. archived), `store.settings()` (`/api/settings/client`) | |
+| `store.accounts()` (all incl. archived), `store.tags()` (`[{id,name,color,txn_count}]`), `store.settings()` (`/api/settings/client`) | |
 | `store.get(key, url, {ttl, force})`, `store.invalidate(key)` | generic cache; keys `categories`, `accounts`, `settings` |
 | `store.on(event, fn)`, `store.emit(event, detail)` | `${key}-changed` fires after a revalidate changes data; also dispatched as `window` event `ispend:<event>` |
 
@@ -112,6 +112,7 @@ Layers (modal/drawer/popover/palette) trap focus, close on Esc, and restore focu
 categoryPicker({ anchor, value: currentCategoryId, onPick: (cat|null) => {}, allowCreate:true, suggestedId, allowNone:false });
 // ARIA combobox popover; groups Suggested / Recent (localStorage ispend.recentCats) / tree; typing ranks prefix > word-start > contains;
 // "Create “x”" POSTs /api/categories and invalidates the store. `cat` has {id,name,color,parent_name,path,…}.
+tagPicker({ anchor, selected:new Set(ids), onChange(set), allowCreate:true });   // multi-select with inline create; rows are role=checkbox
 dateRangePicker({ anchor, value:{preset:'this-month'} | {from:'2026-01-01', to:'2026-01-31'}, onChange(value), allowAll });
 rangeLabel(value) → 'Last month' | 'Jan 1 – Jan 31'; rangeToQuery(value) → {range} | {from,to}; rangeFromQuery(qs(), fallback); rangeDates(value) → {from,to} ISO
 mountRangeButton(btnEl, value, onChange)   // renders a .btn-secondary trigger and wires the picker
@@ -145,6 +146,9 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Breakpoints (the only widths allowed, checked by `css_audit.py --check`): 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, card-mode tables), 640 (2-col stat grid, stacked headers), 480 (compact stats). Type sizes are rem tokens (`--fs-*`); radii `--r-xs|sm|md|lg|xl|pill`; never px literals for either.
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
+
+## Tags
+`/api/tags` CRUD; rows carry `tag_ids`; `PUT /api/transactions/:id {tag_ids}` replaces, bulk `tag`/`untag {tag_ids}` add or remove; list filter `?tag=1,2|none[&tag_mode=all]`, `facets.tags`. Chips: `.tagchip` (neutral surface + coloured dot). Tag manager lives on the Categories page.
 
 ## Budgets
 `/api/budgets` (one row per category and month, `POST` upserts, `POST /copy {from,to}`), `/api/budgets/progress?month=` (`items[{category_id, budget, spent, remaining, pct, projected, pace_status}]`, `totals`, `unbudgeted`). `budgetsForRange(start, end)` (breakdown.js) returns a Map for a single-month range so the breakdown table can show a Budget column; the dashboard card and the category side panel call the same endpoints.
