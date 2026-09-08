@@ -119,6 +119,29 @@ Admins get an **Admin** page (`/admin.html`) with three tabs:
   possible from the trash and asks you to type the username; locking and trashing are undoable.
 - **Activity** — the `audit_log`, filterable by user, action and text, exportable as CSV. Retention for
   the log and for the trash is configurable on the Overview tab.
+- **Backup** — see below.
+
+### Backing up and moving servers
+
+**Backup** produces one ZIP holding every table's rows plus every uploaded statement, and hands it to
+you as a download. **Restore** replaces everything on a server with the contents of such an archive,
+which is how you migrate to new hardware: install iSpend there, sign in as the seeded admin, upload
+the archive.
+
+- The archive carries **data only**. Schema comes from the migrations on the target, so an archive
+  made months ago restores into a freshly updated server. An archive from a *newer* build is refused
+  by name rather than half-applied.
+- Restoring is a two-step flow: uploading only inspects the archive and shows a per-table diff of what
+  would be replaced; nothing changes until you type `RESTORE`. A backup of the current data is taken
+  automatically first, and the whole load runs in one transaction, so a failure leaves the previous
+  data in place.
+- While a restore runs the app returns 503 to everyone. When it finishes every session is invalidated
+  — including yours — because the user accounts have been replaced.
+- **The archive contains password hashes and your OpenRouter API key in plain text.** Store it like a
+  password database. It does *not* contain `SECRET_KEY` or the database password; a stolen archive
+  therefore cannot be used to forge sessions on the server it came from.
+- `install.sh` keeps its own host-level `pg_dump` backups under `/opt/ispend-backups` for disaster
+  recovery. The in-app archive is the migration tool; the two are complementary.
 
 If an instance ever loses its last administrator (manual SQL, a restore), promote one from the host:
 

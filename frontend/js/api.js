@@ -68,6 +68,30 @@ function apiUpload(path, formData, { onProgress } = {}) {
   });
 }
 
+/* Raw-body upload with progress. A restore archive is far too large for FormData buffering, and
+   the backend reads request.stream directly rather than parsing multipart. */
+function apiUploadRaw(path, file, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (onProgress) xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); });
+    xhr.addEventListener('load', () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+      if (xhr.status === 401) { loginRedirect(); return reject(new Error('Not authenticated')); }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      const err = new Error((data && data.error) || httpFallback(xhr.status, 'Upload failed'));
+      err.status = xhr.status;
+      return reject(err);
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+    xhr.send(file);
+  });
+}
+
 /* Everything a signed-in user leaves in this browser, except device preferences. Called on sign-out,
    on login, and whenever the signed-in user differs from the one who used this browser last. */
 const DEVICE_KEYS = ['ispend.theme', 'ispend.density', 'ispend.sidebar'];

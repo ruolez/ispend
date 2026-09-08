@@ -57,7 +57,7 @@ class SessionEnforcementTest(unittest.TestCase):
             return client.get(path)
 
     def test_active_user_passes_and_role_is_refreshed_from_the_row(self):
-        self.q.routes.append(("FROM users WHERE id", {"role": "admin", "status": "active"}))
+        self.q.routes.append(("FROM users u", {"role": "admin", "status": "active"}))
         c = self._client(role="user")
         self.assertEqual(self._get(c, "/admin-only").status_code, 200)
         with c.session_transaction() as s:
@@ -66,7 +66,7 @@ class SessionEnforcementTest(unittest.TestCase):
     def test_locked_or_deleted_user_loses_the_session(self):
         for status in ("locked", "deleted"):
             with self.subTest(status=status):
-                self.q = _stubs.Router([("FROM users WHERE id", {"role": "user", "status": status})])
+                self.q = _stubs.Router([("FROM users u", {"role": "user", "status": status})])
                 c = self._client()
                 res = self._get(c, "/protected")
                 self.assertEqual((res.status_code, res.get_json()), (401, {"error": "Not authenticated"}))
@@ -78,7 +78,7 @@ class SessionEnforcementTest(unittest.TestCase):
         self.assertEqual(self._get(c, "/protected").status_code, 401)
 
     def test_demoted_admin_gets_403_on_admin_routes(self):
-        self.q.routes.append(("FROM users WHERE id", {"role": "user", "status": "active"}))
+        self.q.routes.append(("FROM users u", {"role": "user", "status": "active"}))
         c = self._client(role="admin")
         res = self._get(c, "/admin-only")
         self.assertEqual((res.status_code, res.get_json()), (403, {"error": "Admin access required"}))
@@ -168,7 +168,8 @@ class PasswordPolicyTest(unittest.TestCase):
 
     def test_change_own_password_uses_the_policy(self):
         app = build_app()
-        q = _stubs.Router([("FROM users WHERE id", {"role": "user", "status": "active", "password_hash": HASH})])
+        q = _stubs.Router([("FROM users u", {"role": "user", "status": "active"}),
+                           ("FROM users WHERE id", {"password_hash": HASH})])
         c = app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 3

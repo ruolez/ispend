@@ -18,6 +18,8 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+      # Read-only so nginx can serve finished backup archives via X-Accel-Redirect.
+      - statements:/protected:ro
     depends_on:
       - backend
     healthcheck:
@@ -47,6 +49,8 @@ services:
       - STATEMENTS_DIR=/data/statements
       - GUNICORN_WORKERS=2
       - GUNICORN_THREADS=4
+      # Building or loading a whole-application archive outlasts a normal request.
+      - GUNICORN_TIMEOUT=1800
     volumes:
       # Code is baked into the image in production; only uploaded statements persist.
       - statements:/data/statements

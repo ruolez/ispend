@@ -12,6 +12,13 @@ POSTGRES = {
 
 STATEMENTS_DIR = os.environ.get("STATEMENTS_DIR", "/data/statements")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", "26214400"))
+# Whole-application restore archives are far larger than a statement; nginx has its own limit.
+MAX_RESTORE_BYTES = int(os.environ.get("MAX_RESTORE_BYTES", str(4 * 1024 ** 3)))
+# Off by default: Flask streams the artifact, which keeps it 0600 and readable only by the app
+# user. Turning this on hands the download to nginx (no gunicorn thread held for the duration of
+# a multi-GB transfer) but requires the file to be world-readable inside the statements volume,
+# because the nginx and backend images share no group. Worth it only for very large installs.
+USE_X_ACCEL = os.environ.get("USE_X_ACCEL", "0") == "1"
 OCR_TIMEOUT_SECONDS = int(os.environ.get("OCR_TIMEOUT_SECONDS", "600"))
 OCR_LANGS = os.environ.get("OCR_LANGS", "eng")
 

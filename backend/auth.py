@@ -110,8 +110,20 @@ def refresh_session_user():
     uid = session.get("user_id")
     if uid is None:
         return
-    row = db.query("SELECT id, role, status FROM users WHERE id = %s", (uid,), one=True)
+    row = db.query(
+        """SELECT u.id, u.role, u.status,
+                  (SELECT value FROM settings WHERE key = 'session_epoch') AS global_epoch
+             FROM users u WHERE u.id = %s""", (uid,), one=True)
     if not user_state.can_sign_in(row):
+        session.clear()
+        return
+    # A restore replaces the users table while SECRET_KEY stays put, so an old cookie carrying
+    # user_id 1 would silently bind to whoever is id 1 in the restored data. The restore sets an
+    # epoch; every cookie minted before it then fails this check.
+    # Only enforced once an epoch exists, so upgrading an install that has never been restored
+    # does not sign everybody out.
+    epoch = row.get("global_epoch")
+    if epoch and session.get("epoch") != epoch:
         session.clear()
         return
     g.user_row = row
@@ -187,6 +199,7 @@ def login():
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["role"] = user["role"]
+    session["epoch"] = db.get_setting("session_epoch") or ""
     db.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
     audit("auth.login")
     return with_theme_cookie(jsonify(_me_payload(user)), (user.get("preferences") or {}).get("theme"))

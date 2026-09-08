@@ -76,7 +76,8 @@ def install(tmp_dir="/tmp"):
     sys.modules["db"] = fake
     sys.modules["config"] = types.SimpleNamespace(
         SECRET_KEY="test", ADMIN_INITIAL_PASSWORD="admin", POSTGRES={}, STATEMENTS_DIR=tmp_dir,
-        MAX_UPLOAD_BYTES=25 * 1024 * 1024, OCR_TIMEOUT_SECONDS=10, OCR_LANGS="eng",
+        MAX_UPLOAD_BYTES=25 * 1024 * 1024, MAX_RESTORE_BYTES=4 * 1024 ** 3, USE_X_ACCEL=False,
+        OCR_TIMEOUT_SECONDS=10, OCR_LANGS="eng",
         OPENROUTER_BASE_URL="http://localhost", OPENROUTER_TIMEOUT=5, AI_BATCH_SIZE=40, APP_TIMEZONE="UTC",
         SESSION_COOKIE_SECURE=False,
     )

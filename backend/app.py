@@ -2,11 +2,12 @@ import logging
 
 import psycopg2
 import psycopg2.errors
-from flask import Flask, jsonify
+from flask import Flask, abort, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 import config
 import db
+from backup import restore as backup_restore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -19,13 +20,14 @@ def create_app():
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
         PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 14,
-        MAX_CONTENT_LENGTH=config.MAX_UPLOAD_BYTES,
+        MAX_CONTENT_LENGTH=max(config.MAX_UPLOAD_BYTES, config.MAX_RESTORE_BYTES),
     )
 
     db.run_migrations()
 
     import accounts_api
     import admin_api
+    import admin_backup
     import ai_api
     import auth
     import categories_api
@@ -42,16 +44,39 @@ def create_app():
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
         transactions_api, review_api, rules_api, merchants_api, reports_api, ai_api, budgets_api, tags_api,
-        admin_api,
+        admin_api, admin_backup,
     ):
         app.register_blueprint(module.bp)
 
     app.before_request(auth.refresh_session_user)
+
+    @app.before_request
+    def _guards():
+        # MAX_CONTENT_LENGTH is app-wide and had to be raised for restore uploads, so every other
+        # path keeps its cheap pre-read 413 here. (store_upload enforces the real limit itself.)
+        if not request.path.startswith("/api/admin/backup/"):
+            length = request.content_length
+            if length is not None and length > config.MAX_UPLOAD_BYTES:
+                abort(413)
+        # A restore truncates and reloads every table; other requests would see a half-empty
+        # database or block on its locks. A sentinel file is used because a DB flag would itself
+        # be truncated and a process global would not cross the gunicorn workers.
+        if (request.path.startswith("/api/")
+                and not request.path.startswith("/api/admin/backup/restore/")
+                and request.path != "/api/health"
+                and backup_restore.restore_in_progress()):
+            return jsonify({"error": "A restore is in progress. Try again in a few minutes."}), 503
+        return None
+
     app.teardown_appcontext(db.close_db)
 
     with app.app_context():
         import importer
         importer.recover_interrupted()
+        backup_restore.clear_stale_sentinel()
+        db.execute("""UPDATE backup_jobs SET status = 'error', finished_at = now(),
+                             error_message = 'Interrupted by a server restart'
+                       WHERE status IN ('queued','running')""")
 
     @app.after_request
     def no_cache(response):

@@ -10,5 +10,8 @@ services:
     volumes:
       - ${NGINX_CONF:-./nginx/nginx.ssl.conf}:/etc/nginx/conf.d/default.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+      # Compose replaces this list rather than merging it, so the backup volume has to be
+      # repeated here or X-Accel downloads break on exactly the HTTPS installs that matter.
+      - statements:/protected:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./certbot-www:/var/www/certbot:ro

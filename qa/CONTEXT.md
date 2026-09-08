@@ -53,3 +53,20 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
   `GET|PUT /api/admin/settings`, `GET /api/admin/users/<id>` (per-user detail).
 - `users.is_active` is now a **generated** column derived from `users.status`; write `status` instead.
 - Lost every admin? `docker compose exec backend python -c "import db; db.promote_admin('admin')"`.
+
+## Added 2026-09-08 (backup & restore)
+- Admin tab **Backup** (`js/pages/admin-backup.js`, registered through `window.AdminPanels`).
+- API `/api/admin/backup*`. Uploading an archive only *inspects* it; a restore additionally needs
+  `{"confirm": "RESTORE"}` and is refused while any statement is `parsing`/`committing`.
+- **Never run a restore against the dev stack** — it truncates every table. The round-trip is covered
+  by `backend/tests/test_backup_roundtrip.py`, which creates its own scratch databases:
+  `ISPEND_TEST_DSN=postgresql://ispend:<pw>@postgres/ispend python -m unittest tests.test_backup_roundtrip`
+  (run on its own; under `discover` the db module is stubbed and it skips).
+- While a restore runs, `/api/*` returns 503 except `/api/health` and `/api/admin/backup/restore/<id>`.
+  A sentinel file at `{STATEMENTS_DIR}/_backups/.restore-in-progress` drives it and is cleared at boot.
+- A restore rotates `settings.session_epoch`, which invalidates every session cookie. The check in
+  `auth.refresh_session_user` only applies once that key exists, so upgrading never signs people out.
+- `nginx` location for backups deliberately has **no trailing slash**: a prefix location ending in `/`
+  with `proxy_pass` makes nginx 301 the slash-less URI, which broke `/api/admin/backup`.
+- `USE_X_ACCEL` defaults off (Flask streams the artifact, mode 0600). Turning it on lets nginx serve
+  the download but requires mode 0644, because the nginx and backend images share no group.

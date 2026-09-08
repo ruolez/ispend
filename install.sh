@@ -137,7 +137,7 @@ backup_data() {
     compose exec -T postgres pg_dump -U ispend ispend | gzip > "$dump"
     info "Backing up uploaded statements..."
     docker run --rm -v ispend_statements:/data:ro -v "$BACKUP_DIR":/out alpine \
-        tar czf "/out/ispend-statements-$stamp.tgz" -C /data . 2>/dev/null || warn "Statement volume backup skipped"
+        tar czf "/out/ispend-statements-$stamp.tgz" --exclude='./_backups' -C /data . 2>/dev/null || warn "Statement volume backup skipped"
     cp "$INSTALL_DIR/.env" "$BACKUP_DIR/env-$stamp" 2>/dev/null || true
     ls -1t "$BACKUP_DIR"/ispend-db-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
     ls -1t "$BACKUP_DIR"/ispend-statements-*.tgz 2>/dev/null | tail -n +11 | xargs -r rm -f

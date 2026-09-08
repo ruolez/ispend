@@ -80,6 +80,30 @@ server {
         try_files $uri =404;
     }
 
+    # Whole-application archives: multi-GB upload, and a download nginx serves itself so a
+    # gunicorn thread is not held for the duration. ^~ wins over the generic /api/ prefix.
+    # No trailing slash: a prefix location ending in "/" with proxy_pass makes nginx 301 the
+    # slash-less URI, which would break the collection endpoint at /api/admin/backup.
+    location ^~ /api/admin/backup {
+        client_max_body_size 4g;
+        client_body_timeout 600s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        proxy_pass http://backend:5000;
+    }
+
+    # Served only via X-Accel-Redirect from the backup download endpoint.
+    location /protected/ {
+        internal;
+        alias /protected/;
+    }
+
     location = /api/auth/login {
         limit_req zone=login burst=20 nodelay;
         proxy_pass http://backend:5000;

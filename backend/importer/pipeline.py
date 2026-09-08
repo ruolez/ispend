@@ -43,8 +43,12 @@ def store_upload(user_id, file_storage, account_id=None):
     path = abs_path(rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        with open(path, "wb") as f:
+        # Written via a temp file: a plain open+write leaves a window where a concurrent backup
+        # would archive a truncated file. Content-addressed, so a lost race is harmless.
+        tmp = f"{path}.{os.getpid()}.part"
+        with open(tmp, "wb") as f:
             f.write(data)
+        os.replace(tmp, path)
     dup = db.query(
         """SELECT id FROM statements WHERE user_id = %s AND file_sha256 = %s AND status <> 'discarded'
            ORDER BY id DESC LIMIT 1""",

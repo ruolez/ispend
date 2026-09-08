@@ -173,7 +173,7 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 ## Admin
 `/admin.html` (nav group "Admin", `g a`) is admin-only and mounts the same tabbed layout as Settings
 (`.settings-layout` / `.settings-nav` / `.settings-section` / `.setting-row`, now in **app.css** so both
-pages share them). Tabs are hash-routed: Overview, Users, Activity.
+pages share them). Tabs are hash-routed: Overview, Users, Activity, Backup.
 
 - **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
   the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
@@ -191,7 +191,12 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity.
   tell them apart; a wrong password stays a generic 401.
 - **Composition.** A sibling feature adds a tab with
   `window.AdminPanels.register(tab, { label, icon, load(hostEl) })` plus one `<script>` in `admin.html` —
-  no edits to `admin.js`.
+  no edits to `admin.js`. `js/pages/admin-backup.js` is the worked example.
+- **Backup tab** (`/api/admin/backup*`): `GET|POST /`, `GET|DELETE /:id`, `GET /:id/download`,
+  `POST /upload` (raw octet-stream via `apiUploadRaw`, inspect only), `POST /restore`,
+  `GET /restore/:id?token=` — the last one is not admin-gated because a restore signs the admin out
+  partway through; the token issued when it started is kept in `sessionStorage` so the page can still
+  report the outcome.
 - **Charts** on Overview are counts, not money: `countScales()` replaces the currency ticks/tooltips from
   `charts.barOptions` / `charts.lineOptions`. All four series are gap-filled server-side so both charts
   share one x-axis.
