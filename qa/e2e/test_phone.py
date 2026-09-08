@@ -321,3 +321,22 @@ def test_bottom_sheet_pickers_390(make_context):
     assert box["x"] >= 0 and box["right"] <= box["vw"] + 1 and box["bottom"] <= box["vh"] + 1 and box["apply"], box
     page.keyboard.press("Escape")
     page.wait_for_selector(".popover", state="detached", timeout=3000)
+
+
+# States the page-level sweep never reaches: the review queue in focus mode and the two report
+# tabs that are not the default one. Both clipped at 390 until the splits phase.
+@pytest.mark.parametrize("name,url,tab", [
+    ("review-focus", PAGES["review"] + "?focus=1", None),
+    ("reports-compare", PAGES["reports"], "compare"),
+    ("reports-cashflow", PAGES["reports"], "cashflow"),
+])
+def test_no_inner_overflow_states_390(make_context, name, url, tab):
+    _, page, _ = make_context("admin", "light", "390")
+    page.goto(url)
+    wait_loaded(page)
+    if tab:
+        page.click(f'[data-tab="{tab}"]')
+        page.wait_for_timeout(1200)
+    bad = page.evaluate(INNER_OVERFLOW_JS, ALLOW_HSCROLL)
+    doc = page.evaluate("() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth })")
+    assert bad == [] and doc["sw"] <= doc["cw"] + 1, f"{name}: {bad} {doc}"

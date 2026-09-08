@@ -17,6 +17,8 @@ After de-duplication (the cache leak, double date picker, mobile overflow, CSV i
 
 ## Status (updated 2026-09-07, end of day)
 
+> **UI/UX programme (2026-09-07, later):** a second audit produced a 14-phase plan (phone parity, shared primitives, undo/confirm parity, review ergonomics, saved views, budgets, tags, splits, onboarding). Its phases are the `feat(ui)`/`feat(api)` commits after `42fe519`; new gates: `qa/e2e/test_phone.py`, `css_audit.py --check`, `report_snapshot.py`. See `qa/CONTEXT.md` ("Added 2026-09-07").
+
 All seven sessions of the execution order below have been executed and committed (`git log --oneline` from `2f4ecd2` onwards).
 
 | Phase | Done |

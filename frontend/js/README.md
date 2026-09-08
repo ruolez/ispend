@@ -148,6 +148,8 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
 
 ## Splits
+UI: row chip `.catchip--split` (`data-split-edit`), `openSplitEditor(id)` (`ui.modal({ sheet:true })`, lines with `categoryPicker`, live remaining, "Put in last line"), drawer section with `[data-dact=split|unsplit]`, row menu "Split…/Edit split…/Remove split", filter chip `#f-split` (`?split=1`), palette "Show split transactions". `ui.modal({ sheet:true })` docks to the bottom on phones with a sticky footer.
+
 `PUT /api/transactions/:id/splits {lines:[{category_id, amount, note}]}` (>= 2 lines, same sign, sum = amount; first line becomes the primary category), `DELETE` unsplits. Rows carry `split_count`; detail carries `splits[]`; `?split=1` filters. Category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line; summary/trends/merchants keep the parent amount. Recategorising, rejecting or marking a transfer drops the split (event `split {removed}`).
 
 ## Tags

@@ -99,6 +99,12 @@ docker-compose.yml  production; docker-compose.dev.yml overlay for live reload
 install.sh          Ubuntu installer / updater
 ```
 
+## Budgets, tags and splits
+
+- **Budgets** live in `budgets` (one row per category and month). `/api/budgets/progress` composes the spending breakdown with pace maths (`backend/budgets.py`); the Budgets page and the dashboard card read it. Parent and child categories cannot both carry a budget for the same month.
+- **Tags** (`tags`, `transaction_tags`) are free labels across categories. Rows carry `tag_ids`; filter with `?tag=1,2` (`&tag_mode=all`) or `?tag=none`; the CSV export has a `Tags` column.
+- **Splits** (`transaction_splits`) divide one row over several categories. The parent keeps its amount and a primary category (the first line); the category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line while totals, trends and merchants keep the parent amount. Lines must be at least two, share the transaction's sign and add up to its amount — the API validates and a deferred trigger enforces it. Recategorising, rejecting a suggestion or marking a transfer removes the split.
+
 ## Security notes
 
 - Session cookies (HttpOnly, SameSite=Lax, Secure when installed with HTTPS); use the installer's Let's Encrypt option when the app is reachable from the internet.

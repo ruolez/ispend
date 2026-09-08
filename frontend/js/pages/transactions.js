@@ -13,11 +13,12 @@ const EVENT_TEXT = {
   note: () => 'Note updated',
   excluded: (d) => d && d.is_excluded ? 'Excluded from reports' : 'Included in reports',
   tag: (d) => d && d.removed ? 'Tags removed' : d && d.tag_ids && d.tag_ids.length ? 'Tags updated' : 'Tags cleared',
+  split: (d) => d && d.removed ? `Split removed${d.reason === 'recategorized' ? ' (category changed)' : d.reason === 'transfer' ? ' (marked as transfer)' : d.reason === 'rejected' ? ' (suggestion rejected)' : ''}` : `Split into ${d && d.lines ? d.lines : 2} lines`,
 };
-const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off', tag: 'tag' };
+const EVENT_ICON = { imported: 'upload', rule: 'sliders', merchant: 'repeat', builtin: 'tag', ai: 'sparkles', manual: 'user', transfer: 'arrow-left-right', note: 'pencil', excluded: 'eye-off', tag: 'tag', split: 'split' };
 
 const tx = {
-  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [] },
+  filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [], split: false },
   items: [], byId: new Map(), cursor: null, total: 0, sumIn: 0, sumOut: 0, facets: null,
   loading: false, done: false, seq: 0,
   selection: new Set(), focus: -1,
@@ -43,6 +44,7 @@ initNav('transactions').then(async () => {
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-views').addEventListener('click', openViewsMenu);
   $('#f-tags').addEventListener('click', openTagFilter);
+  $('#f-split').addEventListener('click', () => { tx.filters.split = false; applyFilters(); });
   store.on('tags-changed', async () => { await loadRefs(); rerenderAll(); paintToolbar(); });
   $('#f-amount').addEventListener('click', openAmountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
@@ -104,19 +106,20 @@ function readUrl() {
   tx.filters.max = AMOUNT_RE.test(q.max || '') ? q.max : '';
   tx.filters.view = q.view || '';
   tx.filters.tag = (q.tag || '').split(',').filter((t) => t === 'none' || /^\d+$/.test(t));
+  tx.filters.split = q.split === '1';
 }
 const AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
 function writeUrl() {
   const f = tx.filters;
-  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, tag: f.tag, open: null });
+  setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, tag: f.tag, split: f.split ? 1 : null, open: null });
 }
 function queryParams(extra = {}) {
   const f = tx.filters;
-  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, tag: f.tag, ...extra };
+  return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, tag: f.tag, split: f.split ? 1 : null, ...extra };
 }
 function hasFilters() {
   const f = tx.filters;
-  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || f.tag.length || (f.range && !['this-month', 'all'].includes(f.range.preset));
+  return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || f.tag.length || f.split || (f.range && !['this-month', 'all'].includes(f.range.preset));
 }
 function emptyListHtml() {
   if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
@@ -124,7 +127,7 @@ function emptyListHtml() {
   return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
 }
 function clearFilters() {
-  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [] }; // clearing shows everything, not just this month
+  tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [], split: false }; // clearing shows everything, not just this month
   $('#f-q').value = '';
   applyFilters();
 }
@@ -136,7 +139,7 @@ const views = {
   byId(id) { return views.list().find((v) => v.id === id) || null; },
   current() {
     const f = tx.filters;
-    return toQuery({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, min: f.min || null, max: f.max || null, transfers: f.transfers || null, tag: f.tag }) || '?range=this-month';
+    return toQuery({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, min: f.min || null, max: f.max || null, transfers: f.transfers || null, tag: f.tag, split: f.split ? 1 : null }) || '?range=this-month';
   },
   async save(list) {
     const p = await api('/api/auth/me/preferences', { method: 'PUT', body: { saved_views: list } });
@@ -266,6 +269,9 @@ function paintToolbar() {
   const amtBtn = $('#f-amount');
   amtBtn.innerHTML = `${icon('hash', 'ico-sm')}<span>${esc(amountLabel())}</span>${icon('chevron-down', 'ico-sm')}`;
   amtBtn.classList.toggle('active', !!(f.min || f.max));
+  const splitBtn = $('#f-split');
+  splitBtn.hidden = !f.split;
+  splitBtn.innerHTML = `${icon('split', 'ico-sm')}<span>Split only</span>${icon('x', 'ico-sm')}`;
   const tagBtn = $('#f-tags');
   const tagLabel = !f.tag.length ? 'All tags' : f.tag.length === 1 ? (f.tag[0] === 'none' ? 'Untagged' : (tx.tags.get(Number(f.tag[0])) || {}).name || 'Tag') : `${f.tag.length} tags`;
   tagBtn.innerHTML = `${icon('tag', 'ico-sm')}<span>${esc(tagLabel)}</span>${icon('chevron-down', 'ico-sm')}`;
@@ -410,6 +416,7 @@ $('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.c
 /* ---------- rows ---------- */
 function catCellHtml(it) {
   const c = catOf(it.category_id);
+  if (it.split_count > 1 && !it.is_transfer) return `<div class="catcell"><button type="button" class="catchip catchip--split" data-split-edit="${it.id}" data-tip="${esc(c ? c.name : 'Split')} and ${it.split_count - 1} more — click to edit the split"><i class="dot" style="--c:var(--${esc(c ? (c.color || c.parent_color || 'c1') : 'c1')})"></i><span class="catchip-label">Split</span><span class="catchip-count">· ${it.split_count}</span></button></div>`;
   if (it.is_transfer && !c) return `<div class="catcell"><button type="button" class="catchip" data-cat-pick="${it.id}"><i class="dot" style="--c:var(--c10)"></i><span class="catchip-label">Transfer</span></button></div>`;
   if (!c) return `<div class="catcell"><button type="button" class="catchip catchip--empty" data-cat-pick="${it.id}" aria-label="Choose category"><i class="dot"></i><span class="catchip-label">Categorize</span></button></div>`;
   const color = c.color || c.parent_color || 'c1';
@@ -521,6 +528,7 @@ function registerShortcuts() {
 /* ---------- row interactions ---------- */
 function onRowClick(e) {
   const t = e.target;
+  const se = t.closest('[data-split-edit]'); if (se) { e.stopPropagation(); return openSplitEditor(Number(se.dataset.splitEdit)); }
   const pick = t.closest('[data-cat-pick]'); if (pick) { e.stopPropagation(); return openPickerFor(Number(pick.dataset.catPick), pick); }
   const acc = t.closest('[data-accept]'); if (acc) { e.stopPropagation(); return bulk([Number(acc.dataset.accept)], 'accept_suggestion'); }
   const rej = t.closest('[data-reject]'); if (rej) { e.stopPropagation(); return bulk([Number(rej.dataset.reject)], 'reject_suggestion'); }
@@ -549,6 +557,8 @@ function openRowMenu(anchor, id) {
     { label: it.is_transfer ? 'Not a transfer' : 'Mark as transfer', icon: 'arrow-left-right', onClick: () => updateItem(id, { is_transfer: !it.is_transfer }, it.is_transfer ? 'Unmarked as transfer' : 'Marked as transfer') },
     { label: it.is_excluded ? 'Include in reports' : 'Exclude from reports', icon: it.is_excluded ? 'eye' : 'eye-off', onClick: () => updateItem(id, { is_excluded: !it.is_excluded }, it.is_excluded ? 'Included in reports' : 'Excluded from reports') },
     { label: 'Tags…', icon: 'tag', onClick: () => tagPicker({ anchor, selected: new Set(it.tag_ids || []), onChange: debounce((set) => setTags(it, Array.from(set)), 300) }) },
+    !it.is_transfer ? { label: it.split_count > 1 ? 'Edit split…' : 'Split…', icon: 'split', onClick: () => openSplitEditor(id) } : null,
+    it.split_count > 1 ? { label: 'Remove split', icon: 'x', onClick: () => removeSplit(id) } : null,
     { label: 'Create rule from this…', icon: 'sliders', onClick: () => openRuleModal(id) },
     { label: `All from ${it.merchant_name}`, icon: 'search', onClick: () => { $('#f-q').value = it.merchant_name; tx.filters.q = it.merchant_name; applyFilters(); } },
     { divider: true },
@@ -558,9 +568,103 @@ function openRowMenu(anchor, id) {
 async function openPickerFor(id, anchor) {
   const it = tx.byId.get(id);
   if (!it) return;
+  if (it.split_count > 1 && !it.is_transfer) return openSplitEditor(id);
   anchor = anchor || $(`tr[data-id="${id}"] [data-cat-pick]`);
   if (!anchor) return;
   categoryPicker({ anchor, value: it.category_id, suggestedId: it.category_status === 'suggested' ? it.category_id : null, allowNone: !!it.category_id, onPick: (cat) => setCategory([id], cat ? cat.id : null) });
+}
+
+/* ---------- splits ---------- */
+const SPLIT_AMT_RE = /^\d+(\.\d{1,2})?$/;
+function parseAmt(v) { const s = String(v || '').replace(/[^0-9.]/g, ''); return SPLIT_AMT_RE.test(s) ? Math.round(Number(s) * 100) / 100 : null; }
+async function saveSplitLines(id, lines) {
+  const updated = await api(`/api/transactions/${id}/splits`, { method: 'PUT', body: { lines } });
+  const local = tx.byId.get(id);
+  if (local) Object.assign(local, updated, { splits: undefined });
+  rerenderRow(id);
+  afterChange();
+  return updated;
+}
+async function restoreSplit(id, prev) {
+  if (prev && prev.length) await saveSplitLines(id, prev);
+  else {
+    await api(`/api/transactions/${id}/splits`, { method: 'DELETE' });
+    await refreshItems([id]);
+  }
+  afterChange();
+}
+async function removeSplit(id) {
+  let prev = [];
+  try { const detail = await api(`/api/transactions/${id}`); prev = (detail.splits || []).map((s) => ({ category_id: s.category_id, amount: s.amount, note: s.note || '' })); } catch { /* still try */ }
+  try {
+    await api(`/api/transactions/${id}/splits`, { method: 'DELETE' });
+    await refreshItems([id]);
+    afterChange();
+    ui.undoable('Split removed', () => restoreSplit(id, prev));
+  } catch (err) { toast(err.message, { type: 'error' }); }
+}
+async function openSplitEditor(id, { after } = {}) {
+  let detail;
+  try { detail = await api(`/api/transactions/${id}`); } catch (err) { toast(err.message, { type: 'error' }); return; }
+  if (detail.is_transfer) { toast('Transfers cannot be split', { type: 'info' }); return; }
+  const parent = Number(detail.amount);
+  if (!parent) { toast('Only transactions with an amount can be split', { type: 'info' }); return; }
+  const sign = parent < 0 ? -1 : 1;
+  const total = Math.abs(parent);
+  const cur = detail.currency || 'USD';
+  const prevLines = (detail.splits || []).map((s) => ({ category_id: s.category_id, amount: s.amount, note: s.note || '' }));
+  const lines = prevLines.length ? prevLines.map((s) => ({ category_id: s.category_id, amount: Math.abs(Number(s.amount)), note: s.note }))
+    : [{ category_id: detail.category_id, amount: total, note: '' }, { category_id: null, amount: 0, note: '' }];
+  const remaining = () => Math.round((total - lines.reduce((a, l) => a + (l.amount || 0), 0)) * 100) / 100;
+  const lineHtml = (l, i) => { const c = catOf(l.category_id); return `<div class="split-line" data-i="${i}">
+      <button type="button" class="catchip catbtn ${c ? '' : 'catchip--empty'}" data-sl-cat aria-label="Category for line ${i + 1}">${c ? `<i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.path)}</span>` : '<i class="dot"></i><span class="catchip-label">Choose a category</span>'}</button>
+      <input class="input input-sm num" type="text" inputmode="decimal" data-sl-amt value="${l.amount ? l.amount.toFixed(2) : ''}" aria-label="Amount for line ${i + 1}" placeholder="0.00" enterkeyhint="next">
+      <input class="input input-sm" type="text" data-sl-note value="${esc(l.note || '')}" aria-label="Note for line ${i + 1}" placeholder="Note (optional)" maxlength="200" enterkeyhint="next">
+      <button type="button" class="btn btn-icon btn-ghost btn-sm" data-sl-remove aria-label="Remove line ${i + 1}" ${lines.length <= 2 ? 'disabled' : ''}>${icon('x')}</button></div>`; };
+  const m = ui.modal({
+    title: prevLines.length ? 'Edit split' : 'Split transaction', size: 'lg', sheet: true,
+    html: `<div class="split-head"><span class="truncate"><b>${esc(detail.merchant_name)}</b> · ${fmtDate(detail.txn_date)}</span><span class="num">${fmtMoney(parent, cur)}</span></div>
+      <div id="split-lines">${lines.map(lineHtml).join('')}</div>
+      <div class="split-foot"><button type="button" class="btn btn-ghost btn-sm" data-sl-add>${icon('plus', 'ico-sm')}Add line</button>
+        <span class="split-remaining" id="split-remaining" aria-live="polite"></span></div>
+      <div class="field-error mt-2" id="split-error" role="alert" hidden></div>`,
+    actions: [{ label: 'Cancel' }, { label: 'Save split', primary: true, onClick: async () => {
+      const err = m.el.querySelector('#split-error');
+      try {
+        await saveSplitLines(id, lines.map((l) => ({ category_id: l.category_id, amount: sign * l.amount, note: l.note || null })));
+        toast(`Split into ${lines.length} categories`, { type: 'success' });
+        ui.undoable(`Split into ${lines.length} categories`, () => restoreSplit(id, prevLines));
+        if (after) after();
+      } catch (e) { err.textContent = e.message; err.hidden = false; return false; }
+    } }],
+  });
+  const saveBtn = m.el.querySelector('.modal-foot .btn-primary');
+  const paint = ({ full = false } = {}) => {
+    if (full) m.el.querySelector('#split-lines').innerHTML = lines.map(lineHtml).join('');
+    const left = remaining();
+    const host = m.el.querySelector('#split-remaining');
+    host.classList.toggle('is-off', left !== 0);
+    host.innerHTML = left === 0 ? `${icon('check', 'ico-sm')}Adds up to ${fmtMoney(total, cur)}` : `Remaining <b>${fmtMoney(left, cur)}</b>${left > 0 ? `<button type="button" class="btn btn-ghost btn-xs" data-sl-fill>Put in last line</button>` : ''}`;
+    const ok = left === 0 && lines.length >= 2 && lines.every((l) => l.category_id && l.amount > 0);
+    saveBtn.disabled = !ok;
+    saveBtn.setAttribute('aria-disabled', String(!ok));
+  };
+  paint();
+  m.el.addEventListener('input', (e) => {
+    const row = e.target.closest('.split-line'); if (!row) return;
+    const l = lines[Number(row.dataset.i)];
+    if (e.target.matches('[data-sl-amt]')) { const v = parseAmt(e.target.value); l.amount = v == null ? 0 : v; ui.fieldError(e.target, e.target.value && v == null ? 'Enter an amount like 12.50' : null); paint(); }
+    if (e.target.matches('[data-sl-note]')) l.note = e.target.value;
+  });
+  m.el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-sl-add]')) { lines.push({ category_id: null, amount: Math.max(0, remaining()), note: '' }); paint({ full: true }); m.el.querySelector('.split-line:last-child [data-sl-cat]').focus(); return; }
+    if (e.target.closest('[data-sl-fill]')) { const last = lines[lines.length - 1]; last.amount = Math.round((last.amount + remaining()) * 100) / 100; paint({ full: true }); return; }
+    const row = e.target.closest('.split-line'); if (!row) return;
+    const i = Number(row.dataset.i);
+    if (e.target.closest('[data-sl-remove]')) { if (lines.length > 2) { lines.splice(i, 1); paint({ full: true }); } return; }
+    const cb = e.target.closest('[data-sl-cat]');
+    if (cb) categoryPicker({ anchor: cb, value: lines[i].category_id, onPick: (cat) => { if (cat) { lines[i].category_id = cat.id; paint({ full: true }); const nb = m.el.querySelector(`.split-line[data-i="${i}"] [data-sl-cat]`); if (nb) nb.focus(); } } });
+  });
 }
 
 /* ---------- mutations ---------- */
@@ -701,6 +805,11 @@ async function openDrawer(id, { focusNotes } = {}) {
   if (focusNotes) { const ta = d.el.querySelector('#txd-notes'); if (ta) ta.focus(); }
   if (qs().open) setQs({ open: null });
 }
+function splitLinesHtml(it) {
+  const lines = it.splits || [];
+  if (!lines.length) return '';
+  return `<div class="txd-splits mt-2" id="txd-splits">${lines.map((s) => { const c = catOf(s.category_id); return `<div class="txd-split-line"><i class="dot" style="--c:var(--${esc(c ? (c.color || c.parent_color || 'c1') : 'c1')})"></i><span class="truncate">${esc(s.category_name || 'Uncategorized')}${s.note ? ` <span class="text-3">· ${esc(s.note)}</span>` : ''}</span><span class="num">${fmtMoney(s.amount, it.currency)}</span></div>`; }).join('')}<div class="row gap-2 mt-1"><button type="button" class="btn btn-ghost btn-xs" data-dact="unsplit">${icon('x', 'ico-sm')}Remove split</button><a class="btn btn-ghost btn-xs" href="/transactions.html?split=1&range=all">All split transactions</a></div></div>`;
+}
 function drawerHtml(it) {
   const a = acctOf(it.account_id);
   const cur = currencyOf(it);
@@ -720,7 +829,7 @@ function drawerHtml(it) {
       <div class="meta"><span>${esc(fmtDateLong(it.txn_date))}</span>${it.posted_date && it.posted_date !== it.txn_date ? `<span class="text-4">· posted ${fmtDate(it.posted_date)}</span>` : ''}${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i>${esc(a.name)}</span>` : ''}</div>
       ${it.category_status === 'suggested' ? `<div class="row mt-2" style="gap:6px"><span class="text-3 fs-sm">Suggested${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}% confidence` : ''}</span><button type="button" class="btn btn-xs btn-secondary" data-dact="accept">${icon('check', 'ico-sm')}Accept</button><button type="button" class="btn btn-xs btn-ghost" data-dact="reject">Reject</button></div>` : ''}
     </div>
-    <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button></div></div>
+    <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button>${it.is_transfer ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-dact="split">${icon('split', 'ico-sm')}${(it.splits || []).length ? 'Edit split' : 'Split…'}</button>`}</div>${splitLinesHtml(it)}</div>
     <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" data-tip="Rename this merchant everywhere">Rename all</button></div>
       <div class="txd-raw mt-2" title="Original statement text">${esc(it.description_raw)}</div></div>
     <div class="txd-section"><div class="section-label">Tags</div><div class="row gap-2 wrap" id="txd-tags">${tagChipsHtml(it, { removable: true })}<button type="button" class="btn btn-ghost btn-sm" data-dact="tags" aria-haspopup="true">${icon('tag', 'ico-sm')}${(it.tag_ids || []).length ? 'Edit tags' : 'Add tag'}</button></div></div>
@@ -743,6 +852,8 @@ function onDrawerClick(e, it, d) {
   if (!b) return;
   switch (b.dataset.dact) {
     case 'tags': return tagPicker({ anchor: b, selected: new Set(it.tag_ids || []), onChange: debounce((set) => setTags(it, Array.from(set), d), 300) });
+    case 'split': return openSplitEditor(it.id, { after: () => refreshDrawer(it, d) });
+    case 'unsplit': return removeSplit(it.id).then(() => refreshDrawer(it, d));
     case 'pick': return categoryPicker({ anchor: b, value: it.category_id, allowNone: !!it.category_id, suggestedId: it.category_status === 'suggested' ? it.category_id : null, onPick: async (cat) => { await setCategory([it.id], cat ? cat.id : null); await refreshDrawer(it, d); } });
     case 'accept': return bulk([it.id], 'accept_suggestion').then(() => refreshDrawer(it, d));
     case 'reject': return bulk([it.id], 'reject_suggestion').then(() => refreshDrawer(it, d));

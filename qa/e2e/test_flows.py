@@ -2458,6 +2458,88 @@ def test_f14_tags(page, qapi):
     F.finish()
 
 
+def test_f15_splits(page, qapi, browser):
+    F = Soft("F15", page, S["rec"])
+    acct = qapi.get("/api/accounts")[0]["id"]
+    cats = {c["name"]: c for c in qapi.get("/api/categories?flat=1")}
+    groceries, shopping = cats["Groceries"], cats["Shopping"]
+    t = qapi.post("/api/transactions", {"account_id": acct, "txn_date": "2026-03-14", "amount": "-45.00", "description": "QA SPLIT STORE", "category_id": groceries["id"]})
+    tid = t["id"]
+    try:
+        goto(page, "/transactions.html?q=QA%20SPLIT%20STORE&range=all", wait_sel=f"#tx-body tr[data-id='{tid}']", soft=F, label="split row visible")
+        page.wait_for_timeout(300)
+        page.locator(f"#tx-body tr[data-id='{tid}'] [data-menu]").click()
+        page.wait_for_selector(".menu .menu-item", timeout=4000)
+        page.locator(".menu .menu-item", has_text="Split").first.click()
+        page.wait_for_selector("#split-lines .split-line", timeout=5000)
+        F.check(page.locator("#split-lines .split-line").count() == 2, "editor opens with two lines")
+        F.check(page.locator(".modal-foot .btn-primary").is_disabled(), "save disabled while a line has no category")
+        page.locator(".split-line[data-i='1'] [data-sl-cat]").click()
+        page.wait_for_selector(".cat-picker input", timeout=4000)
+        page.locator(".cat-picker input").type("Shopping")
+        page.wait_for_timeout(200)
+        page.locator(".cat-picker .cp-opt").first.click()
+        page.wait_for_timeout(200)
+        page.fill(".split-line[data-i='0'] [data-sl-amt]", "30")
+        page.fill(".split-line[data-i='1'] [data-sl-amt]", "10")
+        page.wait_for_timeout(150)
+        F.check("is-off" in (page.locator("#split-remaining").get_attribute("class") or "") and page.locator(".modal-foot .btn-primary").is_disabled(),
+                "remaining shows in red and save stays disabled while lines do not add up")
+        page.locator("[data-sl-fill]").click()
+        page.wait_for_timeout(150)
+        F.check(page.locator(".split-line[data-i='1'] [data-sl-amt]").input_value() == "15.00" and not page.locator(".modal-foot .btn-primary").is_disabled(),
+                "put-remainder fixes the last line and enables save")
+        page.locator(".modal-foot .btn-primary").click()
+        toast(page, "Split into 2")
+        page.wait_for_selector(".modal", state="detached", timeout=5000)
+        detail = qapi.get(f"/api/transactions/{tid}")
+        F.check(detail["split_count"] == 2 and [s["amount"] for s in detail["splits"]] == [-30.0, -15.0] and detail["category_id"] == groceries["id"],
+                "split saved with the first line as the primary category")
+        page.wait_for_timeout(300)
+        F.check("Split" in page.locator(f"#tx-body tr[data-id='{tid}'] .catchip--split").inner_text(), "row shows the split chip")
+        by_cat = {c["id"]: c["total"] for c in qapi.get("/api/reports/by-category?from=2026-03-14&to=2026-03-14&level=sub")["categories"]}
+        F.check(by_cat.get(groceries["id"]) == 30.0 and by_cat.get(shopping["id"]) == 15.0, "reports attribute the lines to both categories")
+        # filter chip + drawer remove with undo
+        goto(page, "/transactions.html?split=1&range=all", wait_sel=f"#tx-body tr[data-id='{tid}']", soft=F, label="split filter")
+        F.check(page.locator("#f-split").is_visible() and page.locator("#tx-body tr[data-id]").count() == 1, "split filter narrows the list and shows the chip")
+        page.locator(f"#tx-body tr[data-id='{tid}'] .col-merchant").click()
+        page.wait_for_selector(".drawer [data-dact='unsplit']", timeout=8000)
+        F.check(page.locator(".drawer .txd-split-line").count() == 2, "drawer lists the split lines")
+        page.locator(".drawer [data-dact='unsplit']").click()
+        tt = toast(page, "Split removed")
+        page.wait_for_timeout(400)
+        F.check("Undo" in tt and qapi.get(f"/api/transactions/{tid}")["split_count"] == 0, "remove split with undo offered")
+        click_undo(page)
+        toast(page, "Undone")
+        page.wait_for_timeout(500)
+        F.check(qapi.get(f"/api/transactions/{tid}")["split_count"] == 2, "undo restores the split lines")
+        page.keyboard.press("Escape")
+        page.wait_for_selector(".drawer", state="detached", timeout=5000)
+        # phone: the editor is a bottom sheet that fits the viewport
+        c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True)
+        p = c.new_page()
+        try:
+            ui_login(p, QA, expect_path="/index.html")
+            goto(p, "/transactions.html?q=QA%20SPLIT%20STORE&range=all", wait_sel=f"#tx-body tr[data-id='{tid}']", soft=F, label="phone split row")
+            p.wait_for_timeout(300)
+            p.locator(f"#tx-body tr[data-id='{tid}'] [data-menu]").click()
+            p.wait_for_selector(".menu .menu-item", timeout=4000)
+            p.locator(".menu .menu-item", has_text="Edit split").first.click()
+            p.wait_for_selector(".modal--sheet #split-lines .split-line", timeout=5000)
+            p.wait_for_timeout(400)  # the sheet slides in: measuring mid-animation reports a scaled box
+            box = p.locator(".modal--sheet").bounding_box()
+            foot = p.locator(".modal--sheet .modal-foot .btn-primary").bounding_box()
+            F.check(box and box["x"] >= 0 and box["x"] + box["width"] <= 390.5, "sheet fits the phone width")
+            F.check(foot and foot["y"] + foot["height"] <= 844.5 and foot["height"] >= 44,
+                    f"sheet footer is on screen with a 44px save button (save={foot}, sheet={box})")
+            no_hscroll(p, F, "split sheet")
+        finally:
+            c.close()
+    finally:
+        qapi.delete(f"/api/transactions/{tid}")
+    F.finish()
+
+
 def no_hscroll(p, F, label):
     r = p.evaluate(OVERFLOW_JS)
     F.check(r["sw"] <= r["W"] + 1, f"{label}: page scrolls horizontally on a 390px viewport (scrollWidth {r['sw']}); widest elements: {r['offenders'][:4]}")

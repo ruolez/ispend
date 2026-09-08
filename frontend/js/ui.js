@@ -59,11 +59,12 @@ const ui = (() => {
   }
 
   /* ---------- Modal ---------- */
-  function modal({ title = '', html = '', actions = [], onClose, width, size, closeOnBackdrop = true, dismissible = true } = {}) {
+  /* sheet: on phones (≤768px) the dialog docks to the bottom with a sticky footer and 44px targets. */
+  function modal({ title = '', html = '', actions = [], onClose, width, size, closeOnBackdrop = true, dismissible = true, sheet = false } = {}) {
     const host = root('modal-root');
     const backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop';
-    const sizeCls = size === 'lg' ? ' modal-lg' : size === 'xl' ? ' modal-xl' : '';
+    backdrop.className = `modal-backdrop${sheet ? ' is-sheet' : ''}`;
+    const sizeCls = (size === 'lg' ? ' modal-lg' : size === 'xl' ? ' modal-xl' : '') + (sheet ? ' modal--sheet' : '');
     const titleId = `modal-title-${uid()}`;
     backdrop.innerHTML = `
       <div class="modal${sizeCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" ${width ? `style="max-width:${width}px"` : ''}>

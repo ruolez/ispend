@@ -28,3 +28,9 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
 - `qa/e2e/test_phone.py`: 390px inner-overflow / single-line-amount checks per page and keyboard probes for segmented controls and tabs. Known defects are `xfail(strict=True)`; a fix must remove the mark.
 - `qa/e2e/test_css_audit.py` + `python qa/e2e/css_audit.py --check`: static design-system rules (rem type scale, breakpoint ladder 1280/960/768/640/480, radius/colour tokens, one dark token block).
 - `qa/e2e/report_snapshot.py capture|verify --user <u> --dir <d>` and `test_report_snapshot.py`: byte-compare every /api/reports payload. Nothing is committed — `test_flows.py` recreates qa_flows each run, so its ids (and payloads) change. Capture before a migration and verify after, using `--user admin` against a directory outside the repo; `test_report_snapshot.py` skips unless `REPORT_SNAPSHOT_DIR` points at one.
+
+## Added 2026-09-07 (features)
+- Pages: `/budgets.html` (nav "Budgets", `g b`). Tags manager card on `/categories.html`. Split editor is a modal on `/transactions.html` (`ui.modal({sheet:true})` → bottom sheet on phones).
+- API: `/api/budgets` (+ `/progress`, `/copy`), `/api/tags`, `PUT|DELETE /api/transactions/<id>/splits`, bulk `restore|tag|untag`, list params `tag`, `tag_mode`, `split`; rows carry `tag_ids`, `split_count`, `before` snapshots on bulk/pair/resolve.
+- Preferences: `saved_views`, `review_skips`, `onboarding`, `week_start`, `default_account_id`.
+- Flows F13 (budgets), F14 (tags), F15 (splits); `report_snapshot.py verify` must stay byte-identical after migrations 007–009.

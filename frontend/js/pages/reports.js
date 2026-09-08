@@ -259,7 +259,7 @@ async function loadCompare(force) {
       <div class="cmp-quick"><span class="text-4 fs-xs">Quick:</span><button type="button" class="btn btn-ghost btn-xs" data-act="vs-previous">Previous month</button><button type="button" class="btn btn-ghost btn-xs" data-act="vs-year">Same month last year</button></div>
       <span class="hint" id="cmp-hint"></span></div>
     <section class="card chart-card"><header class="card-head"><h2 id="cmp-title">This month vs last</h2></header><div class="chart-body is-loading" style="--h:300px"><canvas id="ch-compare"></canvas></div><footer class="chart-legend" id="ch-compare-legend"></footer></section>
-    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl"><thead><tr><th>Category</th><th class="right" id="cmp-h-prev">Previous</th><th class="right" id="cmp-h-cur">Current</th><th class="right">Change</th></tr></thead><tbody id="cmp-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
+    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl tbl--cards"><thead><tr><th>Category</th><th class="right" id="cmp-h-prev">Previous</th><th class="right" id="cmp-h-cur">Current</th><th class="right">Change</th></tr></thead><tbody id="cmp-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
   $('#cmp-month').value = state.month;
   $('#cmp-vs').value = state.vs || prevMonthOf(state.month);
   $('#cmp-month').onchange = (e) => { state.month = e.target.value || currentMonth(); sync(); loadCompare(true); };
@@ -290,8 +290,8 @@ function renderCompare(data) {
     options: { ...charts.barOptions(th, { currency: cur }), scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 45, autoSkip: false, callback: (v, i) => { const l = cats[i].name; return l.length > 18 ? l.slice(0, 17) + '…' : l; } } }, y: { beginAtZero: true, border: { display: false }, ticks: charts.currencyTicks(cur) } } },
   }));
   charts.htmlLegend($('#ch-compare-legend'), chart, { currency: cur });
-  $('#cmp-table').innerHTML = data.categories.map((c) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><td><a class="row-link" href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><span class="cat-cell"><span class="cat-icon" style="--c:${c.color === 'muted' ? charts.theme().muted : catColor(c.color)}">${icon(c.icon || 'tag')}</span><span class="name">${esc(c.name)}</span></span></a></td><td class="right num text-3">${fmtMoney(c.previous, cur)}</td><td class="right num fw-500">${fmtMoney(c.current, cur)}</td><td class="right">${deltaHtml(c.delta, c.pct)}</td></tr>`).join('')
-    + `<tr class="totals-row"><td>Total</td><td class="right num">${fmtMoney(t.previous, cur)}</td><td class="right num">${fmtMoney(t.current, cur)}</td><td class="right">${deltaHtml(t.delta, t.pct)}</td></tr>`;
+  $('#cmp-table').innerHTML = data.categories.map((c) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><td><a class="row-link" href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><span class="cat-cell"><span class="cat-icon" style="--c:${c.color === 'muted' ? charts.theme().muted : catColor(c.color)}">${icon(c.icon || 'tag')}</span><span class="name">${esc(c.name)}</span></span></a></td><td data-label="Previous" class="right num text-3">${fmtMoney(c.previous, cur)}</td><td data-label="Current" class="right num fw-500">${fmtMoney(c.current, cur)}</td><td data-label="Change" class="right">${deltaHtml(c.delta, c.pct)}</td></tr>`).join('')
+    + `<tr class="totals-row"><td>Total</td><td data-label="Previous" class="right num">${fmtMoney(t.previous, cur)}</td><td data-label="Current" class="right num">${fmtMoney(t.current, cur)}</td><td data-label="Change" class="right">${deltaHtml(t.delta, t.pct)}</td></tr>`;
   wireRowLinks($('#cmp-table'));
 }
 /* ---------- Cash flow ---------- */
@@ -299,7 +299,7 @@ async function loadCashflow(force) {
   const host = $('#panel-cashflow');
   if (!host.querySelector('#ch-cash')) host.innerHTML = `<div class="stat-grid" id="cash-kpis"></div>
     <section class="card chart-card"><header class="card-head"><h2>Income vs spending</h2><div class="card-actions"><span class="hint">Click a month to see its transactions</span></div></header><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-cash"></canvas></div><footer class="chart-legend" id="ch-cash-legend"></footer></section>
-    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
+    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl tbl--cards"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
   const seq = ++state.seq;
   try {
     const rows = await cached(`cash-${state.months}`, `/api/reports/trends${toQuery({ months: state.months, ...acctQuery() })}`, force);
@@ -340,8 +340,8 @@ function renderCashflow(rows) {
     },
   }));
   charts.htmlLegend($('#ch-cash-legend'), chart, { currency: cur });
-  $('#cash-table').innerHTML = [...rows].reverse().map((r) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ from: `${r.month}-01`, to: monthEnd(r.month) })}"><td class="fw-500"><a class="row-link" href="/transactions.html${toQuery({ from: `${r.month}-01`, to: monthEnd(r.month) })}">${fmtMonth(r.month, { long: true })}</a></td><td class="right num amt--income">${fmtMoney(r.income, cur)}</td><td class="right num">${fmtMoney(r.expenses, cur)}</td><td class="right num fw-500 ${r.net < 0 ? 'rate--bad' : ''}">${fmtMoney(r.net, cur, { sign: 'always' })}</td><td class="right">${rateHtml(r.income, r.net)}</td></tr>`).join('')
-    + `<tr class="totals-row"><td>Total</td><td class="right num">${fmtMoney(income, cur)}</td><td class="right num">${fmtMoney(spent, cur)}</td><td class="right num">${fmtMoney(net, cur, { sign: 'always' })}</td><td class="right">${rateHtml(income, net)}</td></tr>`;
+  $('#cash-table').innerHTML = [...rows].reverse().map((r) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ from: `${r.month}-01`, to: monthEnd(r.month) })}"><td class="fw-500"><a class="row-link" href="/transactions.html${toQuery({ from: `${r.month}-01`, to: monthEnd(r.month) })}">${fmtMonth(r.month, { long: true })}</a></td><td data-label="Income" class="right num amt--income">${fmtMoney(r.income, cur)}</td><td data-label="Spent" class="right num">${fmtMoney(r.expenses, cur)}</td><td data-label="Net" class="right num fw-500 ${r.net < 0 ? 'rate--bad' : ''}">${fmtMoney(r.net, cur, { sign: 'always' })}</td><td data-label="Savings rate" class="right">${rateHtml(r.income, r.net)}</td></tr>`).join('')
+    + `<tr class="totals-row"><td>Total</td><td data-label="Income" class="right num">${fmtMoney(income, cur)}</td><td data-label="Spent" class="right num">${fmtMoney(spent, cur)}</td><td data-label="Net" class="right num">${fmtMoney(net, cur, { sign: 'always' })}</td><td data-label="Savings rate" class="right">${rateHtml(income, net)}</td></tr>`;
   wireRowLinks($('#cash-table'));
 }
 function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; }

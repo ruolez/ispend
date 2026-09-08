@@ -317,6 +317,8 @@ button.catchip:hover { background: var(--surface-3); border-color: var(--border-
 .catchip--empty .dot { background: var(--warning); }
 button.catchip--empty:hover { color: var(--text-1); border-style: solid; }
 .catchip--suggested { background: var(--info-soft); color: var(--accent); }
+.catchip--split { background: var(--surface); border-color: var(--border-strong); }
+.catchip--split .catchip-count { color: var(--text-3); font-weight: 500; }
 .catchip .ico { width: 13px; height: 13px; }
 .cat-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c, var(--chart-muted)) 16%, transparent); color: var(--c, var(--chart-muted)); flex: 0 0 auto; }
 .cat-icon .ico { width: 15px; height: 15px; }
@@ -445,6 +447,16 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
 .modal-body p { font-size: var(--fs-base); }
 .modal-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: 0 var(--sp-5) var(--sp-5); }
 .modal-lg { max-width: 680px; }
+/* split editor */
+.split-head { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; margin-bottom: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
+.split-line { display: grid; grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1fr) 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.split-line .catbtn { max-width: 100%; justify-content: flex-start; }
+.split-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-2); }
+.split-remaining { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); }
+.split-remaining b { font-variant-numeric: tabular-nums; color: var(--success); }
+.split-remaining.is-off b { color: var(--danger); }
+.txd-split-line { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: var(--fs-sm); }
+.txd-split-line .num { margin-left: auto; font-variant-numeric: tabular-nums; }
 .modal-xl { max-width: 900px; }
 
 .drawer-backdrop { position: fixed; inset: 0; z-index: 550; background: var(--overlay); animation: fade-in var(--dur-2); }
@@ -576,6 +588,12 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
   .drawer { width: 100vw; border-left: 0; }
   .modal { max-height: calc(100vh - 16px); }
   .modal-backdrop { padding: var(--sp-2); align-items: flex-end; }
+  .modal-backdrop.is-sheet { padding: 0; }
+  .modal--sheet { max-width: none; max-height: calc(100vh - 24px); border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; }
+  .modal--sheet .modal-foot { position: sticky; bottom: 0; padding-top: var(--sp-3); padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom)); background: var(--surface-overlay); border-top: 1px solid var(--border); }
+  .modal--sheet .modal-foot .btn, .modal--sheet .split-line .input, .modal--sheet .split-line .catbtn { min-height: 44px; }
+  .split-line { grid-template-columns: minmax(0, 1fr) 110px 32px; }
+  .split-line [data-sl-note] { grid-column: 1 / -1; }
   .page-head { margin-bottom: var(--sp-4); }
   .stat { min-height: 96px; }
   .stat-value { font-size: 1.375rem; }

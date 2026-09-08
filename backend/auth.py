@@ -13,7 +13,7 @@ from util import api_error, audit, json_body, to_int
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start", "saved_views", "review_skips", "onboarding"}
-TX_VIEW_KEYS = {"range", "from", "to", "acct", "cat", "status", "flow", "q", "sort", "min", "max", "transfers", "merchant_key", "tag", "tag_mode"}
+TX_VIEW_KEYS = {"range", "from", "to", "acct", "cat", "status", "flow", "q", "sort", "min", "max", "transfers", "merchant_key", "tag", "tag_mode", "split"}
 VIEW_ID = re.compile(r"^[a-z0-9_-]{1,16}$")
 MAX_SAVED_VIEWS = 20
 MAX_REVIEW_SKIPS = 300

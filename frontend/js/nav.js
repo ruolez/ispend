@@ -279,6 +279,7 @@ function openPalette() {
     { group: 'Actions', label: 'Import a statement', icon: 'upload', run: () => { location.href = '/import.html'; } },
     { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: toggleThemePersisted },
     { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
+    { group: 'Actions', label: 'Show split transactions', icon: 'split', run: () => { location.href = '/transactions.html?split=1&range=all'; } },
   ];
   const pages = NAV_ITEMS.map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 
