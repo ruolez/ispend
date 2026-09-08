@@ -5,6 +5,8 @@
 .rv-progress .rp-text b { color: var(--text-1); }
 .rv-progress .progress { flex: 1; }
 .rv-list { display: flex; flex-direction: column; gap: 10px; }
+.rv-list--focus .rv-card:not(.is-focused) { display: none; } /* focus mode: one card at a time */
+.rv-more { margin-top: 4px; }
 .rv-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; transition: box-shadow var(--dur-2), border-color var(--dur-2), opacity var(--dur-2), transform var(--dur-3) var(--ease-out), max-height var(--dur-3) var(--ease-out), margin var(--dur-3), padding var(--dur-3); outline: none; }
 .rv-card.is-focused { border-color: var(--accent); box-shadow: var(--sh-2), 0 0 0 3px var(--accent-ring); }
 .rv-list.has-focus .rv-card:not(.is-focused) { background: var(--bg); border-color: var(--border); } /* recede without dropping text contrast */

@@ -1,13 +1,36 @@
 /* Review queue: merchant groups (default) or one-by-one; keyboard first. */
-const SKIP_KEY = 'ispend.review.skipped';
+const ACCEPT_MIN = 0.8;
+const WINDOW = 20;
+const PAGE_LIMIT = 200;
 const rv = {
   mode: 'merchant', groups: [], remaining: 0, remainingItems: 0, done: 0, focus: -1,
   cats: new Map(), catsFlat: [], settings: null, skipped: new Set(), loading: false, seq: 0,
-  pairs: [], pairCount: 0, paired: 0, accounts: new Map(),
+  pairs: [], pairCount: 0, paired: 0, accounts: new Map(), focusMode: false, window: WINDOW,
 };
 const MODES = ['merchant', 'single', 'transfers'];
-function loadSkipped() { try { return new Set(JSON.parse(sessionStorage.getItem(SKIP_KEY) || '[]')); } catch { return new Set(); } }
-function saveSkipped() { try { sessionStorage.setItem(SKIP_KEY, JSON.stringify(Array.from(rv.skipped))); } catch { /* ignore */ } }
+/* Hidden ("skipped") merchants, single charges (t<id>) and pairs (p<a>-<b>) live in the account's
+   preferences so they stay hidden across sessions and devices. */
+function loadSkipped() {
+  const prefs = (window.currentUser && window.currentUser.preferences) || {};
+  return new Set(Array.isArray(prefs.review_skips) ? prefs.review_skips : []);
+}
+const saveSkipped = debounce(() => {
+  const list = Array.from(rv.skipped).slice(-300);
+  api('/api/auth/me/preferences', { method: 'PUT', body: { review_skips: list } })
+    .then((p) => { if (window.currentUser) window.currentUser.preferences = p; })
+    .catch((err) => toast(`Could not save the hidden list: ${err.message}`, { type: 'error' }));
+}, 400);
+const SINGLE_KEY = /^t\d+$/, PAIR_KEY = /^p\d+-\d+$/;
+/* Drop hidden keys whose merchant/charge/pair no longer needs review (only when the whole set was fetched). */
+function pruneSkips(kind, present) {
+  let changed = false;
+  rv.skipped.forEach((k) => {
+    const isSingle = SINGLE_KEY.test(k), isPair = PAIR_KEY.test(k);
+    const mine = kind === 'single' ? isSingle : kind === 'pair' ? isPair : !(isSingle || isPair);
+    if (mine && !present.has(k)) { rv.skipped.delete(k); changed = true; }
+  });
+  if (changed) saveSkipped();
+}
 
 initNav('review').then(async () => {
   rv.skipped = loadSkipped();
@@ -16,6 +39,11 @@ initNav('review').then(async () => {
   await loadRefs();
   rv.currency = await store.displayCurrency();
   rv.settings = await store.settings().catch(() => ({}));
+  rv.focusMode = q.focus === '1';
+  const focusBtn = $('#btn-focus');
+  focusBtn.innerHTML = `${icon('eye', 'ico-sm')}<span class="label">Focus</span>`;
+  focusBtn.addEventListener('click', () => setFocusMode(!rv.focusMode));
+  $('#btn-accept-all').addEventListener('click', acceptAll);
   const aiBtn = $('#btn-ai');
   if (rv.settings && rv.settings.ai_categorize_enabled) { aiBtn.hidden = false; aiBtn.innerHTML = `${icon('sparkles', 'ico-sm')}<span class="label">Ask AI</span>`; aiBtn.addEventListener('click', askAI); }
   const pairBtn = $('#btn-pair-all');
@@ -26,7 +54,11 @@ initNav('review').then(async () => {
   $('#rv-list').addEventListener('click', onCardClick);
   $('#rv-list').addEventListener('change', onCardChange);
   $('#rv-list').addEventListener('focusin', (e) => { const card = e.target.closest('.rv-card'); if (card) setFocus(Number(card.dataset.idx), { scroll: false }); });
-  document.body.addEventListener('click', (e) => { if (e.target.closest('[data-act="reload"]')) load(); if (e.target.closest('[data-act="unskip"]')) { rv.skipped.clear(); saveSkipped(); load(); } });
+  document.body.addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="reload"]')) load();
+    if (e.target.closest('[data-act="unskip"]')) { rv.skipped.clear(); saveSkipped(); load(); }
+    if (e.target.closest('[data-act="more"]')) { rv.window += WINDOW; render(); }
+  });
   store.on('categories-changed', async () => { await loadRefs(); render(); });
   registerShortcuts();
   paintMode();
@@ -46,6 +78,8 @@ function paintMode() {
   setPageTitle($(`#rv-mode [data-mode="${rv.mode}"]`).firstChild.textContent.trim());
   const transfers = rv.mode === 'transfers';
   $('#btn-pair-all').hidden = !transfers;
+  $('#btn-focus').setAttribute('aria-pressed', String(rv.focusMode));
+  paintAcceptAll();
   if (rv.settings && rv.settings.ai_categorize_enabled) $('#btn-ai').hidden = transfers;
   $('.page-sub').textContent = transfers ? 'Money moved between your own accounts. Pairing hides both sides from spending and income.' : 'Charges that still need a category. One decision covers every charge from the same merchant.';
 }
@@ -69,14 +103,17 @@ async function load() {
   rv.loading = true;
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-2">${ui.skeleton('60%', 12)}</div><div class="mt-3">${ui.skeleton('100%', 32)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-2">${ui.skeleton('55%', 12)}</div></div>`;
   try {
-    const r = await api(`/api/review?mode=${rv.mode}&limit=100`);
+    const r = await api(`/api/review?mode=${rv.mode}&limit=${PAGE_LIMIT}`);
     if (seq !== rv.seq) return;
+    rv.window = WINDOW;
     if (rv.mode === 'merchant') {
       rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
       rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
+      if (r.groups.length >= r.remaining) pruneSkips('merchant', new Set(r.groups.map((g) => g.key)));
     } else {
       rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
       rv.remaining = r.remaining; rv.remainingItems = r.remaining;
+      if (r.items.length >= r.remaining) pruneSkips('single', new Set(r.items.map((t) => `t${t.id}`)));
     }
   } catch (err) { if (seq !== rv.seq) return; $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
   rv.loading = false;
@@ -98,6 +135,7 @@ async function loadTransfers() {
   if (seq !== rv.seq) return;
   rv.pairs = pairs;
   rv.loading = false;
+  pruneSkips('pair', new Set(rv.pairs.map(pairKey)));
   rv.pairCount = rv.pairs.filter((p) => !rv.skipped.has(pairKey(p))).length;
   paintPairCount();
   rv.focus = -1;
@@ -191,15 +229,54 @@ function render() {
   const groups = rv.groups.filter((g) => !rv.skipped.has(groupKey(g)));
   const skippedN = rv.groups.length - groups.length;
   const total = rv.done + rv.remainingItems;
-  $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(rv.remainingItems)}</b> charge${rv.remainingItems === 1 ? '' : 's'} left${rv.mode === 'merchant' ? ` in <b>${fmtNumber(rv.remaining)}</b> merchant${rv.remaining === 1 ? '' : 's'}` : ''}</span><div class="progress" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${total ? Math.round((rv.done / total) * 100) : 0}"><span style="width:${total ? Math.round((rv.done / total) * 100) : 0}%"></span></div><span class="rp-text text-3">${fmtNumber(rv.done)} done this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip">${fmtNumber(skippedN)} skipped</button>` : ''}</span>`;
+  const hc = acceptable().reduce((a, g) => a + includedIds(g).length, 0);
+  $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(rv.remainingItems)}</b> charge${rv.remainingItems === 1 ? '' : 's'} left${rv.mode === 'merchant' ? ` in <b>${fmtNumber(rv.remaining)}</b> merchant${rv.remaining === 1 ? '' : 's'}` : ''}${hc ? ` · <b>${fmtNumber(hc)}</b> high-confidence` : ''}</span><div class="progress" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${total ? Math.round((rv.done / total) * 100) : 0}"><span style="width:${total ? Math.round((rv.done / total) * 100) : 0}%"></span></div><span class="rp-text text-3">${rv.focusMode ? '<span id="rv-pos"></span> · ' : ''}${fmtNumber(rv.done)} done this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip" data-tip="Hidden until you show them again; remembered across sessions">${fmtNumber(skippedN)} hidden</button>` : ''}</span>`;
+  paintAcceptAll();
   const host = $('#rv-list');
+  host.classList.toggle('rv-list--focus', rv.focusMode);
   if (!groups.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox-check', title: rv.remainingItems ? 'Everything visible is skipped' : 'All caught up', body: rv.remainingItems ? 'You skipped the remaining merchants for this session.' : 'Every charge has a category. New imports will show up here when they need a decision.', action: rv.remainingItems ? { label: 'Show skipped', act: 'unskip' } : { label: 'Import a statement', href: '/import.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox-check', title: rv.remainingItems ? 'Everything visible is skipped' : 'All caught up', body: rv.remainingItems ? 'You hid the remaining merchants; show them to continue.' : 'Every charge has a category. New imports will show up here when they need a decision.', action: rv.remainingItems ? { label: 'Show skipped', act: 'unskip' } : { label: 'Import a statement', href: '/import.html' } })}</div>`;
     host.classList.remove('has-focus');
     return;
   }
-  host.innerHTML = groups.map((g, i) => cardHtml(g, i)).join('');
+  const shown = groups.slice(0, rv.window);
+  const rest = groups.length - shown.length;
+  host.innerHTML = shown.map((g, i) => cardHtml(g, i)).join('') + (rest > 0 ? `<button type="button" class="btn btn-secondary btn-block rv-more" data-act="more">Show ${fmtNumber(Math.min(WINDOW, rest))} more merchant${Math.min(WINDOW, rest) === 1 ? '' : 's'} (${fmtNumber(rest)} left)</button>` : '');
   host.classList.toggle('has-focus', rv.focus >= 0);
+}
+/* Groups whose suggestion is confident enough for "Accept all" (never creates rules). */
+function acceptable() {
+  if (rv.mode === 'transfers') return [];
+  return visibleGroups().filter((g) => g.suggestion && g.suggestion.category_id && Number(g.suggestion.confidence || 0) >= ACCEPT_MIN && includedIds(g).length);
+}
+function paintAcceptAll() {
+  const b = $('#btn-accept-all'); if (!b) return;
+  const n = acceptable().reduce((a, g) => a + includedIds(g).length, 0);
+  b.hidden = rv.mode === 'transfers';
+  b.disabled = !n;
+  b.innerHTML = `${icon('check-circle', 'ico-sm')}<span class="label">Accept ${n ? `${fmtNumber(n)} ` : ''}suggestion${n === 1 ? '' : 's'} ≥ 80%</span>`;
+}
+async function acceptAll() {
+  const gs = acceptable();
+  const ids = gs.flatMap(includedIds);
+  if (!ids.length) return;
+  const ok = await ui.confirm({ title: `Accept ${plural(ids.length, 'suggestion')}?`, body: `${plural(ids.length, 'charge')} across ${plural(gs.length, 'merchant')} rated 80% or higher get their suggested category. No rules are created. You can undo this.`, confirmText: 'Accept all' });
+  if (!ok) return;
+  await ui.busy($('#btn-accept-all'), async () => {
+    const r = await api('/api/transactions/bulk', { method: 'POST', body: { ids, action: 'accept_suggestion' } });
+    const n = r.updated || 0;
+    rv.done += n;
+    ui.undoable(`${plural(n, 'suggestion')} accepted`, async () => { await restoreRows(r.before, ids); rv.done = Math.max(0, rv.done - n); await load(); window.dispatchEvent(new Event('ispend:transactions-changed')); });
+    window.dispatchEvent(new Event('ispend:transactions-changed'));
+    await load();
+  });
+}
+function setFocusMode(on) {
+  rv.focusMode = !!on;
+  setQs({ focus: rv.focusMode ? '1' : null });
+  $('#btn-focus').setAttribute('aria-pressed', String(rv.focusMode));
+  render();
+  setFocus(Math.max(0, rv.focus), { scroll: false });
 }
 function cardHtml(g, idx) {
   const cur = g.currency || rv.currency || 'USD';
@@ -240,13 +317,16 @@ function rerenderCard(g) {
 
 /* ---------- focus ---------- */
 function setFocus(idx, { scroll = true } = {}) {
+  if (rv.mode !== 'transfers' && idx >= rv.window && idx < visibleGroups().length) { rv.window = idx + WINDOW; render(); }
   const cards = $$('.rv-card');
+  const pos = $('#rv-pos');
+  if (pos) pos.textContent = `Card ${fmtNumber(Math.min(Math.max(idx, 0), cards.length - 1) + 1)} of ${fmtNumber(cards.length)}`;
   rv.focus = Math.max(-1, Math.min(idx, cards.length - 1));
   cards.forEach((c, i) => c.classList.toggle('is-focused', i === rv.focus));
   $('#rv-list').classList.toggle('has-focus', rv.focus >= 0);
   const card = cards[rv.focus];
   if (card) {
-    if (scroll) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (scroll && !rv.focusMode) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (document.activeElement && !card.contains(document.activeElement)) card.focus({ preventScroll: true });
     if (rv.mode === 'transfers') { const p = focusedPair(); if (p) announce(card.getAttribute('aria-label') + `, ${Math.round(p.confidence * 100)} percent likely`); return; }
     const g = focusedGroup();
@@ -270,7 +350,8 @@ function registerShortcuts() {
   ui.shortcuts.register('t', () => { const g = focusedGroup(); if (g) transfer(g); }, { when: ok, description: 'Mark as transfer' });
   ui.shortcuts.register('s', () => { if (rv.mode === 'transfers') { const p = focusedPair(); if (p) skipPair(p); return; } const g = focusedGroup(); if (g) skip(g); }, { when: ok, description: 'Skip' });
   ui.shortcuts.register('e', () => { const g = focusedGroup(); if (g && rv.mode === 'merchant') toggleExpand(g); }, { when: ok, description: 'Show charges' });
-  window.PAGE_SHORTCUTS = [{ title: 'Review', items: [['j / k', 'Move between cards'], ['↵', 'Accept suggestion / pair transfer'], ['c', 'Choose category'], ['t', 'Mark as transfer'], ['s', 'Skip / not a pair'], ['e', 'Show charges']] }];
+  ui.shortcuts.register('f', () => setFocusMode(!rv.focusMode), { when: ok, description: 'Focus mode (one card)' });
+  window.PAGE_SHORTCUTS = [{ title: 'Review', items: [['j / k', 'Move between cards'], ['↵', 'Accept suggestion / pair transfer'], ['c', 'Choose category'], ['t', 'Mark as transfer'], ['s', 'Hide / not a pair'], ['e', 'Show charges'], ['f', 'Focus mode (one card)']] }];
 }
 
 /* ---------- interactions ---------- */

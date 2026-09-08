@@ -244,6 +244,9 @@ def main():
                             states.append(('tx-drawer', lambda: page.click('#tx-body tr:first-child .merchant-name')))
                             states.append(('cat-filter', lambda: page.click('#f-categories')))
                             states.append(('range-picker', lambda: page.click('#f-range')))
+                        if pg == 'review':
+                            states.append(('focus-mode', lambda: page.keyboard.press('f')))
+                            states.append(('mode-transfers', lambda: page.click('[data-mode="transfers"]')))
                         if pg == 'categories':
                             states.append(('cat-side', lambda: page.click('.cat-row:first-child .cat-name')))
                         if pg == 'rules':
