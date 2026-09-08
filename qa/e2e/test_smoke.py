@@ -610,7 +610,7 @@ def test_theme_follows_system_when_unset(make_context, scheme):
     wait_loaded(page)
     st = page.evaluate("() => ({ bg: getComputedStyle(document.body).backgroundColor, attr: document.documentElement.getAttribute('data-theme'), mode: document.documentElement.getAttribute('data-theme-mode'), eff: Theme.effective(), ls: localStorage.getItem('ispend.theme') })")
     exp = DARK_BG if scheme == "dark" else LIGHT_BG
-    ok = rgb(st["bg"]) == exp and st["attr"] is None and st["mode"] == "system" and st["eff"] == scheme and rgb(at_dcl["bg"]) == exp
+    ok = rgb(st["bg"]) == exp and st["attr"] == scheme and st["mode"] == "system" and st["eff"] == scheme and rgb(at_dcl["bg"]) == exp
     record("theme", name=f"system-{scheme}", ok=ok, detail={"dcl": at_dcl, "load": st})
     assert ok, json.dumps({"dcl": at_dcl, "load": st})
 

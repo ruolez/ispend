@@ -108,7 +108,7 @@ function qs() {
   new URLSearchParams(location.search).forEach((v, k) => { out[k] = v; });
   return out;
 }
-function setQs(obj, { replace = true, merge = true } = {}) {
+function setQs(obj, { merge = true } = {}) {
   const params = merge ? new URLSearchParams(location.search) : new URLSearchParams();
   Object.entries(obj).forEach(([k, v]) => {
     if (v == null || v === '' || v === false || (Array.isArray(v) && !v.length)) params.delete(k);
@@ -116,7 +116,7 @@ function setQs(obj, { replace = true, merge = true } = {}) {
   });
   const q = params.toString();
   const url = location.pathname + (q ? `?${q}` : '') + location.hash;
-  if (replace) history.replaceState(null, '', url); else history.pushState(null, '', url);
+  history.replaceState(null, '', url); // filter changes never create history entries
   rememberQuery();
 }
 
@@ -172,5 +172,4 @@ function debounce(fn, ms = 250) {
   wrapped.cancel = () => clearTimeout(t);
   return wrapped;
 }
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 function uid() { return Math.random().toString(36).slice(2, 9); }

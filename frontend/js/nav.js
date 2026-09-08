@@ -44,7 +44,7 @@ function setSidebarMode(mode) {
 applySidebarMode();
 
 function navItemHtml(i, activePage) {
-  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''} ${i.adminOnly ? 'data-admin-only' : ''}>
+  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
@@ -167,7 +167,6 @@ async function initNav(activePage) {
   if (prefs.density && !Theme.hasStoredDensity()) Theme.setDensity(prefs.density);
   if (me.role !== 'admin') {
     $$('[data-admin-only]').forEach((el) => el.remove());
-    if (active && active.adminOnly) { location.replace('/index.html'); return new Promise(() => {}); }
   }
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);

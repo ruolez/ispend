@@ -21,9 +21,11 @@
     try { localStorage.setItem(key, value); } catch (e) { /* private mode */ }
   }
 
+  /* data-theme always holds the effective theme (light|dark) so the stylesheet needs one dark block;
+     data-theme-mode keeps the user's choice (system|light|dark). */
   function apply(mode) {
-    if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
-    else root.removeAttribute('data-theme');
+    var eff = (mode === 'light' || mode === 'dark') ? mode : (mql && mql.matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', eff);
     root.setAttribute('data-theme-mode', mode);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', effective() === 'dark' ? '#0c0e13' : '#f5f6f8');

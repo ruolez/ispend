@@ -37,7 +37,6 @@ initNav('reports').then(async (me) => {
     title: 'Accounts', options: state.accountsList.map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: state.accounts,
     onChange: () => { renderAcctBtn(); sync(); state.cache = {}; loadTab(true); },
   }));
-  window.addEventListener('popstate', () => { const q2 = qs(); state.tab = TABS.includes(q2.tab) ? q2.tab : 'category'; state.months = [6, 12, 24].includes(Number(q2.months)) ? Number(q2.months) : 12; const t = q2.transfers === '1'; if (t !== state.transfers) { state.transfers = t; state.cache = {}; $('#incl-transfers').checked = t; paintTransfersHint(); } const f = q2.flow === 'income' ? 'income' : 'spending'; if (f !== state.flow) setFlow(f); paintMonths(); switchTab(state.tab, true); });
   switchTab(state.tab, true);
 });
 
@@ -91,7 +90,6 @@ function onAction(e) {
   const act = b.dataset.act;
   if (act === 'reload') return loadTab(true);
   if (act === 'export') return exportCsv();
-  if (act === 'compare-go') { state.month = $('#cmp-month').value || currentMonth(); state.vs = $('#cmp-vs').value || null; sync(); return loadCompare(true); }
   if (act === 'cmp-prev' || act === 'cmp-next') { state.month = shiftMonth(state.month, act === 'cmp-next' ? 1 : -1); sync(); return loadCompare(true); }
   if (act === 'vs-prev' || act === 'vs-next') { state.vs = shiftMonth(state.vs || prevMonthOf(state.month), act === 'vs-next' ? 1 : -1); sync(); return loadCompare(true); }
   if (act === 'vs-previous') { state.vs = null; sync(); return loadCompare(true); }
@@ -250,7 +248,7 @@ async function loadCompare(force) {
       <div class="cmp-quick"><span class="text-4 fs-xs">Quick:</span><button type="button" class="btn btn-ghost btn-xs" data-act="vs-previous">Previous month</button><button type="button" class="btn btn-ghost btn-xs" data-act="vs-year">Same month last year</button></div>
       <span class="hint" id="cmp-hint"></span></div>
     <section class="card chart-card"><header class="card-head"><h2 id="cmp-title">This month vs last</h2></header><div class="chart-body is-loading" style="--h:300px"><canvas id="ch-compare"></canvas></div><footer class="chart-legend" id="ch-compare-legend"></footer></section>
-    <section class="card mt-4"><div class="tbl-wrap" style="border:0;box-shadow:none"><table class="tbl report-tbl"><thead><tr><th>Category</th><th class="right" id="cmp-h-prev">Previous</th><th class="right" id="cmp-h-cur">Current</th><th class="right">Change</th></tr></thead><tbody id="cmp-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
+    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl"><thead><tr><th>Category</th><th class="right" id="cmp-h-prev">Previous</th><th class="right" id="cmp-h-cur">Current</th><th class="right">Change</th></tr></thead><tbody id="cmp-table">${ui.skeletonRows(6, 4)}</tbody></table></div></section>`;
   $('#cmp-month').value = state.month;
   $('#cmp-vs').value = state.vs || prevMonthOf(state.month);
   $('#cmp-month').onchange = (e) => { state.month = e.target.value || currentMonth(); sync(); loadCompare(true); };
@@ -290,7 +288,7 @@ async function loadCashflow(force) {
   const host = $('#panel-cashflow');
   if (!host.querySelector('#ch-cash')) host.innerHTML = `<div class="stat-grid" id="cash-kpis"></div>
     <section class="card chart-card"><header class="card-head"><h2>Income vs spending</h2><div class="card-actions"><span class="hint">Click a month to see its transactions</span></div></header><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-cash"></canvas></div><footer class="chart-legend" id="ch-cash-legend"></footer></section>
-    <section class="card mt-4"><div class="tbl-wrap" style="border:0;box-shadow:none"><table class="tbl report-tbl"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
+    <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
   const seq = ++state.seq;
   try {
     const rows = await cached(`cash-${state.months}`, `/api/reports/trends${toQuery({ months: state.months, ...acctQuery() })}`, force);

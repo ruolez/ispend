@@ -35,6 +35,8 @@ jobs:
         with:
           node-version: "20"
       - run: find frontend/js -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: static CSS rules
+        run: python3 qa/e2e/css_audit.py --check
 
   api-e2e:
     name: API suite against the compose stack

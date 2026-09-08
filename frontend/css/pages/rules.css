@@ -1,6 +1,5 @@
 /* Rules */
 .rules-search { width: 220px; }
-.rules-search .ico-wrap { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-4); display: flex; }
 .rules-search .input { padding-left: 34px; }
 .rules-head, .rule { display: grid; grid-template-columns: 22px 28px minmax(0, 1fr) 20px minmax(180px, 260px) 64px 44px 70px; gap: 8px; align-items: center; }
 .rules-head { padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }

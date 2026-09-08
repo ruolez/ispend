@@ -48,7 +48,6 @@ initNav('transactions').then(async () => {
   $('#tx-body').addEventListener('click', onRowClick);
   $('#tx-body').addEventListener('change', (e) => { const cb = e.target.closest('input[data-select]'); if (cb) { toggleSelect(Number(cb.dataset.select), cb.checked); } });
   document.body.addEventListener('click', (e) => { const b = e.target.closest('[data-act="reload"]'); if (b) reload(); });
-  window.addEventListener('popstate', () => { readUrl(); reload(); });
   store.on('categories-changed', async () => { await loadRefs(); rerenderAll(); });
   setupObserver();
   window.addEventListener('resize', debounce(setupObserver, 200));

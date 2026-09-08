@@ -4,7 +4,7 @@
 .dropzone-banks .chip { height: 24px; font-size: var(--fs-xs); }
 .file-list { margin-top: var(--sp-4); display: flex; flex-direction: column; gap: 8px; }
 .file-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
-.file-row .file-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); }
+.file-row .file-icon { width: 36px; height: 36px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); }
 .file-row .file-icon.pdf { background: var(--danger-soft); color: var(--danger); }
 .file-row .file-icon.csv { background: var(--success-soft); color: var(--success); }
 .file-row .file-icon.xlsx, .file-row .file-icon.xls { background: var(--info-soft); color: var(--accent); }
@@ -20,7 +20,7 @@
 
 .detect-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-lg); background: var(--success-soft); border: 1px solid transparent; margin-bottom: var(--sp-4); flex-wrap: wrap; }
 .detect-banner.is-warning { background: var(--warning-soft); }
-.detect-banner .detect-icon { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--surface); color: var(--success); flex: 0 0 auto; }
+.detect-banner .detect-icon { width: 32px; height: 32px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--surface); color: var(--success); flex: 0 0 auto; }
 .detect-banner.is-warning .detect-icon { color: var(--warning); }
 .detect-banner .detect-text { flex: 1 1 240px; min-width: 0; }
 .detect-banner .detect-title { font-weight: 600; }
@@ -71,7 +71,7 @@
 @media (max-width: 768px) { .commit-foot { bottom: 64px; } }
 
 .done-card { text-align: center; padding: var(--sp-8) var(--sp-5); }
-.done-icon { width: 56px; height: 56px; border-radius: 16px; background: var(--success-soft); color: var(--success); display: grid; place-items: center; margin: 0 auto var(--sp-4); }
+.done-icon { width: 56px; height: 56px; border-radius: var(--r-xl); background: var(--success-soft); color: var(--success); display: grid; place-items: center; margin: 0 auto var(--sp-4); }
 .done-icon .ico { width: 28px; height: 28px; }
 .done-stats { display: flex; justify-content: center; gap: var(--sp-8); margin: var(--sp-5) 0; flex-wrap: wrap; }
 .done-stats .n { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; }

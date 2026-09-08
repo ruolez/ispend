@@ -414,7 +414,6 @@ async function onImportClick(e) {
     case 'new-account': return openNewAccount();
     case 'remove-file': { imp.files = imp.files.filter((x) => x.lid !== btn.dataset.lid); renderFileList(); return; }
     case 'go-review': { imp.active = null; setStep('review'); renderReview(); return; }
-    case 'pick-file': { imp.active = btn.dataset.lid; renderReview(); return; }
     case 'flip-signs': if (f) { const m = readMappingFromDom(f.statement); m.flip_sign = !((f.statement.mapping || {}).flip_sign); return applyMapping(f, m); } return;
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;

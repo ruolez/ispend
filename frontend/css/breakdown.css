@@ -15,8 +15,8 @@
 .bd-child { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
 .bd-child td { padding-top: 6px; padding-bottom: 6px; font-size: var(--fs-sm); }
 .bd-share { min-width: 160px; }
-.bd-share .share-bar { display: inline-block; width: 110px; height: 6px; border-radius: 3px; background: var(--surface-3); vertical-align: middle; margin-right: 8px; overflow: hidden; }
-.bd-share .share-bar > span { display: block; height: 100%; background: var(--c); border-radius: 3px; }
+.bd-share .share-bar { display: inline-block; width: 110px; height: 6px; border-radius: var(--r-xs); background: var(--surface-3); vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.bd-share .share-bar > span { display: block; height: 100%; background: var(--c); border-radius: var(--r-xs); }
 .bd-share .share-bar.is-sub { width: 90px; height: 4px; }
 .bd-share .pct { font-size: var(--fs-sm); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .bd-delta { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; }
@@ -25,5 +25,5 @@
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
 @media (max-width: 768px) { .bd-share, .col-delta { display: none; } .bd-name { min-width: 0; } }
 
-.bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; color: inherit; cursor: pointer; }
+.bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-xs); color: inherit; cursor: pointer; }
 .bd-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

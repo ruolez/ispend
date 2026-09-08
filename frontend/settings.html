@@ -25,18 +25,18 @@
       <div id="settings-panels">
         <section class="tab-panel" data-panel="accounts">
           <div class="settings-section">
-            <div class="row-between mb-4"><div><h2>Accounts</h2><div class="sub" style="margin:0">Bank and card accounts your statements are imported into.</div></div>
-              <button type="button" class="btn btn-primary" data-act="add-account"></button></div>
+            <div class="row-between mb-4"><div><h2>Accounts</h2><div class="sub m-0">Bank and card accounts your statements are imported into.</div></div>
+              <button type="button" class="btn btn-primary" data-act="add-account">Add account</button></div>
             <div id="accounts-table"></div>
           </div>
           <div class="settings-section">
             <h2>Maintenance</h2>
             <div class="sub">Housekeeping for data that was imported before a normalizer improvement.</div>
-            <div class="card"><div class="card-body row-between" style="gap:16px;flex-wrap:wrap">
+            <div class="card"><div class="card-body row-between gap-4 wrap">
               <div><b>Re-detect merchant names</b><div class="text-3 fs-sm">Recomputes merchant names for every transaction using the current rules (strips cardholder names, processor codes and store numbers). Rules and remembered merchants follow the new names.</div></div>
               <button type="button" class="btn btn-secondary" data-act="renormalize"></button>
             </div></div>
-            <div class="card mt-3"><div class="card-body row-between" style="gap:16px;flex-wrap:wrap">
+            <div class="card mt-3"><div class="card-body row-between gap-4 wrap">
               <div><b>Learn from history</b><div class="text-3 fs-sm">Rebuilds merchant memory from every transaction you have categorized so far, so the next import recognizes them. Runs automatically as you categorize; use this after bulk changes.</div></div>
               <button type="button" class="btn btn-secondary" data-act="learn-history"></button>
             </div></div>
@@ -59,8 +59,8 @@
         </section>
         <section class="tab-panel" data-panel="users">
           <div class="settings-section">
-            <div class="row-between mb-4"><div><h2>Users</h2><div class="sub" style="margin:0">Each user has their own accounts, transactions, categories and rules.</div></div>
-              <button type="button" class="btn btn-primary" data-act="add-user"></button></div>
+            <div class="row-between mb-4"><div><h2>Users</h2><div class="sub m-0">Each user has their own accounts, transactions, categories and rules.</div></div>
+              <button type="button" class="btn btn-primary" data-act="add-user">Add user</button></div>
             <div id="users-table"></div>
           </div>
         </section>

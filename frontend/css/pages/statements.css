@@ -1,5 +1,5 @@
 .st-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.st-file-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); flex: 0 0 auto; }
+.st-file-icon { width: 30px; height: 30px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); flex: 0 0 auto; }
 .st-file-icon.pdf { background: var(--danger-soft); color: var(--danger); }
 .st-file-icon.csv { background: var(--success-soft); color: var(--success); }
 .st-file-icon.xlsx, .st-file-icon.xls { background: var(--info-soft); color: var(--accent); }

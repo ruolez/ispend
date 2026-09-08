@@ -627,7 +627,6 @@ const ui = (() => {
     });
     return {
       register(keys, fn, { when, description } = {}) { map.set(keys, { fn, when, description }); return () => map.delete(keys); },
-      unregister(keys) { map.delete(keys); },
       list() { return Array.from(map.entries()).map(([keys, h]) => ({ keys, description: h.description })); },
       isTyping: typing,
     };
@@ -662,4 +661,3 @@ window.toast = toast;
   window.addEventListener('unhandledrejection', (e) => report(e.reason));
   window.addEventListener('error', (e) => { if (e.error || e.message) report(e.error || e.message); });
 })();
-const snackbar = (m, type) => toast(m, { type: type === 'error' ? 'error' : type === 'success' ? 'success' : 'info' });

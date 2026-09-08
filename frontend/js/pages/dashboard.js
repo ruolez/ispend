@@ -40,7 +40,6 @@ initNav('dashboard').then(async (me) => {
     if (a.dataset.act === 'reload') load();
     if (a.dataset.act === 'drill-up') { state.drill = null; renderDonut(state.data); }
   });
-  window.addEventListener('popstate', () => { state.period = initialRange(qs(), { preset: 'this-month' }); load(); });
   load();
 });
 

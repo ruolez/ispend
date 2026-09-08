@@ -242,3 +242,14 @@ def test_async_button_disabled(make_context):
     state = page.evaluate("() => { const b = document.getElementById('login-btn'); return { disabled: b.disabled, busy: b.getAttribute('aria-busy'), loading: b.classList.contains('is-loading') }; }")
     assert state == {"disabled": True, "busy": "true", "loading": True}, state
     page.wait_for_url(lambda u: "/login.html" not in u, timeout=10000)
+
+
+def test_rem_scale(make_context):
+    """The type scale is rem-based: pixel-identical at default zoom, and it follows a larger root font size."""
+    _, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    sizes = page.evaluate("() => { const px = (s) => parseFloat(getComputedStyle(document.querySelector(s)).fontSize); return { body: px('body'), btn: px('.btn'), th: px('.sb-group-label'), stat: px('.stat-value') }; }")
+    assert sizes == {"body": 14, "btn": 13, "th": 11, "stat": 26}, sizes
+    scaled = page.evaluate("() => { document.documentElement.style.fontSize = '20px'; const v = parseFloat(getComputedStyle(document.querySelector('.btn')).fontSize); document.documentElement.style.fontSize = ''; return v; }")
+    assert abs(scaled - 16.25) < 0.01, scaled

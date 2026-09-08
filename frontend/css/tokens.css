@@ -1,5 +1,5 @@
 /* ============================================================
-   iSpend design tokens — light first, dark via prefers-color-scheme
+   iSpend design tokens — light first, dark under the data-theme="dark" root (theme.js always sets the effective theme)
    (system) or an explicit [data-theme]. Category palette c1..c12 is
    theme-aware; categories store a slot key, never a hex.
    ============================================================ */
@@ -40,6 +40,8 @@
   --chart-grid: #eceff3;
   --chart-axis: #cfd5df;
   --chart-muted: #667080;
+  --ai-accent: #b07bff;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   --c1: #2a78d6;
   --c2: #d95a26;
@@ -61,14 +63,16 @@
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
 
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-base: 13px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
-  --fs-xl: 20px;
-  --fs-2xl: 26px;
-  --fs-3xl: 34px;
+  /* Type scale in rem (16px root): 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34 px at default zoom, and it
+     follows the browser's text-size setting. */
+  --fs-xs: 0.6875rem;
+  --fs-sm: 0.75rem;
+  --fs-base: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: 1.625rem;
+  --fs-3xl: 2.125rem;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -80,6 +84,7 @@
   --sp-10: 40px;
   --sp-12: 48px;
 
+  --r-xs: 4px;
   --r-sm: 6px;
   --r-md: 8px;
   --r-lg: 12px;
@@ -97,56 +102,6 @@
   --topbar-h: 56px;
   --row-h: 40px;
   --cell-py: 10px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #0c0e13;
-    --surface: #161a22;
-    --surface-2: #1c212b;
-    --surface-3: #242a36;
-    --surface-overlay: #1c212b;
-    --border: #262c38;
-    --border-strong: #353d4c;
-    --text-1: #f1f3f7;
-    --text-2: #b3bbc8;
-    --text-3: #8a93a3;
-    --text-4: #7f8898;
-    --text-disabled: #5d6678;
-    --accent: #7c94ff;
-    --accent-hover: #93a7ff;
-    --accent-fg: #0c0e13;
-    --accent-soft: #252c47;
-    --accent-ring: rgba(124, 148, 255, 0.35);
-    --success: #4ade80;
-    --success-soft: #12281c;
-    --danger: #f87171;
-    --danger-text: #f87171;
-    --danger-soft: #2d1717;
-    --warning: #fbbf24;
-    --warning-soft: #2b2411;
-    --info-soft: #172033;
-    --overlay: rgba(0, 0, 0, 0.6);
-    --chart-grid: #242a36;
-    --chart-axis: #353d4c;
-    --chart-muted: #6b7280;
-    --c1: #3987e5;
-    --c2: #d95926;
-    --c3: #199e70;
-    --c4: #c98500;
-    --c5: #d55181;
-    --c6: #008300;
-    --c7: #9085e9;
-    --c8: #e66767;
-    --c9: #0f9f90;
-    --c10: #b8732d;
-    --c11: #6f7ae6;
-    --c12: #d04fae;
-    --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --sh-2: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
-    --sh-3: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
-  }
 }
 
 :root[data-theme="dark"] {
@@ -180,6 +135,8 @@
   --chart-grid: #242a36;
   --chart-axis: #353d4c;
   --chart-muted: #6b7280;
+  --ai-accent: #b07bff;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa3b2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --c1: #3987e5;
   --c2: #d95926;
   --c3: #199e70;

@@ -51,7 +51,7 @@ Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to th
 | `await apiUpload(path, formData, {onProgress(0..1)})` | XHR multipart upload with progress |
 | `esc(s)` | HTML-escape (use on EVERY interpolation) |
 | `qs()` → `{k:v}`, `setQs({k:v}, {replace, merge})`, `toQuery(obj)` → `?a=1&b=2` | URL state helpers; empty/null/false keys are dropped, arrays joined with `,` |
-| `$(sel, root)`, `$$(sel, root)`, `debounce(fn, ms)`, `sleep(ms)`, `uid()` | DOM/util |
+| `$(sel, root)`, `$$(sel, root)`, `debounce(fn, ms)`, `uid()` | DOM/util |
 
 ## format.js
 `fmtMoney(n, currency='USD', {compact, sign:'auto'|'always', abs, decimals})` (real minus U+2212, `+` for income with `sign:'always'`) · `fmtNumber(n, {decimals, compact})` · `fmtPct(0.12, {decimals, sign})` · `fmtDate('2026-09-02', {year})` → `Sep 2` · `fmtDateLong` · `fmtDateTime` · `fmtMonth('2026-09', {long})` → `Sep ’26` · `fmtRelative(iso)` → `2 days ago` · `toISODate(d)` · `fmtDelta(cur, prev)` → `{pct, dir:'up'|'down'|'flat', text}` · `fmtBytes(n)` · `initials(name)` · `plural(n, 'charge')`.
@@ -64,7 +64,7 @@ Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to th
 |---|---|
 | `await store.categories()` | tree `[{id,parent_id,name,slug,kind,color,icon,txn_count,children:[…]}]` |
 | `await store.categoriesFlat()` | flattened, adds `parent_name`, `parent_color`, `path` (`Dining › Coffee`), `depth` |
-| `await store.categoryById(id)`, `store.accounts()` (all incl. archived), `store.accountById(id)`, `store.settings()` (`/api/settings/client`) | |
+| `store.accounts()` (all incl. archived), `store.settings()` (`/api/settings/client`) | |
 | `store.get(key, url, {ttl, force})`, `store.invalidate(key)` | generic cache; keys `categories`, `accounts`, `settings` |
 | `store.on(event, fn)`, `store.emit(event, detail)` | `${key}-changed` fires after a revalidate changes data; also dispatched as `window` event `ispend:<event>` |
 
@@ -133,14 +133,14 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Buttons: `.btn` + `.btn-primary|secondary|ghost|danger|danger-solid`, sizes `.btn-sm|xs`, `.btn-icon`, `.btn-block`, state `.is-loading`.
 - Inputs: `.input`, `.select`, `.textarea`, `.input-sm`, `.input-group` (leading `.ico`, `.trailing` button + `.has-trailing`), `.field` (`label[data-required]` + control + `.hint` + `.field-error`, `.is-invalid`), `.field-row`, `.check`, `.radio-list > .radio-item.is-checked`, `.switch` (`input` + `.switch-track`, `.switch-sm`), `kbd`/`.kbd`.
 - Badges/chips: `.badge.badge-success|danger|warning|info|neutral|accent`, `.pill` (`.pill-soft`, `.pill-warning`), `.chip` (`.active`, `.chip-ok|err|warn`), `.dot` (color via `style="--c:var(--c4)"`), `.catchip` (+ `.catchip--empty`, `.catchip--suggested`), `.cat-icon` (`.cat-icon-lg`), `.acct` + `.acct-mark`, amounts `.amt.amt--expense|income|transfer`.
-- Tables: `.tbl-wrap > table.tbl` (sticky `th`, `th.sortable[aria-sort]`, `.col-check`, `.col-actions` + `.row-actions`, `tr.is-focused`, `tr[aria-selected=true]`, `tr.is-clickable`), `.tbl-toolbar`, `.tbl-summary`, `.tbl-foot`, `.tbl-sentinel`, `.merchant > .merchant-name + .merchant-raw`. Density via `html[data-density=compact]`.
+- Tables: `.tbl-wrap > table.tbl` (sticky `th`, `th.sortable[aria-sort]`, `.col-check`, `.col-actions` + `.row-actions`, `tr.is-focused`, `tr[aria-selected=true]`, `tr.is-clickable`), `.tbl-toolbar`, `.tbl-summary`, `.tbl-sentinel`, `.tbl-wrap--flush` (inside a card), `.merchant > .merchant-name + .merchant-raw`. Density via `html[data-density=compact]`.
 - Stats/charts: `.stat-grid > .stat` (`.stat-label`, `.stat-value`, `.stat-delta.stat-delta--good|bad` + `.stat-delta-vs`, `canvas.stat-spark`, `.is-loading`), `.card.chart-card > .chart-body[style=--h] > canvas` + `.chart-legend`/`.legend-list`, `.seg > .seg-btn.active`.
 - Navigation: `.tabs > .tab.active` + `.tab-panel.active`, `.stepper > .step.active|done` (`.step-num`, `.step-line`).
 - Layers (created by ui.js): `.modal`, `.drawer`, `.popover`, `.menu > .menu-item`, `.palette`, `.toast`, `.floatbar` (bulk/save bars: dark pill fixed bottom-center; put `.btn-ghost`/`.btn-primary` inside, `.sep` between groups).
-- States: `.skel`, `.empty` (`.empty-icon`, `.empty-title`, `.empty-body`), `.error-box`, `.notice.notice-warning|success`, `.spinner`, `.progress > span[style=width]`.
+- States: `.skel`, `.empty` (`.empty-icon`, `.empty-title`, `.empty-body`), `.error-box`, `.notice.notice-warning|info`, `.spinner`, `.progress > span[style=width]`.
 - Import: `.dropzone.is-dragover` (`.dropzone-icon`, `.dropzone-title`, `.dropzone-sub`).
-- Misc: `.list > .list-item`, `.swatches > .swatch.active[style=--c]`, `.icon-grid > button.active`, `.timeline > .tl-item` (`.tl-dot`, `.tl-text`, `.tl-time`), `.kv` (dl), `.avatar`, `.two-col`.
-- Breakpoints: 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, `.tb-username` hidden), 640 (2-col stat grid).
+- Misc: `.list > .list-item`, `.swatches > .swatch.active[style=--c]`, `.icon-grid > button.active`, `.timeline > .tl-item` (`.tl-dot`, `.tl-text`, `.tl-time`), `.avatar`, `.m-0`.
+- Breakpoints (the only widths allowed, checked by `css_audit.py --check`): 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, card-mode tables), 640 (2-col stat grid, stacked headers), 480 (compact stats). Type sizes are rem tokens (`--fs-*`); radii `--r-xs|sm|md|lg|xl|pill`; never px literals for either.
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
 

@@ -96,7 +96,7 @@ def mix(c1, c2, p):  # color-mix(in srgb, c1 p%, c2)
 tokens_css = read('css/tokens.css')
 def token_block(text):
     return {k: v.strip() for k, v in re.findall(r'--([\w-]+):\s*([^;]+);', text)}
-light_txt = tokens_css.split('@media (prefers-color-scheme: dark)')[0]
+light_txt = tokens_css.split(':root[data-theme="dark"]')[0]
 dark_txt = tokens_css.split(':root[data-theme="dark"]')[1].split('}')[0]
 LIGHT = token_block(light_txt); DARK = token_block(dark_txt)
 for k, v in LIGHT.items(): DARK.setdefault(k, v)

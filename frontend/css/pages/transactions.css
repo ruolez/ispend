@@ -1,6 +1,4 @@
 .tx-search { flex: 1 1 220px; max-width: 360px; position: relative; }
-.tx-search .ico-wrap { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-4); display: flex; pointer-events: none; }
-.tx-search .ico-wrap .ico { width: 15px; height: 15px; }
 .tx-search .input { padding-left: 32px; }
 .tbl-toolbar .btn .ico-sm { color: var(--text-3); }
 .tbl-toolbar .btn .count { margin-left: 2px; }
@@ -27,7 +25,7 @@
 .catcell .sugg-act .btn .ico { width: 12px; height: 12px; }
 .catcell .sugg-act .btn-accept { color: var(--success); }
 .catcell .sugg-act .btn-reject { color: var(--text-3); }
-.tbl-tx .badge-mini { height: 18px; padding: 0 5px; font-size: 11px; margin-left: 4px; }
+.tbl-tx .badge-mini { height: 18px; padding: 0 5px; font-size: var(--fs-xs); margin-left: 4px; }
 .tbl-tx td.col-date { color: var(--text-2); }
 .tbl-tx tr.is-focused td.col-date { color: var(--text-1); }
 .tx-foot-msg { padding: 14px; text-align: center; color: var(--text-3); font-size: var(--fs-sm); }

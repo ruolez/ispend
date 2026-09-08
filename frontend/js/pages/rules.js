@@ -338,15 +338,12 @@ async function loadMerchants() {
   $('#rules-error').innerHTML = '';
   const tb = $('#merch-body');
   if (!state.merchants.length) tb.innerHTML = ui.skeletonRows(6, 7);
-  state.mloading = true;
   try { state.merchants = await api(`/api/merchants${toQuery({ q: state.mq })}`); }
   catch (err) { $('#rules-error').innerHTML = ui.errorBox(err.message, { retry: 'reload-merchants' }); state.mloading = false; return; }
-  state.mloading = false;
   renderMerchants();
 }
 function merchantRow(m) {
   const c = state.cats.get(Number(m.category_id));
-  const key = encodeURIComponent(m.merchant_key);
   return `<tr data-key="${esc(m.merchant_key)}">
     <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" data-tip="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)}</span></div></td>
     <td>${m.is_transfer ? `<span class="badge badge-neutral">transfer</span> ` : ''}${c ? `<button type="button" class="catchip" data-mact="pick" data-tip="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>` : `<button type="button" class="catchip catchip--empty" data-mact="pick"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`}</td>
