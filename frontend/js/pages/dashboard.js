@@ -27,8 +27,6 @@ initNav('dashboard').then(async (me) => {
   state.period = initialRange(qs(), { preset: 'this-month' });
   state.currency = await store.displayCurrency();
   state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setPeriod({ preset: b.dataset.range }) });
-  // When no preset is checked (month or custom period) a click on the "current" preset would not fire onChange.
-  $('#range-seg').addEventListener('click', (e) => { const b = e.target.closest('.seg-btn'); if (b && !RANGES.includes(presetOf())) setPeriod({ preset: b.dataset.range }); });
   $('[data-month="prev"]').innerHTML = icon('chevron-left');
   $('[data-month="next"]').innerHTML = icon('chevron-right');
   $('#month-nav').addEventListener('click', (e) => {
@@ -65,8 +63,7 @@ function renderSeg() {
   const preset = presetOf();
   const idx = buttons.findIndex((b) => b.dataset.range === preset);
   const other = idx < 0;
-  if (state.seg && idx >= 0 && state.seg.current() !== idx) state.seg.select(idx, { focus: false, silent: true });
-  if (other) buttons.forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
+  if (state.seg && state.seg.current() !== idx) state.seg.select(idx, { focus: false, silent: true }); // -1 clears every preset
   const btn = $('#month-btn');
   btn.innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${other ? esc(rangeLabel(state.period)) : 'Pick a month'}</span>${icon('chevron-down', 'ico-sm')}`;
   btn.classList.toggle('is-active', other);
@@ -109,9 +106,11 @@ async function load() {
       action: { label: 'Import statement', href: '/import.html' },
     });
     renderKpis(data);
+    setPageTitle('');
     return;
   }
   if (data.range.name === 'custom') data.range.label = rangeLabel(state.period);
+  setPageTitle(data.range.label);
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
   loadBreakdown(data.range);
@@ -278,7 +277,7 @@ async function renderDonut(data) {
     plugins: [charts.donutCenterPlugin(() => fmtMoney(total, cur, { compact: total >= 100000 }), state.drill ? parent.name : data.range.label.toLowerCase())],
   }));
   const canDrill = (c) => !state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0;
-  legend.innerHTML = cats.map((c, i) => `<button type="button" class="legend-item" data-i="${i}" title="${canDrill(c) ? 'Show subcategories' : 'View transactions'}">
+  legend.innerHTML = cats.map((c, i) => `<button type="button" class="legend-item" data-i="${i}" data-tip="${canDrill(c) ? 'Show subcategories' : 'View transactions'}">
     <span class="legend-name"><i class="dot" style="--c:${colorOf(c)}"></i><span class="truncate">${esc(c.name)}</span><span class="legend-pct">${fmtPct(c.pct / 100)}</span></span>
     <span class="legend-val">${fmtMoney(c.total, cur)}${canDrill(c) ? icon('chevron-right', 'ico-sm legend-drill') : ''}</span></button>`).join('');
   legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) pickCategory(cats[Number(b.dataset.i)]); };

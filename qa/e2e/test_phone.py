@@ -6,6 +6,8 @@ Uses the smoke fixtures (one context per test, API-cookie login). Admin is used 
 populated pages; qa_tester for anything that mutates. Tests that document a known defect are
 marked xfail(strict=True) until the phase that fixes them lands, so a fix shows up as XPASS.
 """
+import time
+
 import pytest
 
 from helpers import PAGES, wait_loaded
@@ -59,7 +61,7 @@ GROUPS_JS = """
 # Pages whose phone layout still clips a table or wraps an amount (audit A1-A7); Phase 4 removes these.
 OVERFLOW_XFAIL = {"index", "insights", "reports"}
 WRAP_XFAIL = {"index", "reports"}
-KEYBOARD_XFAIL = {"transactions", "review", "rules", "reports"}
+KEYBOARD_XFAIL = set()
 
 
 def _params(keys, xfail, reason):
@@ -204,3 +206,39 @@ def test_tooltip_focus(make_context):
     page.wait_for_timeout(200)
     assert not page.locator("#ui-tip").is_visible()
     assert page.locator(".popover").count() == 0, "the tooltip must not count as an open layer"
+
+
+# ---------------------------------------------------------------------------------------------
+# primitives adopted on pages (Phase 2)
+
+def test_inline_validation(make_context):
+    """Submitting the Add category modal empty paints an inline field error and keeps the modal open."""
+    _, page, _ = make_context("qa_tester", "light", "1440")
+    page.goto(PAGES["categories"])
+    wait_loaded(page)
+    page.click("[data-act='add-category']")
+    page.wait_for_selector(".modal #cf-name", timeout=3000)
+    page.click(".modal-foot .btn-primary")
+    page.wait_for_selector(".modal .field-error", timeout=2000)
+    assert page.get_attribute("#cf-name", "aria-invalid") == "true"
+    assert "required" in page.locator(".modal .field-error").inner_text().lower()
+    assert page.locator(".modal").count() == 1, "the modal must stay open"
+    assert page.evaluate("() => document.activeElement && document.activeElement.id") == "cf-name"
+    page.fill("#cf-name", "x")
+    page.wait_for_timeout(50)
+    assert page.locator(".modal .field-error").count() == 0, "typing clears the error"
+    page.keyboard.press("Escape")
+
+
+def test_async_button_disabled(make_context):
+    """While a request is in flight the submit button is disabled (Enter cannot double-submit)."""
+    _, page, _ = make_context("anon", "light", "1440")
+    page.route("**/api/auth/login", lambda route: (time.sleep(0.7), route.continue_()))
+    page.goto("/login.html")
+    page.fill("#username", "qa_tester")
+    page.fill("#password", "qa-tester-pass1")
+    page.click("#login-btn", no_wait_after=True)
+    page.wait_for_timeout(120)
+    state = page.evaluate("() => { const b = document.getElementById('login-btn'); return { disabled: b.disabled, busy: b.getAttribute('aria-busy'), loading: b.classList.contains('is-loading') }; }")
+    assert state == {"disabled": True, "busy": "true", "loading": True}, state
+    page.wait_for_url(lambda u: "/login.html" not in u, timeout=10000)

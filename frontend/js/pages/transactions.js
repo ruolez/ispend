@@ -41,8 +41,7 @@ initNav('transactions').then(async () => {
   $('#f-clear').addEventListener('click', clearFilters);
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-categories').addEventListener('click', openCategoryFilter);
-  $('#f-status').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); });
-  $('#f-flow').addEventListener('click', (e) => { const b = e.target.closest('[data-flow]'); if (!b) return; tx.filters.flow = tx.filters.flow === b.dataset.flow ? '' : b.dataset.flow; applyFilters(); });
+  tx.flowSeg = ui.segmented($('#f-flow'), { allowNone: true, onChange: (b) => { tx.filters.flow = b ? b.dataset.flow : ''; applyFilters(); } });
   $('#tx-table thead').addEventListener('click', (e) => { const th = e.target.closest('th.sortable'); if (th) toggleSort(th.dataset.sort); });
   $('#tx-table thead').addEventListener('keydown', (e) => { const th = e.target.closest('th.sortable'); if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSort(th.dataset.sort); th.focus(); } });
   $('#tx-check-all').addEventListener('change', (e) => { if (e.target.checked) tx.items.forEach((i) => tx.selection.add(i.id)); else tx.selection.clear(); paintSelection(); });
@@ -141,11 +140,18 @@ function paintToolbar() {
   else if (f.cat.length > 1) catLabel = `${f.cat.length} categories`;
   catBtn.innerHTML = `${icon('tags', 'ico-sm')}<span>${esc(catLabel)}</span>${icon('chevron-down', 'ico-sm')}`;
   const st = tx.facets ? tx.facets.status : null;
-  $('#f-status').innerHTML = STATUS_OPTS.map(([k, l]) => {
-    const n = st && k === 'uncategorized' ? st.uncategorized : st && k === 'suggested' ? st.suggested : st && k === 'transfer' ? st.transfer : null;
-    return `<button type="button" class="seg-btn ${f.status === k ? 'active' : ''}" data-status="${k}" aria-pressed="${f.status === k}">${l}${n ? `<span class="pill pill-soft count">${fmtNumber(n)}</span>` : ''}</button>`;
-  }).join('');
-  $$('#f-flow .seg-btn').forEach((b) => { const on = b.dataset.flow === f.flow; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+  const statusHost = $('#f-status');
+  if (!statusHost.children.length) {
+    statusHost.innerHTML = STATUS_OPTS.map(([k, l]) => `<button type="button" class="seg-btn" data-status="${k}">${l}<span class="pill pill-soft count" hidden></span></button>`).join('');
+    tx.statusSeg = ui.segmented(statusHost, { onChange: (b) => { if (!b) return; tx.filters.status = b.dataset.status; applyFilters(); } });
+  }
+  $$('#f-status .seg-btn').forEach((b) => {
+    const k = b.dataset.status;
+    const n = st ? ({ uncategorized: st.uncategorized, suggested: st.suggested, transfer: st.transfer, excluded: st.excluded }[k] || null) : null;
+    const pill = b.querySelector('.count'); pill.hidden = !n; pill.textContent = n ? fmtNumber(n) : '';
+  });
+  tx.statusSeg.select(Math.max(0, STATUS_OPTS.findIndex(([k]) => k === f.status)), { focus: false, silent: true });
+  tx.flowSeg.select(f.flow === 'out' ? 0 : f.flow === 'in' ? 1 : -1, { focus: false, silent: true });
   $('#f-clear').hidden = !hasFilters();
   $$('#tx-table th.sortable').forEach((th) => {
     const k = th.dataset.sort;
@@ -227,6 +233,7 @@ function paintSummary() {
   const curs = tx.currencies && tx.currencies.length ? tx.currencies : (tx.items.length ? [currencyOf(tx.items[0])] : []);
   const cur = curs.length === 1 ? curs[0] : (tx.displayCurrency || curs[0] || 'USD');
   const mixed = curs.length > 1;
+  setPageTitle(`${fmtNumber(tx.total)} transaction${tx.total === 1 ? '' : 's'} · ${rangeLabel(tx.filters.range)}`);
   $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span>${tx.filters.flow !== 'in' ? `<span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span>` : ''}${tx.filters.flow !== 'out' ? `<span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span>` : ''}${!tx.filters.flow ? `<span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>` : ''}${tx.skipped.count ? `<span class="text-3" title="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
 $('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); if (e.target.closest('[data-act="show-all"]')) { tx.filters.range = { preset: 'all' }; periodSet(tx.filters.range); applyFilters(); } });
@@ -238,10 +245,10 @@ function catCellHtml(it) {
   if (!c) return `<div class="catcell"><button type="button" class="catchip catchip--empty" data-cat-pick="${it.id}" aria-label="Choose category"><i class="dot"></i><span class="catchip-label">Categorize</span></button></div>`;
   const color = c.color || c.parent_color || 'c1';
   if (it.category_status === 'suggested') {
-    return `<div class="catcell"><button type="button" class="catchip catchip--suggested" data-cat-pick="${it.id}" title="Suggested by ${it.category_source === 'ai' ? 'AI' : 'iSpend'}${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}%` : ''} — click to change">${icon('sparkles')}<span class="catchip-label">${esc(c.name)}</span></button>
-      <span class="sugg-act"><button type="button" class="btn btn-icon btn-ghost btn-xs btn-accept" data-accept="${it.id}" title="Accept suggestion" aria-label="Accept suggestion">${icon('check')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs btn-reject" data-reject="${it.id}" title="Reject suggestion" aria-label="Reject suggestion">${icon('x')}</button></span></div>`;
+    return `<div class="catcell"><button type="button" class="catchip catchip--suggested" data-cat-pick="${it.id}" data-tip="Suggested by ${it.category_source === 'ai' ? 'AI' : 'iSpend'}${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}%` : ''} — click to change">${icon('sparkles')}<span class="catchip-label">${esc(c.name)}</span></button>
+      <span class="sugg-act"><button type="button" class="btn btn-icon btn-ghost btn-xs btn-accept" data-accept="${it.id}" aria-label="Accept suggestion">${icon('check')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs btn-reject" data-reject="${it.id}" aria-label="Reject suggestion">${icon('x')}</button></span></div>`;
   }
-  return `<div class="catcell"><button type="button" class="catchip" data-cat-pick="${it.id}" title="${esc(c.path)} — click to change"><i class="dot" style="--c:var(--${esc(color)})"></i><span class="catchip-label">${esc(c.name)}</span></button></div>`;
+  return `<div class="catcell"><button type="button" class="catchip" data-cat-pick="${it.id}" data-tip="${esc(c.path)} — click to change"><i class="dot" style="--c:var(--${esc(color)})"></i><span class="catchip-label">${esc(c.name)}</span></button></div>`;
 }
 function rowHtml(it, idx) {
   const a = acctOf(it.account_id);
@@ -254,7 +261,7 @@ function rowHtml(it, idx) {
     <td class="col-cat">${catCellHtml(it)}</td>
     <td class="col-acct">${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="truncate">${esc(a.name)}</span></span>` : ''}</td>
     <td class="col-amt right"><span class="amt ${amtCls}">${fmtMoney(it.amount, cur, { sign: 'always' })}</span></td>
-    <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-open="${it.id}" title="Details" aria-label="Details">${icon('eye')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-menu="${it.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
+    <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-open="${it.id}" aria-label="Details">${icon('eye')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-menu="${it.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }
 function rerenderRow(id) {
@@ -306,7 +313,7 @@ function paintSelection() {
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="set_transfer">${icon('arrow-left-right', 'ico-sm')}Transfer</button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="exclude">${icon('eye-off', 'ico-sm')}Exclude</button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="more">${icon('more-horizontal', 'ico-sm')}</button>
-    <span class="sep"></span><button type="button" class="btn btn-ghost btn-sm" data-bulk="clear" title="Clear selection (Esc)">${icon('x', 'ico-sm')}</button>`;
+    <span class="sep"></span><button type="button" class="btn btn-ghost btn-sm" data-bulk="clear" data-tip="Clear selection (Esc)" aria-label="Clear selection">${icon('x', 'ico-sm')}</button>`;
 }
 function setFocus(idx, { scroll = true } = {}) {
   const prev = $('tr.is-focused'); if (prev) prev.classList.remove('is-focused');
@@ -527,7 +534,7 @@ function drawerHtml(it) {
       ${it.category_status === 'suggested' ? `<div class="row mt-2" style="gap:6px"><span class="text-3 fs-sm">Suggested${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}% confidence` : ''}</span><button type="button" class="btn btn-xs btn-secondary" data-dact="accept">${icon('check', 'ico-sm')}Accept</button><button type="button" class="btn btn-xs btn-ghost" data-dact="reject">Reject</button></div>` : ''}
     </div>
     <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button></div></div>
-    <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" title="Rename this merchant everywhere">Rename all</button></div>
+    <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" data-tip="Rename this merchant everywhere">Rename all</button></div>
       <div class="txd-raw mt-2" title="Original statement text">${esc(it.description_raw)}</div></div>
     <div class="txd-section"><div class="section-label">Notes</div><textarea class="textarea" id="txd-notes" rows="2" aria-label="Notes" placeholder="Add a note…">${esc(it.notes || '')}</textarea></div>
     <div class="txd-section txd-flags">
@@ -604,7 +611,7 @@ async function openRuleModal(id) {
       <button type="submit" hidden></button></form>`,
     actions: [{ label: 'Cancel' }, { label: 'Create rule', primary: true, onClick: async () => {
       const body = readRuleForm(m.el, categoryId);
-      if (!body.category_id) throw new Error('Choose a category for this rule');
+      if (!ui.validate(m.el, [{ sel: '#rf-cat', test: () => !!body.category_id || 'Choose a category for this rule' }])) return false;
       const r = await api('/api/rules', { method: 'POST', body });
       toast(`Rule created${r.applied ? ` · applied to ${fmtNumber(r.applied)} transactions` : ''}`, { type: 'success' });
       if (r.applied) { await reload(); afterChange(); }
@@ -659,10 +666,10 @@ function openAddModal() {
         </div>
         <div class="field"><label for="na-inst">Institution</label><select id="na-inst" class="select"><option value="">— Not set —</option></select></div>
       </div>
-      <div class="field"><label for="ad-amount">Amount</label>
-        <div class="row gap-2"><div class="seg" id="ad-kind" role="group" aria-label="Kind"><button type="button" class="seg-btn active" data-kind="charge" aria-pressed="true">Charge</button><button type="button" class="seg-btn" data-kind="income" aria-pressed="false">Income</button></div><input id="ad-amount" class="input num grow" type="number" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal" required></div>
+      <div class="field"><label for="ad-amount" data-required>Amount</label>
+        <div class="row gap-2"><div class="seg" id="ad-kind" aria-label="Kind"><button type="button" class="seg-btn active" data-kind="charge">Charge</button><button type="button" class="seg-btn" data-kind="income">Income</button></div><input id="ad-amount" class="input num grow" type="number" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal" required></div>
         <div class="hint">Charges are stored as money out, income as money in.</div></div>
-      <div class="field"><label for="ad-desc">Description</label><input id="ad-desc" class="input" placeholder="e.g. Farmers market" required autocomplete="off"></div>
+      <div class="field"><label for="ad-desc" data-required>Description</label><input id="ad-desc" class="input" placeholder="e.g. Farmers market" required autocomplete="off"></div>
       <div class="field"><label>Category</label><button type="button" class="btn btn-secondary btn-block" id="ad-cat" style="justify-content:space-between"><span id="ad-cat-label" class="row gap-2 text-3">Choose a category (optional)…</span>${icon('chevron-down')}</button></div>
       <div class="field"><label for="ad-notes">Notes</label><textarea id="ad-notes" class="textarea" rows="2" placeholder="Optional"></textarea></div>
       <button type="submit" hidden></button></form>`,
@@ -671,13 +678,15 @@ function openAddModal() {
       const amount = Number(el.querySelector('#ad-amount').value);
       const description = el.querySelector('#ad-desc').value.trim();
       const txn_date = el.querySelector('#ad-date').value;
-      if (!txn_date) throw new Error('Pick a date');
-      if (!(amount > 0)) throw new Error('Enter an amount greater than zero');
-      if (!description) throw new Error('Enter a description');
       let accountId = el.querySelector('#ad-acct').value;
+      if (!ui.validate(el, [
+        { sel: '#ad-date', message: 'Pick a date' },
+        { sel: '#ad-amount', test: (v) => Number(v) > 0 || 'Enter an amount greater than zero' },
+        { sel: '#ad-desc', message: 'Enter a description' },
+        { sel: '#na-name', test: (v) => accountId !== '__new__' || !!v || 'Enter a name for the new account' },
+      ])) return false;
       if (accountId === '__new__') {
         const name = el.querySelector('#na-name').value.trim();
-        if (!name) throw new Error('Enter a name for the new account');
         const a = await api('/api/accounts', { method: 'POST', body: { name, account_type: el.querySelector('#na-type').value, currency: el.querySelector('#na-cur').value, institution: el.querySelector('#na-inst').value || null } });
         store.invalidate('accounts');
         tx.accounts.set(a.id, { ...a, is_active: true });
@@ -695,7 +704,7 @@ function openAddModal() {
     } }],
   });
   const el = m.el;
-  el.querySelector('#ad-kind').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (!b) return; kind = b.dataset.kind; $$('#ad-kind .seg-btn', el).forEach((x) => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); }); });
+  const kindSeg = ui.segmented(el.querySelector('#ad-kind'), { onChange: (b) => { if (b) kind = b.dataset.kind; } });
   const setCatLabel = () => { const c = categoryId ? catOf(categoryId) : null; el.querySelector('#ad-cat-label').innerHTML = c ? `<i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="text-1">${esc(c.path)}</span>` : '<span class="text-3">Choose a category (optional)…</span>'; };
   el.querySelector('#ad-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowNone: !!categoryId, onPick: (c) => { categoryId = c ? c.id : null; if (c && !tx.cats.has(c.id)) tx.cats.set(c.id, c); setCatLabel(); } }));
   el.querySelector('#add-form').addEventListener('submit', (e) => { e.preventDefault(); el.querySelector('.modal-foot .btn-primary').click(); });
@@ -706,7 +715,7 @@ function openAddModal() {
       if (!amt.value && sug.last_amount != null) {
         amt.value = Math.abs(Number(sug.last_amount)).toFixed(2);
         kind = Number(sug.last_amount) < 0 ? 'charge' : 'income';
-        $$('#ad-kind .seg-btn', el).forEach((x) => { const on = x.dataset.kind === kind; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); });
+        kindSeg.select(kind === 'charge' ? 0 : 1, { focus: false, silent: true });
       }
     },
   });

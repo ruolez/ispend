@@ -15,7 +15,8 @@
 .cat-row--child .cat-icon { width: 24px; height: 24px; border-radius: 6px; }
 .cat-row--child .cat-icon .ico { width: 13px; height: 13px; }
 .cat-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.cat-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 6ch; }
+.cat-main > .badge { flex: 0 4 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* the kind badge gives way before the name does */
 .cat-row--child .cat-name { font-weight: 450; }
 .cat-name-input { height: 28px; padding: 0 8px; font: inherit; font-weight: 500; border: 1px solid var(--accent); border-radius: var(--r-sm); background: var(--surface); color: var(--text-1); box-shadow: 0 0 0 3px var(--accent-ring); outline: none; min-width: 120px; }
 .cat-count, .cat-total { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--fs-base); }

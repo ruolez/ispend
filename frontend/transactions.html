@@ -18,15 +18,15 @@
       <div class="page-actions">
         <button type="button" class="btn btn-primary" id="btn-add"></button>
         <a class="btn btn-secondary" id="btn-export" href="/api/transactions/export" download></a>
-        <button type="button" class="btn btn-ghost btn-icon" id="btn-density" title="Toggle density"></button>
+        <button type="button" class="btn btn-ghost btn-icon" id="btn-density" data-tip="Toggle density"></button>
       </div>
     </div>
     <div class="tbl-toolbar" id="tx-toolbar">
       <button type="button" class="btn btn-secondary" id="f-range"></button>
       <button type="button" class="btn btn-secondary" id="f-accounts"></button>
       <button type="button" class="btn btn-secondary" id="f-categories"></button>
-      <div class="seg" id="f-status" role="group" aria-label="Status"></div>
-      <div class="seg" id="f-flow" role="group" aria-label="Debits or credits"><button type="button" class="seg-btn" data-flow="out" title="Only money out (debits, charges)">Debits</button><button type="button" class="seg-btn" data-flow="in" title="Only money in (credits, deposits)">Credits</button></div>
+      <div class="seg" id="f-status" aria-label="Status"></div>
+      <div class="seg" id="f-flow" aria-label="Debits or credits"><button type="button" class="seg-btn" data-flow="out" data-tip="Only money out (debits, charges)">Debits</button><button type="button" class="seg-btn" data-flow="in" data-tip="Only money in (credits, deposits)">Credits</button></div>
       <div class="input-group tx-search"><span class="ico-wrap"></span><input class="input input-sm" id="f-q" type="search" placeholder="Search description, merchant, notes…" autocomplete="off"></div>
       <button type="button" class="btn btn-ghost btn-sm" id="f-clear" hidden>Clear filters</button>
     </div>

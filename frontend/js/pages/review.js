@@ -21,7 +21,7 @@ initNav('review').then(async () => {
   const pairBtn = $('#btn-pair-all');
   pairBtn.innerHTML = `${icon('arrow-left-right', 'ico-sm')}<span class="label">Pair all confident</span>`;
   pairBtn.addEventListener('click', pairAllConfident);
-  $('#rv-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (!b || b.dataset.mode === rv.mode) return; rv.mode = b.dataset.mode; setQs({ mode: rv.mode === 'merchant' ? null : rv.mode }); paintMode(); load(); });
+  rv.seg = ui.segmented($('#rv-mode'), { onChange: (b) => { if (!b || b.dataset.mode === rv.mode) return; rv.mode = b.dataset.mode; setQs({ mode: rv.mode === 'merchant' ? null : rv.mode }); paintMode(); load(); } });
   refreshPairCount();
   $('#rv-list').addEventListener('click', onCardClick);
   $('#rv-list').addEventListener('change', onCardChange);
@@ -42,7 +42,8 @@ async function loadRefs() {
 function acctOf(id) { return rv.accounts.get(Number(id)) || null; }
 function catOf(id) { return rv.cats.get(Number(id)) || null; }
 function paintMode() {
-  $$('#rv-mode .seg-btn').forEach((b) => { const on = b.dataset.mode === rv.mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+  if (rv.seg) rv.seg.select(MODES.indexOf(rv.mode), { focus: false, silent: true });
+  setPageTitle($(`#rv-mode [data-mode="${rv.mode}"]`).firstChild.textContent.trim());
   const transfers = rv.mode === 'transfers';
   $('#btn-pair-all').hidden = !transfers;
   if (rv.settings && rv.settings.ai_categorize_enabled) $('#btn-ai').hidden = transfers;
@@ -173,15 +174,13 @@ async function pairAllConfident() {
   const n = visiblePairs().filter((p) => p.confidence >= 0.9).length;
   if (!n) { toast('No confident candidates to pair', { type: 'info' }); return; }
   if (!(await ui.confirm({ title: `Pair ${n} confident transfer${n === 1 ? '' : 's'}?`, body: 'Candidates rated 90% or higher will be marked as transfers between your accounts and excluded from spending and income.', confirmText: 'Pair all' }))) return;
-  const btn = $('#btn-pair-all'); btn.classList.add('is-loading');
-  try {
+  await ui.busy($('#btn-pair-all'), async () => {
     const r = await api('/api/transactions/auto-pair', { method: 'POST', body: { min_confidence: 0.9 } });
     rv.paired += r.paired || 0;
     toast(`${plural(r.paired || 0, 'transfer')} paired`, { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     await loadTransfers();
-  } catch (err) { toast(err.message, { type: 'error' }); }
-  finally { btn.classList.remove('is-loading'); }
+  });
 }
 function visibleGroups() { return rv.groups.filter((g) => !rv.skipped.has(groupKey(g))); }
 
@@ -218,10 +217,10 @@ function cardHtml(g, idx) {
     ${sug ? `<div class="rv-suggest">${icon('sparkles')}<span>Suggested:</span><button type="button" class="catchip" data-cact="pick"><i class="dot" style="--c:var(--${esc(sug.cat.color || sug.cat.parent_color || 'c1')})"></i><span class="catchip-label">${esc(sug.cat.path)}</span></button><span class="rv-conf">${sug.confidence != null ? `${Math.round(Number(sug.confidence) * 100)}% · ` : ''}${sug.source === 'ai' ? 'AI' : sug.source === 'merchant' ? 'similar merchant' : 'built-in hints'}</span></div>` : ''}
     <div class="rv-actions">
       ${sug ? `<button type="button" class="btn btn-primary" data-cact="accept">Accept<kbd>↵</kbd></button><button type="button" class="btn btn-secondary" data-cact="pick">Choose<kbd>C</kbd></button>` : `<button type="button" class="btn btn-primary" data-cact="pick">Choose category<kbd>C</kbd></button>`}
-      <button type="button" class="btn btn-ghost" data-cact="transfer" title="Transfer between your own accounts">Transfer<kbd>T</kbd></button>
+      <button type="button" class="btn btn-ghost" data-cact="transfer" data-tip="Transfer between your own accounts">Transfer<kbd>T</kbd></button>
       <button type="button" class="btn btn-ghost" data-cact="skip">Skip<kbd>S</kbd></button>
       <span class="grow-sep"></span>
-      <span class="rv-always"><label class="switch switch-sm" title="Create a rule so future charges from this merchant are categorized automatically"><input type="checkbox" data-cfield="always" ${g.always ? 'checked' : ''}><span class="switch-track"></span>Always do this</label><button type="button" class="btn btn-icon btn-ghost btn-xs" data-cact="pattern" title="Edit the rule pattern" aria-label="Edit rule pattern">${icon('pencil', 'ico-sm')}</button></span>
+      <span class="rv-always"><label class="switch switch-sm" data-tip="Create a rule so future charges from this merchant are categorized automatically"><input type="checkbox" data-cfield="always" ${g.always ? 'checked' : ''}><span class="switch-track"></span>Always do this</label><button type="button" class="btn btn-icon btn-ghost btn-xs" data-cact="pattern" data-tip="Edit the rule pattern" aria-label="Edit rule pattern">${icon('pencil', 'ico-sm')}</button></span>
     </div>
     <div class="rv-pattern ${g.patternOpen ? 'is-open' : ''}"><span>Rule: merchant</span><select class="select input-sm" data-cfield="ptype"><option value="equals" ${g.ptype !== 'contains' ? 'selected' : ''}>equals</option><option value="contains" ${g.ptype === 'contains' ? 'selected' : ''}>description contains</option></select><input class="input input-sm" data-cfield="pattern" value="${esc(g.pattern)}" aria-label="Rule pattern"></div>
     ${g.expanded && g.rows ? `<div class="rv-rows">${g.rows.map((r) => `<div class="rv-row ${g.excluded.has(r.id) ? 'is-excluded' : ''}"><input type="checkbox" class="check" data-crow="${r.id}" ${g.excluded.has(r.id) ? '' : 'checked'} aria-label="Include"><span class="text-3 num">${fmtDate(r.txn_date)}</span><span class="desc">${esc(r.description_raw)}<small>${esc(r.merchant_name !== g.display ? r.merchant_name : '')}</small></span><span class="amt ${r.amount > 0 ? 'amt--income' : ''}">${fmtMoney(r.amount, r.currency || cur)}</span></div>`).join('')}${n < g.count ? `<div class="text-3 fs-sm mt-1">${g.count - n} unchecked charge${g.count - n === 1 ? '' : 's'} will stay in the queue.</div>` : ''}</div>` : g.expanded ? `<div class="rv-rows">${ui.skeletonList(Math.min(g.count, 4))}</div>` : ''}
@@ -369,11 +368,9 @@ async function askAI() {
   const btn = $('#btn-ai');
   const ids = rv.groups.filter((g) => !rv.skipped.has(groupKey(g)) && !g.suggestion).flatMap((g) => g.ids).slice(0, 40);
   if (!ids.length) { toast('Nothing left to suggest', { type: 'info' }); return; }
-  btn.classList.add('is-loading');
-  try {
+  await ui.busy(btn, async () => {
     const r = await api('/api/review/suggest', { method: 'POST', body: { ids } });
     toast(`AI suggested categories for ${fmtNumber((r.items || []).length || r.suggested || 0)} charges`, { type: 'success' });
     await load();
-  } catch (err) { toast(err.message, { type: 'error' }); }
-  finally { btn.classList.remove('is-loading'); }
+  });
 }

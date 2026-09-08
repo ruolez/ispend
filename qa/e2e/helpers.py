@@ -188,7 +188,7 @@ BUTTONS_JS = """
   document.querySelectorAll('#main button, #topbar button, .bottomnav button').forEach((b) => {
     if (!vis(b) || b.disabled || b.closest(inside) || b.matches(skip)) return;
     const label = (b.textContent.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || b.id || '').slice(0, 50);
-    const hay = `${b.textContent} ${b.getAttribute('aria-label') || ''} ${b.getAttribute('title') || ''} ${b.dataset.act || ''}`.toLowerCase();
+    const hay = `${b.textContent} ${b.getAttribute('aria-label') || ''} ${b.getAttribute('title') || ''} ${b.getAttribute('data-tip') || ''} ${b.dataset.act || ''}`.toLowerCase();
     const denied = deny.find((w) => hay.includes(w));
     const idx = out.length;
     b.setAttribute('data-qa-idx', String(idx));

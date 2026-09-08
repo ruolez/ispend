@@ -19,18 +19,18 @@
       <div class="page-actions"><button type="button" class="btn btn-secondary" data-act="export"></button></div>
     </div>
     <div class="tabs" role="tablist" id="report-tabs">
-      <button type="button" class="tab" role="tab" data-tab="category">By category</button>
-      <button type="button" class="tab" role="tab" data-tab="trend">Trend</button>
-      <button type="button" class="tab" role="tab" data-tab="merchants">Merchants</button>
-      <button type="button" class="tab" role="tab" data-tab="compare">Compare months</button>
-      <button type="button" class="tab" role="tab" data-tab="cashflow">Cash flow</button>
+      <button type="button" class="tab" role="tab" data-tab="category" aria-controls="panel-category">By category</button>
+      <button type="button" class="tab" role="tab" data-tab="trend" aria-controls="panel-trend">Trend</button>
+      <button type="button" class="tab" role="tab" data-tab="merchants" aria-controls="panel-merchants">Merchants</button>
+      <button type="button" class="tab" role="tab" data-tab="compare" aria-controls="panel-compare">Compare months</button>
+      <button type="button" class="tab" role="tab" data-tab="cashflow" aria-controls="panel-cashflow">Cash flow</button>
     </div>
     <div class="filter-row" id="filter-row">
       <button type="button" class="btn btn-secondary" id="range-btn"></button>
       <button type="button" class="btn btn-secondary" id="acct-btn"></button>
-      <div class="seg" id="flow-seg" title="Report money out or money in"><button type="button" class="seg-btn active" data-flow="spending">Spending</button><button type="button" class="seg-btn" data-flow="income">Income</button></div>
+      <div class="seg" id="flow-seg" aria-label="Money out or money in"><button type="button" class="seg-btn active" data-flow="spending">Spending</button><button type="button" class="seg-btn" data-flow="income">Income</button></div>
       <div class="seg" id="months-seg"><button type="button" class="seg-btn" data-months="6">6m</button><button type="button" class="seg-btn active" data-months="12">12m</button><button type="button" class="seg-btn" data-months="24">24m</button></div>
-      <label class="switch switch-sm filter-switch" title="Count transfers between your own accounts and excluded transactions as spending or income"><input type="checkbox" id="incl-transfers"><span class="switch-track"></span>Include transfers</label>
+      <label class="switch switch-sm filter-switch" data-tip="Count transfers between your own accounts and excluded transactions as spending or income"><input type="checkbox" id="incl-transfers"><span class="switch-track"></span>Include transfers</label>
       <span class="hint grow" id="filter-hint">Transfers and excluded transactions are left out.</span>
     </div>
     <div id="report-error"></div>

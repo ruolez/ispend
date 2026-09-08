@@ -33,6 +33,7 @@ function showTab() {
   if (!TAB_META[tab] || (tab === 'users' && state.me.role !== 'admin')) tab = 'accounts';
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
+  setPageTitle(TAB_META[tab].label);
   ({ accounts: loadAccounts, ai: loadAI, appearance: renderAppearance, users: loadUsers, account: renderAccount })[tab]();
 }
 
@@ -56,7 +57,7 @@ async function loadAccounts() {
       <td data-label="Currency">${esc(a.currency)}</td>
       <td class="right num" data-label="Transactions">${fmtNumber(a.txn_count)}</td>
       <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
-      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" title="Edit" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
+      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -95,7 +96,7 @@ function openAccountModal(a) {
     title: a ? 'Edit account' : 'Add account', html: accountForm(a || {}),
     actions: [{ label: 'Cancel' }, { label: a ? 'Save' : 'Create account', primary: true, onClick: async () => {
       const body = readAccountForm(m.el);
-      if (!body.name) throw new Error('Account name is required');
+      if (!ui.validate(m.el, [{ sel: '#acct-name', message: 'Account name is required' }])) return false;
       if (a) await api(`/api/accounts/${a.id}`, { method: 'PUT', body }); else await api('/api/accounts', { method: 'POST', body });
       store.invalidate('accounts');
       toast(a ? 'Account saved' : 'Account created', { type: 'success' });
@@ -168,23 +169,21 @@ function renderAIStatus() {
         <div class="fw-600">${on ? `AI is on · <span class="mono fs-sm">${esc(st.model || '')}</span>` : (st.configured || st.model ? 'AI is configured but switched off' : 'AI is off — add an OpenRouter key below')}</div>
         <div class="text-3 fs-sm">${st.enabled ? 'Category suggestions on import' : 'Suggestions off'} · ${st.insights_enabled ? 'insights on' : 'insights off'}${last ? ` · last call ${fmtRelative(last.created_at)}${last.status === 'error' ? ` <span class="text-danger">(${esc(last.error_message || 'failed')})</span>` : ''}` : ''}</div>
       </div></div>
-      <div class="row gap-2"><button type="button" class="btn btn-ghost btn-sm" data-act="ai-refresh" title="Refresh">${icon('refresh', 'ico-sm')}</button>
-        <button type="button" class="btn btn-secondary btn-sm" data-act="ai-suggest" ${st.enabled ? '' : 'disabled title="Turn on suggestions and save first"'}>${icon('sparkles', 'ico-sm')}Suggest categories for uncategorized</button></div>
+      <div class="row gap-2"><button type="button" class="btn btn-ghost btn-sm" data-act="ai-refresh" data-tip="Refresh" aria-label="Refresh AI status">${icon('refresh', 'ico-sm')}</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-act="ai-suggest" ${st.enabled ? '' : 'disabled data-tip="Turn on suggestions and save first"'}>${icon('sparkles', 'ico-sm')}Suggest categories for uncategorized</button></div>
     </div>
     <div class="ai-stats mt-3"><div><div class="l">Suggestions waiting</div><div class="v num">${fmtNumber(st.pending_suggestions || 0)}</div></div><div><div class="l">Calls today</div><div class="v num">${fmtNumber(st.calls_today || 0)}</div></div><div><div class="l">Tokens today</div><div class="v num">${fmtNumber(st.tokens_today || 0, { compact: true })}</div></div></div>
   </div></div>`;
 }
 async function suggestUncategorized(btn) {
-  btn.classList.add('is-loading');
-  try {
+  await ui.busy(btn, async () => {
     const r = await api('/api/ai/categorize', { method: 'POST', body: { scope: 'uncategorized' } });
     if (r && r.queued != null) toast(`Queued ${fmtNumber(r.queued)} charges for AI suggestions. They appear in Review as they arrive.`, { type: 'success', duration: 7000 });
     else if (r && r.suggested != null) toast(r.suggested ? `${fmtNumber(r.suggested)} suggestion${r.suggested === 1 ? '' : 's'} added — review them in the Review queue.` : 'Nothing to suggest: every charge already has a category.', { type: 'success', duration: 7000, action: r.suggested ? { label: 'Open Review', fn: () => { location.href = '/review.html?mode=merchant'; } } : undefined });
     else toast('Suggestions requested', { type: 'success' });
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     loadAIStatus();
-  } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
-  finally { btn.classList.remove('is-loading'); }
+  });
 }
 
 /* ---- model combobox keyboard ---- */
@@ -311,7 +310,7 @@ async function loadUsers() {
       <td data-label="Status"><span class="user-status"><i class="dot" style="--c:var(--${u.is_active ? 'success' : 'text-4'})"></i>${u.is_active ? 'Active' : 'Deactivated'}</span></td>
       <td class="right num" data-label="Accounts">${fmtNumber(u.account_count)}</td><td class="right num" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
       <td class="text-3" data-label="Created">${fmtDate(u.created_at, { year: true })}</td>
-      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
+      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 function openUserModal() {
@@ -358,11 +357,8 @@ function renderAccount() {
   $('#me-pw-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type=submit]');
-    if ($('#me-new').value !== $('#me-conf').value) return toast('New passwords do not match', { type: 'error' });
-    btn.classList.add('is-loading');
-    try { await api('/api/auth/me/password', { method: 'PUT', body: { current_password: $('#me-cur').value, password: $('#me-new').value } }); toast('Password updated', { type: 'success' }); e.target.reset(); }
-    catch (err) { toast(err.message, { type: 'error' }); }
-    finally { btn.classList.remove('is-loading'); }
+    if (!ui.validate(e.target, [{ sel: '#me-conf', test: (v) => v === $('#me-new').value || 'New passwords do not match' }])) return;
+    await ui.busy(btn, async () => { await api('/api/auth/me/password', { method: 'PUT', body: { current_password: $('#me-cur').value, password: $('#me-new').value } }); toast('Password updated', { type: 'success' }); e.target.reset(); });
   });
 }
 
@@ -389,21 +385,19 @@ async function onAction(e) {
     ]);
     case 'reload-accounts': return loadAccounts();
     case 'learn-history': {
-      el.classList.add('is-loading');
-      try {
+      await ui.busy(el, async () => {
         const r = await api('/api/merchants/learn', { method: 'POST', body: {} });
         toast(`${fmtNumber(r.merchants_seen)} merchants reviewed · ${fmtNumber(r.memory_added)} newly remembered`, { type: 'success', duration: 7000 });
-      } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); }
+      });
       return;
     }
     case 'renormalize': {
       if (!(await ui.confirm({ title: 'Re-detect merchant names?', body: 'Merchant names on all your transactions will be recomputed. Rules and remembered merchants are updated to match, so nothing stops working. This may take a few seconds.', confirmText: 'Re-detect' }))) return;
-      el.classList.add('is-loading');
-      try {
+      await ui.busy(el, async () => {
         const r = await api('/api/merchants/renormalize', { method: 'POST', body: {} });
         toast(`${fmtNumber(r.transactions_updated)} transactions renamed, ${fmtNumber(r.rules_updated)} rules updated${r.stripped_phrases && r.stripped_phrases.length ? ` · stripped “${r.stripped_phrases.join('”, “')}”` : ''}`, { type: 'success', duration: 8000 });
         window.dispatchEvent(new Event('ispend:transactions-changed'));
-      } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); }
+      });
       return;
     }
     case 'reload-ai': return loadAI();
@@ -413,7 +407,7 @@ async function onAction(e) {
     case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); el.setAttribute('aria-label', i.type === 'password' ? 'Show key' : 'Hide key'); return; }
     case 'open-models': return $('#or-model').focus();
     case 'test-ai': return testAI();
-    case 'save-ai': el.classList.add('is-loading'); try { await saveAI(); } catch (err) { toast(err.message, { type: 'error' }); } finally { el.classList.remove('is-loading'); } return;
+    case 'save-ai': await ui.busy(el, saveAI); return;
     case 'discard-ai': setDirty(false); return loadAI();
     case 'add-user': return openUserModal();
     case 'user-menu': return openUserMenuFor(el, user);

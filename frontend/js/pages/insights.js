@@ -31,6 +31,7 @@ async function load() {
   catch (err) { if (seq === state.seq) $('#ins-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); return; }
   if (seq !== state.seq) return;
   state.data = data;
+  setPageTitle(fmtMonth(state.month, { long: true }));
   renderStats(); renderRecurring(); renderAnomalies(); renderAI();
 }
 
@@ -59,7 +60,7 @@ function renderRecurring() {
       <td class="right"><div class="rec-amt"><span class="num fw-500">${fmtMoney(r.median_amount, cur)}</span>${r.amount_kind === 'variable' ? '<span class="badge badge-warning" aria-label="Amount varies between charges">varies</span>' : ''}</div></td>
       <td class="col-last text-3">${fmtDate(r.last_date, { year: true })}</td>
       <td class="right"><div class="rec-next"><span class="when ${n != null && n < 0 ? 'is-over' : (n != null && n <= 3 ? 'is-soon' : '')}">${r.is_active ? esc(daysLabel(n)) : '—'}</span><span class="date">${fmtDate(r.next_expected)}</span></div></td>
-      <td class="col-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs rec-dismiss" data-act="dismiss-rec" data-key="${esc(r.merchant_key)}" data-name="${esc(r.merchant_name)}" title="Not a subscription — hide" aria-label="Not a subscription — hide">${icon('x')}</button></td></tr>`; }).join('')}</tbody></table></div>
+      <td class="col-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs rec-dismiss" data-act="dismiss-rec" data-key="${esc(r.merchant_key)}" data-name="${esc(r.merchant_name)}" aria-label="Not a subscription — hide">${icon('x')}</button></td></tr>`; }).join('')}</tbody></table></div>
     <div class="rec-foot"><span>${fmtNumber(rows.filter((r) => r.is_active).length)} active</span><span>${fmtMoney(rows.filter((r) => r.is_active).reduce((s, r) => s + r.monthly_equivalent, 0), cur)} / month</span></div>`;
 }
 

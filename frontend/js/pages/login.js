@@ -49,19 +49,18 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     errEl.classList.add('show');
     return;
   }
-  btn.classList.add('is-loading');
   try {
-    const me = await api('/api/auth/login', { method: 'POST', body: { username, password } });
-    clearUserState();
-    const theme = me && me.preferences && me.preferences.theme;
-    if (theme && !Theme.hasStored()) Theme.set(theme);
-    location.href = safeNext(new URLSearchParams(location.search).get('next'));
+    await ui.busy(btn, async () => {
+      const me = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+      clearUserState();
+      const theme = me && me.preferences && me.preferences.theme;
+      if (theme && !Theme.hasStored()) Theme.set(theme);
+      location.href = safeNext(new URLSearchParams(location.search).get('next'));
+    }, { silent: true, rethrow: true });
   } catch (err) {
     errEl.innerHTML = `${icon('alert-triangle')}<div>${esc(err.message)}</div>`;
     errEl.classList.add('show');
     document.getElementById('password').focus();
     document.getElementById('password').select();
-  } finally {
-    btn.classList.remove('is-loading');
   }
 });

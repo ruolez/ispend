@@ -66,12 +66,12 @@ async function initNav(activePage) {
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
       <div class="sb-brand"><span class="sb-mark">${icon('activity')}</span><span class="sb-name">iSpend</span>
-        <button type="button" class="sb-collapse" id="sb-collapse" title="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
+        <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
         ${NAV_GROUPS.map((g) => `<div class="sb-group"><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
       <div class="sb-foot">
-        <button type="button" class="sb-expand" id="sb-expand" title="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
+        <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
         ${navItemHtml(NAV_SETTINGS, activePage)}
       </div>
     </aside>`;
@@ -87,7 +87,7 @@ async function initNav(activePage) {
       <div class="tb-title" id="tb-title">${esc(active ? active.label : 'iSpend')}</div>
       <button type="button" class="tb-search" id="tb-search" aria-label="Search (⌘K)">${icon('search')}<span>Search transactions…</span><kbd>⌘K</kbd></button>
       <div class="tb-actions">
-        <button type="button" class="btn btn-icon btn-ghost" id="tb-theme" aria-label="Toggle theme" title="Toggle theme">${icon('sun')}</button>
+        <button type="button" class="btn btn-icon btn-ghost" id="tb-theme" aria-label="Toggle theme">${icon('sun')}</button>
         <button type="button" class="tb-avatar-btn" id="tb-user" aria-haspopup="menu" aria-label="Account menu"><span class="avatar" id="tb-avatar"></span><span class="tb-username text-2 fs-base" id="tb-username"></span>${icon('chevron-down', 'ico-sm text-3')}</button>
       </div>
     </header>`;
@@ -225,7 +225,7 @@ function openChangePassword() {
       { label: 'Cancel' },
       { label: 'Update password', primary: true, onClick: async () => {
         const cur = $('#pw-cur').value, nw = $('#pw-new').value, conf = $('#pw-conf').value;
-        if (nw !== conf) throw new Error('New passwords do not match');
+        if (!ui.validate(m.el, [{ sel: '#pw-conf', test: (v) => v === nw || 'New passwords do not match' }])) return false;
         await api('/api/auth/me/password', { method: 'PUT', body: { current_password: cur, password: nw } });
         toast('Password updated', { type: 'success' });
       } },

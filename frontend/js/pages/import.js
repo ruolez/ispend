@@ -222,7 +222,7 @@ function renderReview() {
       <div class="card"><div class="card-body">
         <div class="section-label mb-2">Import into</div>
         <div class="acct-field"><select class="select" id="rv-account" aria-label="Account">${!s.account_id ? '<option value="">Choose an account…</option>' : ''}${imp.accounts.map((a) => `<option value="${a.id}" ${a.id === s.account_id ? 'selected' : ''}>${esc(a.name)} · ${esc(a.currency)}</option>`).join('')}</select>
-          <button type="button" class="btn btn-secondary" data-act="new-account" title="Create account">${icon('plus', 'ico-sm')}<span class="label">New</span></button></div>
+          <button type="button" class="btn btn-secondary" data-act="new-account" data-tip="Create account">${icon('plus', 'ico-sm')}<span class="label">New</span></button></div>
         <div class="hint mt-1">${s.account_id ? 'Duplicates are checked against this account.' : 'Pick the account this statement belongs to; duplicates are checked per account.'}${s.period_start ? ` Statement period ${fmtDate(s.period_start, { year: true })} – ${fmtDate(s.period_end || s.period_start, { year: true })}.` : ''}</div>
       </div></div>
       <div class="card"><div class="card-body">${signCheck(s)}</div></div>
@@ -259,7 +259,7 @@ function signCheck(s) {
       <div class="sc-item"><span class="sc-label">Payments / income</span><span class="sc-value amt amt--income">${fmtMoney(sm.payments.sum, cur, { sign: 'always' })}</span><span class="sc-sub">${plural(sm.payments.n, 'payment')}</span></div>
       ${(() => { const p = (s.stats || {}).predicted; if (!p) return ''; const known = (p.rule || 0) + (p.merchant || 0) + (p.manual || 0); const total = known + (p.builtin || 0) + (p.none || 0); const parts = []; if (p.manual) parts.push(`${p.manual} set by you`); if (p.rule) parts.push(`${p.rule} by rules`); if (p.merchant) parts.push(`${p.merchant} remembered`); return `<div class="sc-item"><span class="sc-label">Already known</span><span class="sc-value">${known}<span class="text-3 fs-sm"> / ${total}</span></span><span class="sc-sub">${parts.length ? esc(parts.join(' · ')) : 'nothing yet — categorize once and it learns'}</span></div>${p.builtin ? `<div class="sc-item"><span class="sc-label">Suggested</span><span class="sc-value text-warning">${p.builtin}</span><span class="sc-sub">guessed from keywords · <button type="button" class="btn btn-secondary btn-xs" data-act="confirm-suggestions">${icon('check', 'ico-sm')}Confirm all ${p.builtin}</button></span></div>` : ''}`; })()}
       <div class="grow"></div>
-      <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" title="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-act="flip-signs" data-tip="Swap charges and payments">${icon('arrow-left-right', 'ico-sm')}Flip signs</button>
     </div>
     ${suspicious ? `<div class="notice notice-warning mt-3">${icon('alert-triangle')}<div>Most rows parsed as payments or income. Card exports often list purchases as positive numbers; if these are purchases, use <b>Flip signs</b>.</div></div>` : ''}`;
 }
@@ -313,9 +313,9 @@ function previewTable(s) {
   const body = rows.map((r) => {
     const excluded = !r.include || !r.is_valid;
     const badges = [];
-    if (r.duplicate_of) badges.push(`<span class="badge badge-warning" title="${esc(`Already imported: ${r.duplicate_txn ? `${fmtDate(r.duplicate_txn.txn_date, { year: true })} · ${r.duplicate_txn.description} · ${fmtMoney(r.duplicate_txn.amount, cur)}` : '#' + r.duplicate_of}`)}">Duplicate</span>`);
-    if (r.in_file_duplicate) badges.push('<span class="badge badge-neutral" title="The same line appears more than once in this file">In file</span>');
-    (r.problems || []).forEach((p) => badges.push(`<span class="badge badge-danger" title="${esc(p)}">${esc(p.length > 24 ? p.slice(0, 22) + '…' : p)}</span>`));
+    if (r.duplicate_of) badges.push(`<span class="badge badge-warning" tabindex="0" data-tip="${esc(`Already imported: ${r.duplicate_txn ? `${fmtDate(r.duplicate_txn.txn_date, { year: true })} · ${r.duplicate_txn.description} · ${fmtMoney(r.duplicate_txn.amount, cur)}` : '#' + r.duplicate_of}`)}">Duplicate</span>`);
+    if (r.in_file_duplicate) badges.push('<span class="badge badge-neutral" tabindex="0" data-tip="The same line appears more than once in this file">In file</span>');
+    (r.problems || []).forEach((p) => badges.push(`<span class="badge badge-danger" tabindex="0" data-tip="${esc(p)}">${esc(p.length > 24 ? p.slice(0, 22) + '…' : p)}</span>`));
     return `<tr data-row="${r.id}" class="${excluded ? 'is-excluded' : ''}">
       <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid && !r.duplicate_of ? 'checked' : ''} ${!r.is_valid || r.duplicate_of ? 'disabled' : ''} ${r.duplicate_of ? 'title="Already imported: duplicates are always skipped"' : ''} aria-label="Include row"></td>
       <td class="num nowrap">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
@@ -326,7 +326,7 @@ function previewTable(s) {
   }).join('');
   return `<div class="preview-head">
       <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span title="Rows already imported into this account are skipped automatically"><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'} skipped</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
-      <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" title="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
+      <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" data-tip="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-preview"><thead><tr><th class="col-check"></th><th>Date</th><th>Description</th><th>Category</th><th class="right">Amount</th></tr></thead>
       <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'The PDF text did not contain recognizable transaction lines. If it is a scan, the OCR quality may be too low; try a clearer export or a CSV.' + (imp.aiReady ? ' You can also let the AI model read the pages with “Read with AI” above.' : '') : 'Check the column mapping above.' })}</td></tr>`}</tbody></table>
@@ -467,24 +467,21 @@ async function setRows(f, body) {
   } catch (err) { toast(err.message, { type: 'error' }); }
 }
 async function aiExtract(f, button) {
-  if (button) button.classList.add('is-loading');
-  try {
+  await ui.busy(button, async () => {
     await api(`/api/statements/${f.statementId}/ai-extract`, { method: 'POST', body: {} });
     f.statement = { ...f.statement, status: 'parsing', rows: undefined };
     renderReview();
     schedulePoll();
     toast('Reading the statement with AI · this can take a few minutes; rows it finds appear in the preview with a note', { type: 'info', duration: 7000 });
-  } catch (err) { toast(err.message, { type: 'error', duration: 8000 }); }
-  finally { if (button) button.classList.remove('is-loading'); }
+  });
 }
 async function confirmSuggestions(f, button) {
-  if (button) button.classList.add('is-loading');
-  try {
+  await ui.busy(button, async () => {
     const res = await api(`/api/statements/${f.statementId}/rows?limit=2000`, { method: 'PUT', body: { confirm_suggestions: true } });
     f.statement = { ...f.statement, ...res };
     renderReview();
     toast(`${fmtNumber(res.updated)} suggestion${res.updated === 1 ? '' : 's'} confirmed · they will be remembered for next time`, { type: 'success' });
-  } catch (err) { toast(err.message, { type: 'error' }); } finally { if (button) button.classList.remove('is-loading'); }
+  });
 }
 async function pickRowCategory(f, anchor, rowId) {
   const rows = f.statement.rows || [];
@@ -509,14 +506,13 @@ async function undoImport(statementId, button) {
   const n = res ? res.imported : null;
   const ok = await ui.confirm({ title: 'Undo this import?', html: `<p>This deletes the ${n != null ? `<b>${fmtNumber(n)}</b> ` : ''}transactions just imported from “${esc(res ? res.name : 'this file')}” and removes the file. Reports update immediately. You can import the file again later.</p>`, confirmText: 'Undo import', danger: true });
   if (!ok) return;
-  if (button) button.classList.add('is-loading');
-  try {
+  await ui.busy(button, async () => {
     const r = await api(`/api/statements/${statementId}?with_transactions=true`, { method: 'DELETE' });
     imp.results = imp.results.filter((x) => x.statementId !== statementId);
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     toast(`Import undone · ${fmtNumber(r.deleted_transactions || n || 0)} transactions removed`, { type: 'success' });
     if (imp.results.length) renderDone(); else { setStep('upload'); renderUpload(); }
-  } catch (err) { toast(err.message, { type: 'error' }); } finally { if (button) button.classList.remove('is-loading'); }
+  });
 }
 async function reparse(f) {
   try {
@@ -536,7 +532,8 @@ async function discard(f) {
 async function commit(f) {
   const s = f.statement;
   if (!s.account_id) { toast('Choose an account first', { type: 'error' }); return; }
-  const btn = $('[data-act="commit"]'); if (btn) btn.classList.add('is-loading');
+  const btn = $('[data-act="commit"]');
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.classList.add('is-loading'); }
   try {
     const r = await api(`/api/statements/${f.statementId}/commit`, { method: 'POST', body: { account_id: s.account_id } });
     f.done = true;
@@ -545,8 +542,8 @@ async function commit(f) {
     store.invalidate('accounts');
     toast(`Imported ${fmtNumber(r.imported)} transactions`, { type: 'success' });
     imp.active = null;
-    if (reviewable().length) renderReview(); else { setStep('done'); renderDone(); }
-  } catch (err) { toast(err.message, { type: 'error' }); if (btn) btn.classList.remove('is-loading'); }
+    if (reviewable().length) renderReview(); else { setStep('done'); renderDone(); } // the button is re-rendered, so it stays busy until then
+  } catch (err) { toast(err.message, { type: 'error' }); if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.classList.remove('is-loading'); } }
 }
 
 /* ---------- Step 3: done ---------- */
@@ -580,7 +577,7 @@ async function openNewAccount() {
   const m = ui.modal({
     title: 'New account',
     html: `<form id="na-form">
-      <div class="field"><label for="na-name">Account name</label><input id="na-name" class="input" placeholder="e.g. RBC Chequing" required autofocus></div>
+      <div class="field"><label for="na-name" data-required>Account name</label><input id="na-name" class="input" placeholder="e.g. RBC Chequing" required autofocus></div>
       <div class="field-row">
         <div class="field"><label for="na-type">Type</label><select id="na-type" class="select">${ACCOUNT_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
         <div class="field"><label for="na-cur">Currency</label><select id="na-cur" class="select"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
@@ -588,8 +585,8 @@ async function openNewAccount() {
       <div class="field"><label for="na-inst">Institution</label><select id="na-inst" class="select"><option value="">— Not set —</option>${inst.map((i) => `<option value="${esc(i.key)}" ${i.key === detected ? 'selected' : ''}>${esc(i.label)}</option>`).join('')}</select></div>
       <button type="submit" hidden></button></form>`,
     actions: [{ label: 'Cancel' }, { label: 'Create account', primary: true, onClick: async () => {
+      if (!ui.validate(m.el, [{ sel: '#na-name', message: 'Account name is required' }])) return false;
       const body = { name: $('#na-name', m.el).value.trim(), account_type: $('#na-type', m.el).value, currency: $('#na-cur', m.el).value, institution: $('#na-inst', m.el).value || null };
-      if (!body.name) throw new Error('Account name is required');
       const a = await api('/api/accounts', { method: 'POST', body });
       store.invalidate('accounts');
       imp.accounts = (await store.accounts({ force: true })).filter((x) => x.is_active);

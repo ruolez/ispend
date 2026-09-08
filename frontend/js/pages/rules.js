@@ -21,7 +21,7 @@ initNav('rules').then(async (me) => {
   wireDrag();
   const q = qs();
   if (q.tab === 'merchants') state.view = 'merchants';
-  $('#view-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (!b || b.dataset.view === state.view) return; state.view = b.dataset.view; setQs({ tab: state.view === 'merchants' ? 'merchants' : null }, { replace: true }); paintView(); if (state.view === 'merchants') loadMerchants(); });
+  state.seg = ui.segmented($('#view-seg'), { onChange: (b) => { if (!b || b.dataset.view === state.view) return; state.view = b.dataset.view; setQs({ tab: state.view === 'merchants' ? 'merchants' : null }, { replace: true }); paintView(); if (state.view === 'merchants') loadMerchants(); } });
   const mb = $('#merch-body');
   mb.addEventListener('click', onMerchantClick);
   mb.addEventListener('keydown', onMerchantKey);
@@ -55,7 +55,7 @@ function catChip(id, r) {
   }
   const c = state.cats.get(Number(id));
   if (!c) return `<button type="button" class="catchip catchip--empty" data-act="pick-cat" data-id="${r ? r.id : ''}"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`;
-  return `<button type="button" class="catchip" data-act="pick-cat" data-id="${r ? r.id : ''}" title="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>`;
+  return `<button type="button" class="catchip" data-act="pick-cat" data-id="${r ? r.id : ''}" data-tip="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>`;
 }
 function extrasHtml(r) {
   const out = [];
@@ -80,10 +80,10 @@ function ruleHtml(r, i) {
     <span class="rule-arrow">${icon('arrow-right', 'ico-sm')}</span>
     <div class="rule-then">${catChip(r.category_id, r)}</div>
     <span class="rule-hits ${r.hit_count ? '' : 'is-zero'}" title="${r.last_hit_at ? `Last hit ${fmtRelative(r.last_hit_at)}` : 'Never matched'}">${fmtNumber(r.hit_count || 0)}</span>
-    <span class="rule-on"><label class="switch switch-sm" title="${r.is_active ? 'Enabled' : 'Disabled'}"><input type="checkbox" data-field="is_active" ${r.is_active ? 'checked' : ''} aria-label="Enabled"><span class="switch-track"></span></label></span>
+    <span class="rule-on"><label class="switch switch-sm" data-tip="${r.is_active ? 'Enabled' : 'Disabled'}"><input type="checkbox" data-field="is_active" ${r.is_active ? 'checked' : ''} aria-label="Enabled"><span class="switch-track"></span></label></span>
     <div class="rule-actions">
-      <button type="button" class="btn btn-ghost btn-xs" data-act="test" data-id="${r.id}" title="Show matching transactions">Test</button>
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${r.id}" title="More" aria-label="More">${icon('more-horizontal')}</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-act="test" data-id="${r.id}" data-tip="Show matching transactions">Test</button>
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${r.id}" aria-label="More">${icon('more-horizontal')}</button>
     </div>
   </li>`;
 }
@@ -156,9 +156,7 @@ async function onAction(e) {
   }
   if (act === 'run-all') {
     if (!(await ui.confirm({ title: 'Run all rules?', body: 'Applies every enabled rule to transactions that have no category yet. Existing categories are not changed.', confirmText: 'Run rules' }))) return;
-    btn.classList.add('is-loading');
-    try { const r = await api('/api/rules/run', { method: 'POST', body: { only_uncategorized: true } }); toast(`${plural(r.updated, 'transaction')} categorized`, { type: 'success' }); window.dispatchEvent(new Event('ispend:transactions-changed')); await load(); }
-    catch (err) { toast(err.message, { type: 'error' }); } finally { btn.classList.remove('is-loading'); }
+    await ui.busy(btn, async () => { const r = await api('/api/rules/run', { method: 'POST', body: { only_uncategorized: true } }); toast(`${plural(r.updated, 'transaction')} categorized`, { type: 'success' }); window.dispatchEvent(new Event('ispend:transactions-changed')); await load(); });
   }
 }
 function openMenu(anchor, r) {
@@ -217,7 +215,7 @@ function ruleFormHtml(r) {
       <div class="field"><label for="rf-field">Field</label><select id="rf-field" class="select">${MATCH_FIELDS.map(([v, l]) => `<option value="${v}" ${(r.match_field || 'description_clean') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label for="rf-type">Match</label><select id="rf-type" class="select">${MATCH_TYPES.map(([v, l]) => `<option value="${v}" ${(r.match_type || 'contains') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
-    <div class="field"><label for="rf-pattern">Pattern</label><input id="rf-pattern" class="input mono" value="${esc(r.pattern || '')}" placeholder="e.g. STARBUCKS" autofocus spellcheck="false" autocomplete="off"><div class="hint" id="rf-pattern-hint">Matching ignores case unless you enable it below.</div></div>
+    <div class="field"><label for="rf-pattern" data-required>Pattern</label><input id="rf-pattern" class="input mono" value="${esc(r.pattern || '')}" placeholder="e.g. STARBUCKS" autofocus spellcheck="false" autocomplete="off"><div class="hint" id="rf-pattern-hint">Matching ignores case unless you enable it below.</div></div>
     <div class="field"><label>Then set category</label><button type="button" class="btn btn-secondary btn-block" id="rf-cat" style="justify-content:space-between"><span id="rf-cat-label" class="row gap-2 text-3">Choose a category…</span>${icon('chevron-down')}</button></div>
     <div class="rule-preview is-empty" id="rf-preview">${icon('search')}<span>Type a pattern to see how many existing transactions match.</span></div>
     <div id="rf-sample" class="rule-sample"></div>
@@ -257,8 +255,10 @@ function openRuleModal(r) {
     title: editing ? 'Edit rule' : 'New rule', size: 'lg', html: ruleFormHtml(r),
     actions: [{ label: 'Cancel' }, { label: editing ? 'Save rule' : 'Create rule', primary: true, onClick: async () => {
       const body = readRuleForm(m.el);
-      if (!body.pattern) throw new Error('Pattern is required');
-      if (!categoryId && !body.set_transfer && !body.set_excluded) throw new Error('Choose a category (or mark as transfer / excluded)');
+      if (!ui.validate(m.el, [
+        { sel: '#rf-pattern', message: 'Pattern is required' },
+        { sel: '#rf-cat', test: () => !!(categoryId || body.set_transfer || body.set_excluded) || 'Choose a category (or mark as transfer / excluded)' },
+      ])) return false;
       body.category_id = categoryId;
       body.apply_existing = m.el.querySelector('#rf-apply').checked;
       body.only_uncategorized = m.el.querySelector('#rf-only').checked;
@@ -315,9 +315,7 @@ async function openTestDrawer(r) {
       const b = e.target.closest('[data-drawer-act]'); if (!b) return;
       const all = b.dataset.drawerAct === 'apply-all';
       if (all && !(await ui.confirm({ title: `Apply to ${fmtNumber(res.count)} transactions?`, body: 'Transactions that already have a category will be re-categorized by this rule.', confirmText: 'Apply' }))) return;
-      b.classList.add('is-loading');
-      const n = await applyRule(r, !all);
-      b.classList.remove('is-loading');
+      const n = await ui.busy(b, () => applyRule(r, !all), { silent: true });
       if (n != null) d.close();
     });
   }
@@ -327,7 +325,8 @@ async function openTestDrawer(r) {
 /* ---------- Remembered merchants ---------- */
 function paintView() {
   const m = state.view === 'merchants';
-  $$('#view-seg .seg-btn').forEach((b) => { const on = b.dataset.view === state.view; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+  if (state.seg) state.seg.select(m ? 1 : 0, { focus: false, silent: true });
+  setPageTitle(m ? 'Remembered merchants' : '');
   $('#rules-view').hidden = m; $('#merchants-view').hidden = !m;
   $('[data-act="run-all"]').hidden = m; $('[data-act="new-rule"]').hidden = m;
   const search = $('#rule-search');
@@ -349,13 +348,13 @@ function merchantRow(m) {
   const c = state.cats.get(Number(m.category_id));
   const key = encodeURIComponent(m.merchant_key);
   return `<tr data-key="${esc(m.merchant_key)}">
-    <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" title="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)}</span></div></td>
-    <td>${m.is_transfer ? `<span class="badge badge-neutral">transfer</span> ` : ''}${c ? `<button type="button" class="catchip" data-mact="pick" title="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>` : `<button type="button" class="catchip catchip--empty" data-mact="pick"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`}</td>
+    <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" data-tip="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)}</span></div></td>
+    <td>${m.is_transfer ? `<span class="badge badge-neutral">transfer</span> ` : ''}${c ? `<button type="button" class="catchip" data-mact="pick" data-tip="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>` : `<button type="button" class="catchip catchip--empty" data-mact="pick"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`}</td>
     <td class="right num col-used">${fmtNumber(m.times_used)}</td>
     <td class="right num">${fmtNumber(m.txn_count)}</td>
     <td class="right num ${m.total > 0 ? 'amt--income' : ''}">${fmtMoney(m.total, state.currency)}</td>
     <td class="col-last text-3">${m.last_used_at ? fmtRelative(m.last_used_at) : '—'}</td>
-    <td class="col-actions"><div class="row-actions"><a class="btn btn-icon btn-ghost btn-xs" href="/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}" title="View transactions" aria-label="View transactions">${icon('list')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-mact="menu" title="More" aria-label="More">${icon('more-horizontal')}</button></div></td>
+    <td class="col-actions"><div class="row-actions"><a class="btn btn-icon btn-ghost btn-xs" href="/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}" aria-label="View transactions">${icon('list')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-mact="menu" aria-label="More">${icon('more-horizontal')}</button></div></td>
   </tr>`;
 }
 function renderMerchants() {

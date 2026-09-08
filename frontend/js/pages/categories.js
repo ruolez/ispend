@@ -55,7 +55,7 @@ function rowHtml(c, isChild) {
     <div class="cat-main">
       <span class="cat-grip" data-act="grip" title="Drag to reorder" aria-hidden="true">${icon('grip-vertical', 'ico-sm')}</span>
       ${hasKids ? `<button type="button" class="cat-chevron" data-act="toggle" data-id="${c.id}" tabindex="-1" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(c.name)}" aria-expanded="${expanded}">${icon('chevron-down', 'ico-sm')}</button>` : ''}
-      <button type="button" class="cat-icon" data-act="color" data-id="${c.id}" style="--c:${catColor(c.color)}" title="Change color or icon" aria-label="Change color">${icon(c.icon || 'tag')}</button>
+      <button type="button" class="cat-icon" data-act="color" data-id="${c.id}" style="--c:${catColor(c.color)}" data-tip="Change color or icon" aria-label="Change color">${icon(c.icon || 'tag')}</button>
       <span class="cat-name" data-name>${esc(c.name)}</span>
       ${!isChild && c.children && c.children.length ? `<span class="cat-sub-count">${c.children.length}</span>` : ''}
       ${!isChild && c.kind !== 'expense' ? `<span class="badge ${c.kind === 'income' ? 'badge-success' : 'badge-neutral'} cat-kind">${KIND_LABEL[c.kind]}</span>` : ''}
@@ -63,9 +63,9 @@ function rowHtml(c, isChild) {
     <span class="cat-count ${count ? '' : 'is-zero'}">${fmtNumber(count)}</span>
     <span class="cat-total ${total ? '' : 'is-zero'}">${total ? fmtMoney(total, state.currency) : '—'}</span>
     <div class="cat-actions">
-      ${!isChild ? `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="add-sub" data-id="${c.id}" title="Add subcategory" aria-label="Add subcategory">${icon('plus')}</button>` : ''}
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="rename" data-id="${c.id}" title="Rename" aria-label="Rename">${icon('pencil')}</button>
-      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${c.id}" title="More" aria-label="More">${icon('more-horizontal')}</button>
+      ${!isChild ? `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="add-sub" data-id="${c.id}" aria-label="Add subcategory">${icon('plus')}</button>` : ''}
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="rename" data-id="${c.id}" aria-label="Rename">${icon('pencil')}</button>
+      <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${c.id}" aria-label="More">${icon('more-horizontal')}</button>
     </div>
   </div>`;
 }
@@ -164,6 +164,8 @@ function select(id) {
   setQs({ id: state.selected }, { replace: true, merge: true });
   $$('.cat-row').forEach((r) => { const on = Number(r.dataset.id) === state.selected; r.classList.toggle('is-selected', on); r.setAttribute('aria-selected', on); });
   if (state.selected) setRoving($(`.cat-row[data-id="${state.selected}"]`));
+  const selRow = state.selected ? $(`.cat-row[data-id="${state.selected}"] .cat-name`) : null;
+  setPageTitle(selRow ? selRow.textContent.trim() : '');
   renderSide();
 }
 
@@ -177,7 +179,7 @@ async function renderSide() {
   const total = state.totals[cat.id] || 0;
   const count = cat.depth === 0 ? countOf(state.tree.find((p) => p.id === cat.id) || cat) : (cat.txn_count || 0);
   host.innerHTML = `<div class="card"><div class="card-body">
-    <div class="side-head"><button type="button" class="cat-icon cat-icon-lg" data-act="side-icon" data-id="${cat.id}" style="--c:${catColor(cat.color)}" title="Change icon">${icon(cat.icon || 'tag')}</button>
+    <div class="side-head"><button type="button" class="cat-icon cat-icon-lg" data-act="side-icon" data-id="${cat.id}" aria-label="Change icon" style="--c:${catColor(cat.color)}" data-tip="Change icon">${icon(cat.icon || 'tag')}</button>
       <div class="grow"><div class="side-title">${esc(cat.name)}</div><div class="side-sub">${esc(cat.parent_name ? `${cat.parent_name} › subcategory` : `${KIND_LABEL[cat.kind] || 'Expense'} category`)}</div></div></div>
     <div class="side-stats"><div class="side-stat"><div class="l">This month</div><div class="v">${fmtMoney(total, state.currency)}</div></div><div class="side-stat"><div class="l">Transactions</div><div class="v">${fmtNumber(count)}</div></div></div>
     <div class="section-label mb-2">Last 6 months</div>
@@ -259,7 +261,7 @@ function openStylePopover(anchor, cat, mode = 'color') {
   const render = () => {
     el.innerHTML = mode === 'icon'
       ? `<div class="row-between mb-2"><span class="section-label">Icon</span><button type="button" class="btn btn-ghost btn-xs" data-mode="color">Color</button></div>
-         <div class="icon-grid">${CATEGORY_ICONS.map((n) => `<button type="button" class="${cat.icon === n ? 'active' : ''}" data-icon="${esc(n)}" title="${esc(n)}">${icon(n)}</button>`).join('')}</div>`
+         <div class="icon-grid">${CATEGORY_ICONS.map((n) => `<button type="button" class="${cat.icon === n ? 'active' : ''}" data-icon="${esc(n)}" aria-label="${esc(n)}">${icon(n)}</button>`).join('')}</div>`
       : `<div class="row-between mb-2"><span class="section-label">Color</span><button type="button" class="btn btn-ghost btn-xs" data-mode="icon">Icon</button></div>
          <div class="swatches">${SLOTS.map((s) => `<button type="button" class="swatch ${cat.color === s ? 'active' : ''}" data-color="${s}" style="--c:var(--${s})" aria-label="${s}"></button>`).join('')}</div>
          ${isParent ? `<label class="switch switch-sm"><input type="checkbox" id="prop-color" checked><span class="switch-track"></span><span class="fs-sm">Apply to subcategories</span></label>` : ''}`;
@@ -336,16 +338,16 @@ function openCategoryModal(parent) {
   let color = parent ? parent.color : SLOTS[(state.tree.length) % 12];
   let iconName = parent ? (parent.icon || 'tag') : 'tag';
   const html = `<form id="cat-form">
-    <div class="field"><label for="cf-name">${isSub ? 'Subcategory name' : 'Name'}</label><input id="cf-name" class="input" required autofocus placeholder="${isSub ? `e.g. ${esc(parent.name)} › Something` : 'e.g. Kids'}"></div>
+    <div class="field"><label for="cf-name" data-required>${isSub ? 'Subcategory name' : 'Name'}</label><input id="cf-name" class="input" required autofocus placeholder="${isSub ? `e.g. ${esc(parent.name)} › Something` : 'e.g. Kids'}"></div>
     ${isSub ? `<div class="hint mb-3">Inside <b>${esc(parent.name)}</b>. Inherits its color unless you pick another.</div>` : `<div class="field"><label for="cf-kind">Kind</label><select id="cf-kind" class="select"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (excluded from spending)</option></select></div>`}
     <div class="field"><label>Color</label><div class="swatches" id="cf-colors">${SLOTS.map((s) => `<button type="button" class="swatch ${color === s ? 'active' : ''}" data-color="${s}" style="--c:var(--${s})" aria-label="${s}"></button>`).join('')}</div></div>
-    <div class="field"><label>Icon</label><div class="icon-grid" id="cf-icons" style="max-height:150px;overflow-y:auto">${CATEGORY_ICONS.map((n) => `<button type="button" class="${iconName === n ? 'active' : ''}" data-icon="${esc(n)}" title="${esc(n)}">${icon(n)}</button>`).join('')}</div></div>
+    <div class="field"><label>Icon</label><div class="icon-grid" id="cf-icons" style="max-height:150px;overflow-y:auto">${CATEGORY_ICONS.map((n) => `<button type="button" class="${iconName === n ? 'active' : ''}" data-icon="${esc(n)}" aria-label="${esc(n)}">${icon(n)}</button>`).join('')}</div></div>
     <button type="submit" hidden></button></form>`;
   const m = ui.modal({
     title: isSub ? 'Add subcategory' : 'Add category', html,
     actions: [{ label: 'Cancel' }, { label: 'Create', primary: true, onClick: async () => {
+      if (!ui.validate(m.el, [{ sel: '#cf-name', message: 'Name is required' }])) return false;
       const name = m.el.querySelector('#cf-name').value.trim();
-      if (!name) throw new Error('Name is required');
       const body = { name, color, icon: iconName, parent_id: parent ? parent.id : null };
       if (!isSub) body.kind = m.el.querySelector('#cf-kind').value;
       const cat = await api('/api/categories', { method: 'POST', body });
@@ -368,7 +370,7 @@ function openMerge(cat) {
     html: `<p class="mb-3">Move every transaction, rule and remembered merchant from <b>${esc(cat.name)}</b>${cat.children && cat.children.length ? ' and its subcategories' : ''} into another category, then delete it.</p>
       <div class="field"><label>Merge into</label><button type="button" class="btn btn-secondary btn-block" id="merge-target" style="justify-content:space-between"><span class="text-3">Choose a category…</span>${icon('chevron-down')}</button></div>`,
     actions: [{ label: 'Cancel' }, { label: 'Merge', danger: true, primary: true, onClick: async () => {
-      if (!target) throw new Error('Choose a category to merge into');
+      if (!ui.validate(m.el, [{ sel: '#merge-target', test: () => !!target || 'Choose a category to merge into' }])) return false;
       const r = await api(`/api/categories/${cat.id}/merge`, { method: 'POST', body: { into: target.id } });
       store.invalidate('categories');
       toast(`Merged into ${target.name} (${plural(r.moved, 'transaction')} moved)`, { type: 'success' });

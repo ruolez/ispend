@@ -356,7 +356,7 @@ const ui = (() => {
     });
     const select = (target, { focus = true, silent = false } = {}) => {
       const i = typeof target === 'number' ? target : items.indexOf(target);
-      if (i >= items.length || i < -1 || (i === -1 && !allowNone)) return;
+      if (i >= items.length || i < -1) return; // select(-1) clears programmatically; allowNone lets a click do it
       const changed = i !== current;
       current = i; paint();
       if (focus && i >= 0) items[i].focus();
@@ -498,6 +498,7 @@ const ui = (() => {
       box.lastChild.textContent = message;
       control.setAttribute('aria-invalid', 'true'); control.classList.add('is-invalid'); field.classList.add('is-invalid');
       describedBy(control, box.id, true);
+      if (!control._clearsError) { control._clearsError = true; control.addEventListener('input', () => fieldError(control, null)); control.addEventListener('change', () => fieldError(control, null)); }
     } else {
       if (box) { describedBy(control, box.id, false); box.remove(); }
       control.removeAttribute('aria-invalid'); control.classList.remove('is-invalid');

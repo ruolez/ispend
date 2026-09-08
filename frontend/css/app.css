@@ -343,8 +343,10 @@ button.catchip--empty:hover { color: var(--text-1); border-style: solid; }
 .tbl th[aria-sort="descending"]::after { border-top-color: currentColor; border-bottom: 0; opacity: 1; }
 .tbl .col-check { width: 36px; padding-right: 0; }
 .tbl .col-actions { width: 1%; white-space: nowrap; }
-.row-actions { display: flex; gap: 2px; justify-content: flex-end; opacity: 0; transition: opacity var(--dur-1); }
-tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions { opacity: 1; }
+.tbl td.num, .tbl td.amt { white-space: nowrap; }
+.row-actions { display: flex; gap: 2px; justify-content: flex-end; }
+.row-actions > .btn-icon { opacity: 0.45; transition: opacity var(--dur-1); } /* icon actions stay discoverable at rest; text buttons keep full contrast */
+tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon, .row-actions > .btn-icon:focus-visible { opacity: 1; }
 .tbl-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
 .tbl-summary { display: flex; gap: var(--sp-4); flex-wrap: wrap; font-size: var(--fs-base); color: var(--text-3); padding: 0 2px; margin-bottom: var(--sp-2); }
 .tbl-summary b { color: var(--text-1); font-weight: 600; }
@@ -370,7 +372,7 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 .chart-card .chart-body { position: relative; height: var(--h, 260px); padding: var(--sp-4) var(--sp-5) var(--sp-3); }
 .chart-body.is-loading::after { content: ''; position: absolute; inset: var(--sp-4) var(--sp-5); border-radius: var(--r-md); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 var(--sp-5) var(--sp-4); }
-.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); padding: 2px 4px; border-radius: var(--r-sm); border: 0; background: none; cursor: pointer; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: var(--fs-sm); color: var(--text-2); padding: 2px 6px; border-radius: var(--r-sm); border: 0; background: none; cursor: pointer; }
 .legend-item:hover { background: var(--surface-2); }
 .legend-item.is-off { opacity: 0.4; text-decoration: line-through; }
 .legend-item .legend-val { color: var(--text-3); font-variant-numeric: tabular-nums; }
@@ -380,7 +382,7 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; gap: 2px; }
 .seg-btn { height: 26px; padding: 0 10px; border-radius: 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-3); transition: background var(--dur-1), color var(--dur-1); white-space: nowrap; }
 .seg-btn:hover { color: var(--text-1); }
-.seg-btn.active, .seg-btn[aria-pressed="true"] { background: var(--surface); color: var(--text-1); box-shadow: var(--sh-1); }
+.seg-btn.active { background: var(--surface); color: var(--text-1); box-shadow: var(--sh-1); }
 
 /* ---------- Tabs ---------- */
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: var(--sp-5); overflow-x: auto; }
@@ -565,7 +567,7 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
   .card-head { flex-wrap: wrap; min-height: 0; }
 }
 @media (hover: none) {
-  .row-actions, .cat-actions, .rule-actions, .rec-dismiss, .tbl-tx .row-actions { opacity: 1; }
+  .row-actions, .row-actions > .btn-icon, .cat-actions, .rule-actions, .rec-dismiss, .tbl-tx .row-actions { opacity: 1; }
 }
 @media (pointer: coarse) {
   .btn-xs, .seg-btn, .catchip { min-height: 32px; }
@@ -587,6 +589,6 @@ tr:hover .row-actions, tr:focus-within .row-actions, tr.is-focused .row-actions 
 
 .skip-nav { display: contents; }
 
-.row-link { color: inherit; text-decoration: none; }
+.row-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; min-height: 24px; }
 .row-link:hover { text-decoration: underline; }
 .row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }

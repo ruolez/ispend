@@ -10,7 +10,7 @@
 .bd-toggle[aria-expanded="true"] .bd-chev { transform: rotate(90deg); }
 .bd-indent { width: 16px; }
 .bd-kids { font-size: var(--fs-xs); margin-left: 2px; }
-.bd-link { color: inherit; }
+.bd-link { color: inherit; display: inline-flex; align-items: center; min-height: 24px; padding: 0 2px; margin: 0 -2px; } /* 24px target (WCAG 2.5.8) without moving the text */
 .bd-link:hover { color: var(--accent); text-decoration: none; }
 .bd-child { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
 .bd-child td { padding-top: 6px; padding-bottom: 6px; font-size: var(--fs-sm); }
@@ -25,5 +25,5 @@
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
 @media (max-width: 768px) { .bd-share, .col-delta { display: none; } .bd-name { min-width: 0; } }
 
-.bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; color: inherit; cursor: pointer; }
+.bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; color: inherit; cursor: pointer; }
 .bd-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

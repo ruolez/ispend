@@ -19,15 +19,17 @@ initNav('reports').then(async (me) => {
   state.transfers = q.transfers === '1';
   state.flow = q.flow === 'income' ? 'income' : 'spending';
   paintFlow();
-  $('#flow-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-flow]'); if (!b || b.dataset.flow === state.flow) return; setFlow(b.dataset.flow); sync(); loadTab(true); });
+  state.flowSeg = ui.segmented($('#flow-seg'), { onChange: (b) => { if (!b || b.dataset.flow === state.flow) return; setFlow(b.dataset.flow); sync(); loadTab(true); } });
+  paintFlow();
   $('#incl-transfers').checked = state.transfers;
   paintTransfersHint();
   $('#incl-transfers').addEventListener('change', (e) => { state.transfers = e.target.checked; state.cache = {}; paintTransfersHint(); sync(); loadTab(true); });
   state.accountsList = await store.accounts().catch(() => []);
   $('[data-act="export"]').innerHTML = `${icon('download')}<span>Export CSV</span>`;
-  $('#report-tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) switchTab(t.dataset.tab); });
+  state.tabs = ui.tabs($('#report-tabs'), { onChange: (t) => switchTab(t.dataset.tab) });
   paintMonths();
-  $('#months-seg').addEventListener('click', (e) => { const b = e.target.closest('[data-months]'); if (!b) return; state.months = Number(b.dataset.months); paintMonths(); sync(); loadTab(true); });
+  state.monthsSeg = ui.segmented($('#months-seg'), { onChange: (b) => { if (!b) return; state.months = Number(b.dataset.months); paintMonths(); sync(); loadTab(true); } });
+  paintMonths();
   document.body.addEventListener('click', onAction);
   mountRangeButton($('#range-btn'), state.range, (v) => { state.range = v; periodSet(v); sync(); loadTab(true); });
   renderAcctBtn();
@@ -40,11 +42,11 @@ initNav('reports').then(async (me) => {
 });
 
 function setFlow(flow) { state.flow = flow; isolated = null; state.trendSel = null; paintFlow(); }
-function paintFlow() { $$('#flow-seg .seg-btn').forEach((b) => { const on = b.dataset.flow === state.flow; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
+function paintFlow() { if (state.flowSeg) state.flowSeg.select(state.flow === 'income' ? 1 : 0, { focus: false, silent: true }); }
 function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Transfers and excluded transactions are left out.'; }
 function shiftMonth(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function prevMonthOf(ym) { return shiftMonth(ym, -1); }
-function paintMonths() { $$('#months-seg .seg-btn').forEach((b) => { const on = Number(b.dataset.months) === state.months; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }); }
+function paintMonths() { if (state.monthsSeg) state.monthsSeg.select([6, 12, 24].indexOf(state.months), { focus: false, silent: true }); }
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function renderAcctBtn() {
   const n = state.accounts.size;
@@ -56,7 +58,8 @@ function sync() {
 }
 function switchTab(tab, noPush) {
   state.tab = tab;
-  $$('#report-tabs .tab').forEach((t) => { const on = t.dataset.tab === tab; t.classList.toggle('active', on); t.setAttribute('aria-selected', on); });
+  if (state.tabs) state.tabs.select(TABS.indexOf(tab), { focus: false, silent: true });
+  setPageTitle($(`#report-tabs [data-tab="${tab}"]`).textContent.trim());
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   const usesRange = tab === 'category' || tab === 'merchants';
   $('#range-btn').hidden = !usesRange;
@@ -88,7 +91,6 @@ function onAction(e) {
   const act = b.dataset.act;
   if (act === 'reload') return loadTab(true);
   if (act === 'export') return exportCsv();
-  if (act === 'pct') { state.pct = !state.pct; return loadCategory(); }
   if (act === 'compare-go') { state.month = $('#cmp-month').value || currentMonth(); state.vs = $('#cmp-vs').value || null; sync(); return loadCompare(true); }
   if (act === 'cmp-prev' || act === 'cmp-next') { state.month = shiftMonth(state.month, act === 'cmp-next' ? 1 : -1); sync(); return loadCompare(true); }
   if (act === 'vs-prev' || act === 'vs-next') { state.vs = shiftMonth(state.vs || prevMonthOf(state.month), act === 'vs-next' ? 1 : -1); sync(); return loadCompare(true); }
@@ -113,11 +115,12 @@ function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme(
 async function loadCategory(force) {
   const host = $('#panel-category');
   if (!host.querySelector('#ch-stack')) {
-    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Drill into a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-act="pct" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-act="pct" data-mode="pct">%</button></div></div></header>
+    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Drill into a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg" id="pct-seg" aria-label="Amounts or percentages"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-mode="pct">%</button></div></div></header>
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
       <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
-  $$('#panel-category [data-act="pct"]').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'pct') === state.pct));
+  if (!state.pctSeg) state.pctSeg = ui.segmented($('#pct-seg'), { onChange: (b) => { if (!b) return; state.pct = b.dataset.mode === 'pct'; loadCategory(); } });
+  state.pctSeg.select(state.pct ? 1 : 0, { focus: false, silent: true });
   const rq = rangeToQuery(state.range);
   const seq = ++state.seq;
   try {
@@ -242,7 +245,7 @@ async function loadCompare(force) {
   const host = $('#panel-compare');
   if (!host.querySelector('#ch-compare')) host.innerHTML = `<div class="compare-row mb-4">
       <div class="cmp-pick"><label for="cmp-month" class="cmp-label">This period</label><div class="row gap-1"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-prev" aria-label="Previous month">${icon('chevron-left')}</button><input type="month" id="cmp-month" class="input" value="${esc(state.month)}"><button type="button" class="btn btn-icon btn-secondary" data-act="cmp-next" aria-label="Next month">${icon('chevron-right')}</button></div></div>
-      <button type="button" class="btn btn-icon btn-ghost cmp-swap" data-act="vs-swap" title="Swap months" aria-label="Swap months">${icon('arrow-left-right')}</button>
+      <button type="button" class="btn btn-icon btn-ghost cmp-swap" data-act="vs-swap" aria-label="Swap months">${icon('arrow-left-right')}</button>
       <div class="cmp-pick"><label for="cmp-vs" class="cmp-label">Compare with</label><div class="row gap-1"><button type="button" class="btn btn-icon btn-secondary" data-act="vs-prev" aria-label="Earlier month">${icon('chevron-left')}</button><input type="month" id="cmp-vs" class="input" value="${esc(state.vs || prevMonthOf(state.month))}"><button type="button" class="btn btn-icon btn-secondary" data-act="vs-next" aria-label="Later month">${icon('chevron-right')}</button></div></div>
       <div class="cmp-quick"><span class="text-4 fs-xs">Quick:</span><button type="button" class="btn btn-ghost btn-xs" data-act="vs-previous">Previous month</button><button type="button" class="btn btn-ghost btn-xs" data-act="vs-year">Same month last year</button></div>
       <span class="hint" id="cmp-hint"></span></div>
@@ -275,7 +278,7 @@ function renderCompare(data) {
   const chart = charts.makeChart($('#ch-compare'), (th) => ({
     type: 'bar',
     data: { labels: cats.map((c) => c.name), datasets: [{ label: fmtMonth(data.previous_month), data: cats.map((c) => c.previous), backgroundColor: th.muted, maxBarThickness: 26 }, { label: fmtMonth(data.month), data: cats.map((c) => c.current), backgroundColor: isInc() ? th.success : th.accent, maxBarThickness: 26 }] },
-    options: { ...charts.barOptions(th, { currency: cur }), scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => { const l = cats[i].name; return l.length > 12 ? l.slice(0, 11) + '…' : l; } } }, y: { beginAtZero: true, border: { display: false }, ticks: charts.currencyTicks(cur) } } },
+    options: { ...charts.barOptions(th, { currency: cur }), scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 45, autoSkip: false, callback: (v, i) => { const l = cats[i].name; return l.length > 18 ? l.slice(0, 17) + '…' : l; } } }, y: { beginAtZero: true, border: { display: false }, ticks: charts.currencyTicks(cur) } } },
   }));
   charts.htmlLegend($('#ch-compare-legend'), chart, { currency: cur });
   $('#cmp-table').innerHTML = data.categories.map((c) => `<tr class="is-clickable" data-href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><td><a class="row-link" href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: `${data.month}-01`, to: monthEnd(data.month) })}"><span class="cat-cell"><span class="cat-icon" style="--c:${c.color === 'muted' ? charts.theme().muted : catColor(c.color)}">${icon(c.icon || 'tag')}</span><span class="name">${esc(c.name)}</span></span></a></td><td class="right num text-3">${fmtMoney(c.previous, cur)}</td><td class="right num fw-500">${fmtMoney(c.current, cur)}</td><td class="right">${deltaHtml(c.delta, c.pct)}</td></tr>`).join('')
