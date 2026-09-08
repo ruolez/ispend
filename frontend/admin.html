@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Admin · iSpend</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/admin.css">
+</head>
+<body>
+  <main id="main" class="main main--wide">
+    <div class="page-head">
+      <div><h1>Admin</h1><div class="page-sub">Users, usage and instance health</div></div>
+      <div class="page-actions" id="admin-actions" hidden>
+        <div class="seg" id="range-seg" aria-label="Time range">
+          <button type="button" class="seg-btn" data-days="7">7d</button>
+          <button type="button" class="seg-btn" data-days="30">30d</button>
+          <button type="button" class="seg-btn active" data-days="90">90d</button>
+          <button type="button" class="seg-btn" data-days="365">1y</button>
+        </div>
+        <button type="button" class="btn btn-secondary" data-act="refresh"></button>
+      </div>
+    </div>
+
+    <div id="admin-gate"></div>
+
+    <div class="settings-layout" id="admin-layout" hidden>
+      <nav class="settings-nav" id="admin-nav" aria-label="Admin sections">
+        <a class="nav-item" href="#overview" data-tab="overview"></a>
+        <a class="nav-item" href="#users" data-tab="users"></a>
+        <a class="nav-item" href="#activity" data-tab="activity"></a>
+      </nav>
+
+      <div id="admin-panels">
+        <section class="tab-panel" data-panel="overview">
+          <div id="ov-error"></div>
+          <div class="stat-grid" id="ov-stats"></div>
+          <div class="grid grid-2 mt-4">
+            <section class="card chart-card">
+              <header class="card-head"><h2>Signups &amp; sign-ins</h2></header>
+              <div class="chart-body" style="--h:220px"><canvas id="ch-users"></canvas></div>
+              <div class="chart-legend" id="lg-users"></div>
+            </section>
+            <section class="card chart-card">
+              <header class="card-head"><h2>Imported</h2></header>
+              <div class="chart-body" style="--h:220px"><canvas id="ch-import"></canvas></div>
+              <div class="chart-legend" id="lg-import"></div>
+            </section>
+          </div>
+          <div class="grid grid-2 mt-4">
+            <section class="card"><header class="card-head"><h2>AI usage</h2></header><div class="card-body" id="ov-ai"></div></section>
+            <section class="card"><header class="card-head"><h2>Storage</h2></header><div class="card-body" id="ov-storage"></div></section>
+          </div>
+          <div class="grid grid-2 mt-4">
+            <section class="card"><header class="card-head"><h2>Bank profiles</h2></header><div class="card-body" id="ov-profiles"></div></section>
+            <section class="card"><header class="card-head"><h2>Housekeeping</h2></header><div class="card-body" id="ov-housekeeping"></div></section>
+          </div>
+        </section>
+
+        <section class="tab-panel" data-panel="users">
+          <div id="users-notice"></div>
+          <div class="tbl-toolbar" id="users-toolbar">
+            <input id="u-search" class="input input-sm grow" type="search" placeholder="Search users…" aria-label="Search users">
+            <button type="button" class="btn btn-secondary btn-sm" id="u-status-btn" aria-haspopup="menu"></button>
+            <button type="button" class="btn btn-secondary btn-sm" id="u-role-btn" aria-haspopup="menu"></button>
+            <button type="button" class="btn btn-primary btn-sm" data-act="add-user"></button>
+          </div>
+          <div id="users-table"></div>
+        </section>
+
+        <section class="tab-panel" data-panel="activity">
+          <div class="tbl-toolbar" id="audit-toolbar">
+            <input id="a-search" class="input input-sm grow" type="search" placeholder="Search actions…" aria-label="Search activity">
+            <button type="button" class="btn btn-secondary btn-sm" id="a-action-btn" aria-haspopup="menu"></button>
+            <button type="button" class="btn btn-secondary btn-sm" id="a-user-chip" data-act="clear-audit-user" hidden></button>
+            <a class="btn btn-secondary btn-sm" id="a-export" href="/api/admin/audit?format=csv" download></a>
+          </div>
+          <div id="audit-list"></div>
+          <div class="row center mt-4"><button type="button" class="btn btn-secondary btn-sm" data-act="audit-more" hidden>Load more</button></div>
+        </section>
+      </div>
+    </div>
+    <div class="sr-only" aria-live="polite" id="admin-live"></div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/pages/admin.js"></script>
+</body>
+</html>

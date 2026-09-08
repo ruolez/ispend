@@ -13,6 +13,7 @@ from flask import Flask, jsonify  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 import auth  # noqa: E402
+import user_state  # noqa: E402
 import util  # noqa: E402
 
 HASH = generate_password_hash("correct-horse-battery")
@@ -56,26 +57,28 @@ class SessionEnforcementTest(unittest.TestCase):
             return client.get(path)
 
     def test_active_user_passes_and_role_is_refreshed_from_the_row(self):
-        self.q.routes.append(("FROM users WHERE id", {"role": "admin", "is_active": True}))
+        self.q.routes.append(("FROM users WHERE id", {"role": "admin", "status": "active"}))
         c = self._client(role="user")
         self.assertEqual(self._get(c, "/admin-only").status_code, 200)
         with c.session_transaction() as s:
             self.assertEqual(s["role"], "admin")
 
-    def test_deactivated_user_loses_the_session(self):
-        self.q.routes.append(("FROM users WHERE id", {"role": "user", "is_active": False}))
-        c = self._client()
-        res = self._get(c, "/protected")
-        self.assertEqual((res.status_code, res.get_json()), (401, {"error": "Not authenticated"}))
-        with c.session_transaction() as s:
-            self.assertNotIn("user_id", s)
+    def test_locked_or_deleted_user_loses_the_session(self):
+        for status in ("locked", "deleted"):
+            with self.subTest(status=status):
+                self.q = _stubs.Router([("FROM users WHERE id", {"role": "user", "status": status})])
+                c = self._client()
+                res = self._get(c, "/protected")
+                self.assertEqual((res.status_code, res.get_json()), (401, {"error": "Not authenticated"}))
+                with c.session_transaction() as s:
+                    self.assertNotIn("user_id", s)
 
     def test_deleted_user_loses_the_session(self):
         c = self._client()
         self.assertEqual(self._get(c, "/protected").status_code, 401)
 
     def test_demoted_admin_gets_403_on_admin_routes(self):
-        self.q.routes.append(("FROM users WHERE id", {"role": "user", "is_active": True}))
+        self.q.routes.append(("FROM users WHERE id", {"role": "user", "status": "active"}))
         c = self._client(role="admin")
         res = self._get(c, "/admin-only")
         self.assertEqual((res.status_code, res.get_json()), (403, {"error": "Admin access required"}))
@@ -100,7 +103,7 @@ class LoginTest(unittest.TestCase):
             return c, c.post("/api/auth/login", data=json.dumps(body), content_type="application/json")
 
     def test_success_rotates_the_session(self):
-        user = {"id": 3, "username": "amy", "role": "user", "is_active": True, "password_hash": HASH, "preferences": {}}
+        user = {"id": 3, "username": "amy", "role": "user", "status": "active", "password_hash": HASH, "preferences": {}}
         self.q.routes.append(("FROM users WHERE username", user))
         c = self.app.test_client()
         with c.session_transaction() as s:
@@ -118,13 +121,35 @@ class LoginTest(unittest.TestCase):
         self.assertEqual((res.status_code, res.get_json()), (401, {"error": "Invalid username or password"}))
         self.assertEqual(chk.call_count, 1)
 
-    def test_inactive_user_cannot_log_in_even_with_the_right_password(self):
-        user = {"id": 3, "username": "amy", "role": "user", "is_active": False, "password_hash": HASH, "preferences": {}}
+    def test_locked_and_deleted_read_identically_to_a_password_holder(self):
+        """Someone who already proved the password learns the account is blocked, but never
+        whether it was locked or deleted."""
+        for status in ("locked", "deleted"):
+            with self.subTest(status=status):
+                user = {"id": 3, "username": "amy", "role": "user", "status": status,
+                        "password_hash": HASH, "preferences": {}}
+                self.q = _stubs.Router([("FROM users WHERE username", user)])
+                c, res = self._login({"username": "amy", "password": "correct-horse-battery"})
+                self.assertEqual((res.status_code, res.get_json()),
+                                 (403, {"error": user_state.BLOCKED_MESSAGE}))
+                with c.session_transaction() as s:
+                    self.assertNotIn("user_id", s)
+
+    def test_a_wrong_password_is_indistinguishable_in_every_state(self):
+        for status in ("active", "locked", "deleted"):
+            with self.subTest(status=status):
+                user = {"id": 3, "username": "amy", "role": "user", "status": status,
+                        "password_hash": HASH, "preferences": {}}
+                self.q = _stubs.Router([("FROM users WHERE username", user)])
+                _, res = self._login({"username": "amy", "password": "not-the-password"})
+                self.assertEqual((res.status_code, res.get_json()),
+                                 (401, {"error": "Invalid username or password"}))
+
+    def test_login_stamps_last_login_at(self):
+        user = {"id": 3, "username": "amy", "role": "user", "status": "active", "password_hash": HASH, "preferences": {}}
         self.q.routes.append(("FROM users WHERE username", user))
-        c, res = self._login({"username": "amy", "password": "correct-horse-battery"})
-        self.assertEqual(res.status_code, 401)
-        with c.session_transaction() as s:
-            self.assertNotIn("user_id", s)
+        self._login({"username": "amy", "password": "correct-horse-battery"})
+        self.assertEqual([p for _s, p in self.x.sql("SET last_login_at")], [(3,)])
 
     def test_non_object_body_is_400(self):
         c = self.app.test_client()
@@ -143,13 +168,13 @@ class PasswordPolicyTest(unittest.TestCase):
 
     def test_change_own_password_uses_the_policy(self):
         app = build_app()
-        q = _stubs.Router([("FROM users WHERE id", {"role": "user", "is_active": True, "password_hash": HASH})])
+        q = _stubs.Router([("FROM users WHERE id", {"role": "user", "status": "active", "password_hash": HASH})])
         c = app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 3
             s["role"] = "user"
-        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(util, "db", FAKE), \
-                mock.patch.object(auth, "db", FAKE):
+        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=_stubs.Router(default=1)), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(auth, "db", FAKE):
             res = c.put("/api/auth/me/password", data=json.dumps({"current_password": "correct-horse-battery", "password": "short"}),
                         content_type="application/json")
         self.assertEqual(res.get_json(), {"error": f"New password must be at least {auth.MIN_PASSWORD_LEN} characters"})
@@ -206,10 +231,11 @@ class PreferenceCollectionsTest(unittest.TestCase):
 class ThemeCookieTest(unittest.TestCase):
     def test_login_sets_a_readable_theme_cookie_from_preferences(self):
         app = build_app()
-        user = {"id": 3, "username": "amy", "role": "user", "is_active": True, "password_hash": HASH, "preferences": {"theme": "dark"}}
+        user = {"id": 3, "username": "amy", "role": "user", "status": "active", "password_hash": HASH, "preferences": {"theme": "dark"}}
         q = _stubs.Router([("FROM users WHERE username", user)])
         c = app.test_client()
-        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(util, "db", FAKE), mock.patch.object(auth, "db", FAKE):
+        with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=_stubs.Router(default=1)), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(auth, "db", FAKE):
             res = c.post("/api/auth/login", data=json.dumps({"username": "amy", "password": "correct-horse-battery"}), content_type="application/json")
         cookie = next(h for h in res.headers.getlist("Set-Cookie") if h.startswith("ispend_theme="))
         self.assertIn("ispend_theme=dark", cookie)

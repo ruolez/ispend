@@ -125,14 +125,29 @@ def admin():
     return api_login(*ADMIN)
 
 
+def _purge_user(admin_session, user_id, username, required=True):
+    """Purging is deliberately two steps: a user must be in the trash before they can be destroyed.
+    The server also refuses while one of their imports is still parsing, so a suite that left a
+    background job running gets a short retry rather than a flaky failure."""
+    admin_session.delete(f"/api/admin/users/{user_id}")
+    deadline = time.time() + 60
+    while True:
+        r = admin_session.delete(f"/api/admin/users/{user_id}?permanent=true&confirm={username}")
+        if r.status_code == 200 or time.time() > deadline:
+            break
+        time.sleep(2)
+    if required:
+        assert r.status_code == 200, r.text
+    return r
+
+
 def _ensure_user(admin_session, username, password):
-    users = admin_session.get("/api/users").json()
+    users = admin_session.get("/api/admin/users?status=all").json()["items"]
     existing = next((u for u in users if u["username"] == username), None)
     if existing:
         # a previous run was interrupted: start from a clean slate
-        r = admin_session.delete(f"/api/users/{existing['id']}?permanent=true")
-        assert r.status_code == 200, r.text
-    r = admin_session.post("/api/users", json={"username": username, "password": password, "role": "user"})
+        _purge_user(admin_session, existing["id"], username)
+    r = admin_session.post("/api/admin/users", json={"username": username, "password": password, "role": "user"})
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
@@ -142,8 +157,8 @@ def qa_users(admin):
     ids = {name: _ensure_user(admin, name, pw) for name, pw in QA_USERS.items()}
     yield ids
     if os.environ.get("QA_KEEP_USERS") != "1":
-        for uid in ids.values():
-            admin.delete(f"/api/users/{uid}?permanent=true")
+        for name, uid in ids.items():
+            _purge_user(admin, uid, name, required=False)
 
 
 @pytest.fixture(scope="session")

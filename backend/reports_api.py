@@ -1,14 +1,12 @@
-import csv
 import re
-import io
 
-from flask import Blueprint, Response, abort, jsonify, request, session
+from flask import Blueprint, abort, jsonify, request, session
 
 import db
 import openrouter
 import reports
 from auth import login_required
-from util import api_error, audit, csv_safe, json_body, parse_int_list
+from util import api_error, audit, csv_response, json_body, parse_int_list
 
 bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
@@ -30,18 +28,6 @@ def _range():
     rng = request.args.get("range")
     week_start = reports.user_week_start(_uid()) if rng in ("this-week", "last-week") else 0
     return reports.resolve_range(rng, request.args.get("from"), request.args.get("to"), week_start=week_start)
-
-
-def _csv_response(rows, filename, columns=None):
-    buf = io.StringIO()
-    if rows:
-        columns = columns or list(rows[0].keys())
-        w = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: csv_safe("" if v is None else v) for k, v in r.items()})
-    return Response(buf.getvalue(), mimetype="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 def _wants_csv():
@@ -98,7 +84,7 @@ def summary():
     prev = reports.summary(_uid(), r["prev_start"], r["prev_end"], _accounts(), include_transfers=_inc()) if r["prev_start"] else None
     out = {"range": reports.range_json(r), **data, "previous": prev}
     if _wants_csv():
-        return _csv_response([data], "summary.csv")
+        return csv_response([data], "summary.csv")
     return jsonify(out)
 
 
@@ -110,7 +96,7 @@ def by_category():
     flow = _flow()
     rows = reports.by_category(_uid(), r["start"], r["end"], level, _accounts(), include_transfers=_inc(), flow=flow)
     if _wants_csv():
-        return _csv_response(rows, f"{flow}-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
+        return csv_response(rows, f"{flow}-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
     return jsonify({"range": reports.range_json(r), "level": level, "flow": flow, "categories": rows,
                     "total": round(sum(c["total"] for c in rows), 2)})
 
@@ -141,7 +127,7 @@ def monthly():
             rows.append(row)
         rows.append({"category": "Total", "total": round(sum(data["totals"]), 2),
                      **{m: v for m, v in zip(data["months"], data["totals"], strict=False)}})
-        return _csv_response(rows, f"{data['flow']}-by-month.csv", ["category", "total", *data["months"]])
+        return csv_response(rows, f"{data['flow']}-by-month.csv", ["category", "total", *data["months"]])
     return jsonify(data)
 
 
@@ -154,7 +140,7 @@ def trends():
         return api_error("months must be an integer")
     rows = reports.trends(_uid(), months, _accounts(), include_transfers=_inc())
     if _wants_csv():
-        return _csv_response(rows, "cash-flow.csv")
+        return csv_response(rows, "cash-flow.csv")
     return jsonify(rows)
 
 
@@ -169,7 +155,7 @@ def top_merchants():
     flow = _flow()
     rows = reports.top_merchants(_uid(), r["start"], r["end"], limit, _accounts(), include_transfers=_inc(), flow=flow)
     if _wants_csv():
-        return _csv_response(rows, "income-sources.csv" if flow == "income" else "top-merchants.csv",
+        return csv_response(rows, "income-sources.csv" if flow == "income" else "top-merchants.csv",
                              ["merchant_name", "count", "total", "avg", "pct", "last_date", "category_id", "merchant_key"])
     return jsonify({"range": reports.range_json(r), "flow": flow, "merchants": rows})
 
@@ -181,7 +167,7 @@ def month_over_month():
                                     vs=request.args.get("vs"), flow=_flow())
     if _wants_csv():
         rows = [*data["categories"], {"name": "Total", **data["totals"]}]
-        return _csv_response(rows, f"compare-{data['month']}-vs-{data['previous_month']}.csv",
+        return csv_response(rows, f"compare-{data['month']}-vs-{data['previous_month']}.csv",
                              ["name", "current", "previous", "delta", "pct"])
     return jsonify(data)
 
@@ -191,7 +177,7 @@ def month_over_month():
 def recurring():
     rows = reports.recurring(_uid(), include_dismissed=request.args.get("include_dismissed") == "1")
     if _wants_csv():
-        return _csv_response(rows, "recurring.csv",
+        return csv_response(rows, "recurring.csv",
                              ["merchant_name", "cadence", "median_amount", "monthly_equivalent", "occurrences",
                               "last_date", "next_expected", "is_active", "amount_kind", "category_name"])
     return jsonify(rows)

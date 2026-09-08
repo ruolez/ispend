@@ -1,25 +1,9 @@
-.settings-layout { display: grid; grid-template-columns: 200px 1fr; gap: var(--sp-6); align-items: start; }
-.settings-nav { position: sticky; top: calc(var(--topbar-h) + 16px); display: flex; flex-direction: column; gap: 2px; }
-.settings-nav .nav-item { height: 34px; }
-.settings-section { margin-bottom: var(--sp-6); }
-.settings-section h2 { font-size: var(--fs-lg); margin-bottom: 4px; }
-.settings-section .sub { color: var(--text-3); font-size: var(--fs-base); margin-bottom: var(--sp-4); }
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: 14px 0; border-bottom: 1px solid var(--border); }
-.setting-row:last-child { border-bottom: 0; }
-.setting-row .title { font-weight: 500; font-size: var(--fs-md); }
-.setting-row .desc { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
 .model-combo { position: relative; }
 .model-list { max-height: 320px; overflow-y: auto; }
 .model-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--r-md); cursor: pointer; }
 .model-item:hover, .model-item.is-active { background: var(--surface-2); }
 .model-item .name { font-weight: 500; font-size: var(--fs-base); display: flex; align-items: center; gap: 8px; }
 .model-item .meta { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--mono); display: flex; gap: 10px; flex-wrap: wrap; }
-.user-status { display: inline-flex; align-items: center; gap: 6px; }
-@media (max-width: 960px) {
-  .settings-layout { grid-template-columns: 1fr; }
-  .settings-nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
-  .settings-nav .nav-item { flex: 0 0 auto; }
-}
 #settings-panels { min-width: 0; }
 #settings-panels .tbl td, #settings-panels .tbl th { white-space: nowrap; }
 

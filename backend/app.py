@@ -25,6 +25,7 @@ def create_app():
     db.run_migrations()
 
     import accounts_api
+    import admin_api
     import ai_api
     import auth
     import categories_api
@@ -41,6 +42,7 @@ def create_app():
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
         transactions_api, review_api, rules_api, merchants_api, reports_api, ai_api, budgets_api, tags_api,
+        admin_api,
     ):
         app.register_blueprint(module.bp)
 

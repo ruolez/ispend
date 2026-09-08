@@ -1,0 +1,54 @@
+#admin-panels { min-width: 0; }
+#admin-panels .tbl td, #admin-panels .tbl th { white-space: nowrap; }
+
+/* Small labelled figures, used on Overview cards and in the per-user drawer. */
+.adm-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
+.adm-kpis > div { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.adm-kpis .l { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.adm-kpis .v { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* A ranked breakdown reads better than a pie at this size and costs no canvas. */
+.adm-bars { display: flex; flex-direction: column; gap: 10px; }
+.adm-bar-head { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); margin-bottom: 4px; }
+.adm-bar-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.adm-storage-bar { display: flex; height: 10px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-3); }
+.adm-storage-bar > i { display: block; }
+
+.adm-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-reason { color: var(--text-4); margin-left: 4px; vertical-align: middle; }
+.user-status .sub { color: var(--text-4); font-size: var(--fs-xs); margin-left: 6px; }
+
+.adm-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.adm-tile { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.adm-tile .l { font-size: var(--fs-xs); color: var(--text-3); }
+.adm-tile .v { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.adm-audit { display: flex; flex-direction: column; }
+.adm-audit-item { display: grid; grid-template-columns: 8px 1fr auto; align-items: baseline; gap: var(--sp-3);
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
+.adm-audit-item:last-child { border-bottom: 0; }
+.adm-audit-dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--text-4); align-self: center; }
+.adm-audit-dot.is-user { background: var(--warning); }
+.adm-audit-action { font-size: var(--fs-base); font-weight: 500; }
+.adm-audit-detail { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.min-w-0 { min-width: 0; }
+.num-input { width: 84px; }
+
+@media (max-width: 1280px) {
+  .adm-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+  .adm-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #admin-panels .tbl td, #admin-panels .tbl th { white-space: normal; }
+}
+@media (max-width: 640px) {
+  #users-toolbar, #audit-toolbar { flex-wrap: wrap; }
+  #u-search, #a-search { flex: 1 0 100%; }
+}
+@media (max-width: 480px) {
+  .adm-audit-item { grid-template-columns: 8px 1fr; }
+  .adm-audit-item time { grid-column: 2; }
+}

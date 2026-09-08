@@ -1,6 +1,6 @@
 # iSpend QA operation — shared context for audit agents
 
-- Repo: /Users/ruolez/Desktop/Dev/ispend (Flask backend in backend/, vanilla JS frontend in frontend/, nginx). Read frontend/js/README.md for frontend conventions. Read backend/app.py for blueprint list. Blueprint prefixes: settings/ai use `/api` (so users endpoint is `/api/users`, settings `/api/settings`), others `/api/<name>`.
+- Repo: /Users/ruolez/Desktop/Dev/ispend (Flask backend in backend/, vanilla JS frontend in frontend/, nginx). Read frontend/js/README.md for frontend conventions. Read backend/app.py for blueprint list. Blueprint prefixes: settings/ai use `/api` (settings `/api/settings`), admin uses `/api/admin` (users endpoint is `/api/admin/users`), others `/api/<name>`.
 - Live app (dev, docker compose, already running, DO NOT restart/rebuild containers): http://localhost:5559
   - admin / admin  (admin role, REAL personal data: 8 accounts, ~1238 transactions, 12 statements, 209 rules. NEVER delete/modify admin's transactions, accounts, statements, rules, categories or settings. Read-only use of admin is fine, plus creating/deleting QA users named qa_*.)
   - qa_tester / qa-tester-pass1 (user id 4, role user, EMPTY data, categories seeded) — use freely, mutate freely.
@@ -34,3 +34,22 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
 - API: `/api/budgets` (+ `/progress`, `/copy`), `/api/tags`, `PUT|DELETE /api/transactions/<id>/splits`, bulk `restore|tag|untag`, list params `tag`, `tag_mode`, `split`; rows carry `tag_ids`, `split_count`, `before` snapshots on bulk/pair/resolve.
 - Preferences: `saved_views`, `review_skips`, `onboarding`, `week_start`, `default_account_id`.
 - Flows F13 (budgets), F14 (tags), F15 (splits); `report_snapshot.py verify` must stay byte-identical after migrations 007–009.
+
+## Added 2026-09-08 (admin console)
+- Page: `/admin.html` (nav group "Admin", `g a`, admins only) with hash-routed tabs Overview / Users / Activity.
+  Added to `helpers.PAGES` and `CHART_PAGES`, so it is already in the smoke, phone and a11y matrices.
+  The `qa_tester` persona is deliberately not an admin: that combination must render the "Admins only"
+  empty state with no console errors and no `undefined`/`NaN` text.
+- API moved: `/api/users*` → `/api/admin/users*`. `DELETE` changed meaning (it used to deactivate, it now
+  soft-deletes), which is why the path moved rather than staying put.
+- **Purging a user is two steps** and `conftest._purge_user` does both:
+  `DELETE /api/admin/users/<id>` (to the trash), then
+  `DELETE /api/admin/users/<id>?permanent=true&confirm=<username>`.
+  The server also refuses to purge while one of that user's imports is still `parsing`/`committing`
+  (a 10-minute window matching `OCR_TIMEOUT_SECONDS`), so the helper retries for 60s. A statement stuck
+  in `parsing` from a killed job is cleared by `importer.recover_interrupted()` on the next backend start.
+- New endpoints: `GET /api/admin/stats/overview?days=7|30|90|365[&refresh=1]` (cached 300s in the
+  `settings` table), `GET /api/admin/audit` (keyset `cursor`, `format=csv`), `GET /api/admin/audit/actions`,
+  `GET|PUT /api/admin/settings`, `GET /api/admin/users/<id>` (per-user detail).
+- `users.is_active` is now a **generated** column derived from `users.status`; write `status` instead.
+- Lost every admin? `docker compose exec backend python -c "import db; db.promote_admin('admin')"`.

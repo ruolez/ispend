@@ -295,11 +295,12 @@ def fixture_rows():
 def fresh_user():
     """Delete + re-create qa_flows through the admin API so the run starts from an empty account."""
     admin = Api(ADMIN)
-    users = admin.get("/api/users")
+    users = admin.get("/api/admin/users?status=all")["items"]
     for u in users:
         if u["username"] == QA[0]:
-            admin.delete(f"/api/users/{u['id']}?permanent=true")
-    created = admin.post("/api/users", {"username": QA[0], "password": QA[1], "role": "user"})
+            admin.delete(f"/api/admin/users/{u['id']}")
+            admin.delete(f"/api/admin/users/{u['id']}?permanent=true&confirm={u['username']}")
+    created = admin.post("/api/admin/users", {"username": QA[0], "password": QA[1], "role": "user"})
     S["qa_user_id"] = created["id"]
     S["api"] = Api(QA)
     S["fx"] = fixture_rows()

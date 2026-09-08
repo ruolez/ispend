@@ -4,11 +4,10 @@ const TAB_META = {
   accounts: { label: 'Accounts', icon: 'landmark' },
   ai: { label: 'AI', icon: 'sparkles' },
   appearance: { label: 'Preferences', icon: 'sliders' },
-  users: { label: 'Users', icon: 'users' },
   account: { label: 'My account', icon: 'user' },
 };
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
-const state = { me: null, accounts: [], institutions: [], settings: null, models: null, users: [], dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
+const state = { me: null, accounts: [], institutions: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
 
 initNav('settings').then(async (me) => {
   state.me = me;
@@ -21,7 +20,6 @@ initNav('settings').then(async (me) => {
   $('[data-act="add-account"]').innerHTML = `${icon('plus')}<span class="label">Add account</span>`;
   $('[data-act="renormalize"]').innerHTML = `${icon('sparkles')}<span class="label">Re-detect merchant names</span>`;
   $('[data-act="learn-history"]').innerHTML = `${icon('book')}<span class="label">Learn from history</span>`;
-  $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add user</span>`;
   window.addEventListener('hashchange', showTab);
   showTab();
   document.body.addEventListener('click', onAction);
@@ -31,11 +29,14 @@ initNav('settings').then(async (me) => {
 function showTab() {
   if (modelPop) modelPop.close();
   let tab = (location.hash || '#accounts').slice(1);
-  if (!TAB_META[tab] || (tab === 'users' && state.me.role !== 'admin')) tab = 'accounts';
+  // User management moved to /admin.html; send admins on to it, but a regular user following an
+  // old link must still land quietly on Accounts rather than on an "Admins only" gate.
+  if (tab === 'users' && state.me.role === 'admin') return location.replace('/admin.html#users');
+  if (!TAB_META[tab]) tab = 'accounts';
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   setPageTitle(TAB_META[tab].label);
-  ({ accounts: loadAccounts, ai: loadAI, appearance: renderAppearance, users: loadUsers, account: renderAccount })[tab]();
+  ({ accounts: loadAccounts, ai: loadAI, appearance: renderAppearance, account: renderAccount })[tab]();
 }
 
 /* ---------- Accounts ---------- */
@@ -320,60 +321,6 @@ async function renderAppearance() {
 }
 function paintRadios(group) { $$('.radio-item', group).forEach((l) => l.classList.toggle('is-checked', l.querySelector('input').checked)); }
 
-/* ---------- Users ---------- */
-async function loadUsers() {
-  const host = $('#users-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
-  try { state.users = await api('/api/users'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-users' }); return; }
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="right">Accounts</th><th class="right">Transactions</th><th>Created</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
-    ${state.users.map((u) => `<tr data-id="${u.id}">
-      <td><span class="row gap-2"><span class="avatar">${esc(initials(u.username))}</span><span class="fw-500">${esc(u.username)}</span>${u.id === state.me.id ? '<span class="badge badge-accent">You</span>' : ''}</span></td>
-      <td data-label="Role"><span class="badge ${u.role === 'admin' ? 'badge-info' : 'badge-neutral'}">${esc(u.role)}</span></td>
-      <td data-label="Status"><span class="user-status"><i class="dot" style="--c:var(--${u.is_active ? 'success' : 'text-4'})"></i>${u.is_active ? 'Active' : 'Deactivated'}</span></td>
-      <td class="right num" data-label="Accounts">${fmtNumber(u.account_count)}</td><td class="right num" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
-      <td class="text-3" data-label="Created">${fmtDate(u.created_at, { year: true })}</td>
-      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
-function openUserModal() {
-  const m = ui.modal({
-    title: 'Add user',
-    html: `<form id="user-form">
-      <div class="field"><label for="u-name">Username</label><input id="u-name" class="input" autocomplete="off" required autofocus spellcheck="false"></div>
-      <div class="field"><label for="u-pass">Password</label><input id="u-pass" class="input" type="password" minlength="10" autocomplete="new-password" required><div class="hint">At least 10 characters. The user can change it later.</div></div>
-      <div class="field"><label for="u-role">Role</label><select id="u-role" class="select"><option value="user">User</option><option value="admin">Admin</option></select></div>
-      <button type="submit" hidden></button></form>`,
-    actions: [{ label: 'Cancel' }, { label: 'Create user', primary: true, onClick: async () => {
-      await api('/api/users', { method: 'POST', body: { username: $('#u-name').value.trim(), password: $('#u-pass').value, role: $('#u-role').value } });
-      toast('User created', { type: 'success' }); loadUsers();
-    } }],
-  });
-  m.el.querySelector('#user-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
-}
-function openUserMenuFor(anchor, u) {
-  const isMe = u.id === state.me.id;
-  ui.menu(anchor, [
-    { label: u.role === 'admin' ? 'Make regular user' : 'Make admin', icon: 'shield', disabled: isMe, onClick: async () => {
-      const promote = u.role !== 'admin';
-      if (!(await ui.confirm({ title: promote ? `Make ${u.username} an admin?` : `Remove admin from ${u.username}?`, body: promote ? 'Admins manage users and can publish the shared AI key. The change applies on their next request.' : 'They keep their data but lose user management and the shared AI key on their next request.', confirmText: promote ? 'Make admin' : 'Remove admin' }))) return;
-      await api(`/api/users/${u.id}`, { method: 'PUT', body: { role: promote ? 'admin' : 'user' } }); toast('Role updated', { type: 'success' }); loadUsers();
-    } },
-    { label: 'Reset password', icon: 'lock', onClick: () => {
-      const m = ui.modal({ title: `Reset password for ${u.username}`, html: `<div class="field"><label for="rp">New password</label><input id="rp" class="input" type="password" minlength="10" autofocus></div>`,
-        actions: [{ label: 'Cancel' }, { label: 'Reset', primary: true, onClick: async () => { await api(`/api/users/${u.id}/password`, { method: 'PUT', body: { password: m.el.querySelector('#rp').value } }); toast('Password reset', { type: 'success' }); } }] });
-    } },
-    { divider: true },
-    { label: u.is_active ? 'Deactivate' : 'Activate', icon: u.is_active ? 'zap-off' : 'zap', disabled: isMe, onClick: async () => {
-      if (u.is_active && !(await ui.confirm({ title: `Deactivate ${u.username}?`, body: 'They are signed out at once and cannot sign in until reactivated. Their data is kept.', confirmText: 'Deactivate', danger: true }))) return;
-      await api(`/api/users/${u.id}`, { method: 'PUT', body: { is_active: !u.is_active } }); toast(u.is_active ? 'User deactivated' : 'User activated', { type: 'success' }); loadUsers();
-    } },
-    { label: 'Delete permanently', icon: 'trash', danger: true, disabled: isMe, onClick: async () => {
-      if (!(await ui.confirm({ title: `Delete ${u.username}?`, body: `This permanently deletes the user and all ${fmtNumber(u.txn_count)} of their transactions, accounts, categories and rules.`, confirmText: 'Delete user', danger: true }))) return;
-      await api(`/api/users/${u.id}?permanent=true`, { method: 'DELETE' }); toast('User deleted'); loadUsers();
-    } },
-  ]);
-}
-
 /* ---------- My account ---------- */
 function renderAccount() {
   $('#account-panel').innerHTML = `
@@ -397,7 +344,6 @@ async function onAction(e) {
   if (!el) return;
   const act = el.dataset.act, id = Number(el.dataset.id);
   const acct = state.accounts.find((a) => a.id === id);
-  const user = state.users.find((u) => u.id === id);
   switch (act) {
     case 'add-account': return openAccountModal(null);
     case 'edit-account': return openAccountModal(acct);
@@ -432,14 +378,11 @@ async function onAction(e) {
     case 'reload-ai': return loadAI();
     case 'ai-refresh': return loadAIStatus();
     case 'ai-suggest': return suggestUncategorized(el);
-    case 'reload-users': return loadUsers();
     case 'toggle-key': { const i = $('#or-key'); i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = icon(i.type === 'password' ? 'eye' : 'eye-off'); el.setAttribute('aria-label', i.type === 'password' ? 'Show key' : 'Hide key'); return; }
     case 'open-models': return $('#or-model').focus();
     case 'test-ai': return testAI();
     case 'save-ai': await ui.busy(el, saveAI); return;
     case 'discard-ai': setDirty(false); return loadAI();
-    case 'add-user': return openUserModal();
-    case 'user-menu': return openUserMenuFor(el, user);
     default: return null;
   }
 }

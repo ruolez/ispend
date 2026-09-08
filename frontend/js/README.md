@@ -30,9 +30,9 @@ Vanilla JS, no build step, classic `<script>` globals. Every authenticated page 
 initNav('transactions').then(async (me) => { /* read qs(), hydrate, load() */ });
 ```
 
-`initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), removes `[data-admin-only]` elements for non-admins, applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
+`initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), reveals `[data-admin-only]` elements for admins and removes them for everyone else (admin markup ships with `hidden` so it never flashes before `/api/auth/me` resolves), applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
 
-Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings. Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
+Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings, admin (admins only). Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|b|a|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
 
 ## theme.js — `window.Theme`
 | Call | Purpose |
@@ -57,7 +57,7 @@ Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to th
 `fmtMoney(n, currency='USD', {compact, sign:'auto'|'always', abs, decimals})` (real minus U+2212, `+` for income with `sign:'always'`) · `fmtNumber(n, {decimals, compact})` · `fmtPct(0.12, {decimals, sign})` · `fmtDate('2026-09-02', {year})` → `Sep 2` · `fmtDateLong` · `fmtDateTime` · `fmtMonth('2026-09', {long})` → `Sep ’26` · `fmtRelative(iso)` → `2 days ago` · `toISODate(d)` · `fmtDelta(cur, prev)` → `{pct, dir:'up'|'down'|'flat', text}` · `fmtBytes(n)` · `initials(name)` · `plural(n, 'charge')`.
 
 ## icons.js
-`ICONS[name]` raw svg string, `icon(name, extraClass)` (unknown names fall back to `tag`), `CATEGORY_ICONS` ordered names for the icon picker. Size via `.ico` (18px), `.ico-sm` (14), `.ico-lg` (24). Nav/UI names: layout-dashboard list inbox upload file-text tags sliders bar-chart lightbulb settings search sun moon monitor log-out chevron-(up|down|left|right) chevrons-(left|right) x check check-circle plus minus trash pencil more-horizontal more-vertical alert-triangle alert-circle info sparkles repeat arrow-(up|down|left|right|up-right|down-right|left-right) filter download eye eye-off grip-vertical menu user users lock calendar clock refresh external-link copy undo play zap-off help keyboard split circle tag star trending-up trending-down pie-chart activity database file file-spreadsheet inbox-check, plus every category icon in `backend/seed_categories.py`.
+`ICONS[name]` raw svg string, `icon(name, extraClass)` (unknown names fall back to `tag`), `CATEGORY_ICONS` ordered names for the icon picker. Size via `.ico` (18px), `.ico-sm` (14), `.ico-lg` (24). Nav/UI names: layout-dashboard list inbox upload file-text tags sliders bar-chart lightbulb settings search sun moon monitor log-out chevron-(up|down|left|right) chevrons-(left|right) x check check-circle plus minus trash pencil more-horizontal more-vertical alert-triangle alert-circle info sparkles repeat arrow-(up|down|left|right|up-right|down-right|left-right) filter download eye eye-off grip-vertical menu user users lock unlock shield calendar clock refresh external-link copy undo play zap-off help keyboard split circle tag star trending-up trending-down pie-chart activity database file file-spreadsheet inbox-check, plus every category icon in `backend/seed_categories.py`.
 
 ## store.js — `store`
 | Call | Notes |
@@ -169,3 +169,32 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 
 ## Query memory
 `setQs()` also calls `rememberQuery()`: each page's last query (minus transient keys such as `open`, `statement`) is kept in sessionStorage. `initNav()` calls `restoreQuery()` before page scripts read `qs()`, and sidebar links carry `savedQuery(href)`, so filters, sorts, ranges and tabs survive navigating away and back within the session. Pages read state from `qs()` as before; nothing else to do.
+
+## Admin
+`/admin.html` (nav group "Admin", `g a`) is admin-only and mounts the same tabbed layout as Settings
+(`.settings-layout` / `.settings-nav` / `.settings-section` / `.setting-row`, now in **app.css** so both
+pages share them). Tabs are hash-routed: Overview, Users, Activity.
+
+- **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
+  the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
+  `/api/auth/me` resolves. `/admin.html` is a static file anyone can fetch, so the page also self-guards
+  with an "Admins only" empty state — every endpoint is `@admin_required` regardless.
+- **API** (`/api/admin/*`, all admin-only): `GET|POST /users`, `GET|PUT|DELETE /users/:id`,
+  `PUT /users/:id/password`, `POST /users/:id/lock|unlock|restore`,
+  `DELETE /users/:id?permanent=true&confirm=<username>`, `GET /stats/overview?days=`,
+  `GET /audit` (keyset `cursor`, `format=csv`), `GET /audit/actions`, `GET|PUT /settings`.
+  The user endpoints moved here from `/api/users` because DELETE changed meaning.
+- **User lifecycle.** `active → locked → active`, `active|locked → deleted` (soft, hidden, restorable),
+  `deleted → purged` (irreversible). Purge is reachable **only** from the trash and needs the username
+  typed; the server re-validates the phrase. Restore returns a user to `locked` if they were locked
+  before deletion. Locked and deleted produce the same 403 message on login so a password holder cannot
+  tell them apart; a wrong password stays a generic 401.
+- **Composition.** A sibling feature adds a tab with
+  `window.AdminPanels.register(tab, { label, icon, load(hostEl) })` plus one `<script>` in `admin.html` —
+  no edits to `admin.js`.
+- **Charts** on Overview are counts, not money: `countScales()` replaces the currency ticks/tooltips from
+  `charts.barOptions` / `charts.lineOptions`. All four series are gap-filled server-side so both charts
+  share one x-axis.
+- Storage is reported twice on purpose: `disk_bytes` (a volume scan — exact, includes OCR output and
+  orphans) and `source_bytes` (the DB's view, de-duplicated by `file_sha256`). AI usage is reported in
+  tokens, never dollars.

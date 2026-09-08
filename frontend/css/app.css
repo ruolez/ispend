@@ -416,6 +416,25 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
+/* Tabbed sub-page layout (Settings, Admin): a sticky side nav beside a panel column,
+   collapsing to a horizontal scroller on narrow screens. */
+.settings-layout { display: grid; grid-template-columns: 200px 1fr; gap: var(--sp-6); align-items: start; }
+.settings-nav { position: sticky; top: calc(var(--topbar-h) + 16px); display: flex; flex-direction: column; gap: 2px; }
+.settings-nav .nav-item { height: 34px; }
+.settings-section { margin-bottom: var(--sp-6); }
+.settings-section h2 { font-size: var(--fs-lg); margin-bottom: 4px; }
+.settings-section .sub { color: var(--text-3); font-size: var(--fs-base); margin-bottom: var(--sp-4); }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: 14px 0; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: 0; }
+.setting-row .title { font-weight: 500; font-size: var(--fs-md); }
+.setting-row .desc { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
+.user-status { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 960px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
+  .settings-nav .nav-item { flex: 0 0 auto; }
+}
+
 /* ---------- Layers: popover, menu, modal, drawer ---------- */
 .popover { position: fixed; z-index: 650; min-width: 200px; background: var(--surface-overlay); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-2); animation: pop-in var(--dur-2) var(--ease-out); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }

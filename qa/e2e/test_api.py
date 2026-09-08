@@ -21,6 +21,12 @@ from ratelimit import login_with_retry
 TODAY = datetime.now(ZoneInfo("America/Chicago")).date()
 
 
+def _purge(admin_session, user_id, username):
+    """Destroying a user is deliberately two steps: trash first, then a typed confirmation."""
+    admin_session.delete(f"/api/admin/users/{user_id}")
+    return admin_session.delete(f"/api/admin/users/{user_id}?permanent=true&confirm={username}").json()
+
+
 def money(v):
     return Decimal(str(v)).quantize(Decimal("0.01"))
 
@@ -36,7 +42,7 @@ def sums(items):
 # ======================================================================================
 
 GET_ROUTES = [
-    "/api/auth/me", "/api/settings", "/api/settings/client", "/api/settings/openrouter/models", "/api/users",
+    "/api/auth/me", "/api/settings", "/api/settings/client", "/api/settings/openrouter/models", "/api/admin/users",
     "/api/accounts", "/api/accounts/institutions", "/api/categories", "/api/categories?flat=1",
     "/api/statements", "/api/statements/1", "/api/statements/1/file",
     "/api/transactions", "/api/transactions/export", "/api/transactions/transfer-candidates",
@@ -48,8 +54,8 @@ GET_ROUTES = [
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
-    ("POST", "/api/settings/openrouter/test"), ("POST", "/api/users"), ("PUT", "/api/users/1"),
-    ("DELETE", "/api/users/1"), ("PUT", "/api/users/1/password"), ("POST", "/api/accounts"),
+    ("POST", "/api/settings/openrouter/test"), ("POST", "/api/admin/users"), ("PUT", "/api/admin/users/1"),
+    ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"), ("POST", "/api/accounts"),
     ("PUT", "/api/accounts/1"), ("DELETE", "/api/accounts/1"), ("POST", "/api/categories"),
     ("PUT", "/api/categories/1"), ("PUT", "/api/categories/reorder"), ("POST", "/api/categories/1/merge"),
     ("DELETE", "/api/categories/1"), ("POST", "/api/categories/reset-defaults"), ("POST", "/api/statements"),
@@ -128,8 +134,10 @@ class TestAuth:
         assert (r.status_code, r.json()) == (404, {"error": "Not found"})
 
     @pytest.mark.parametrize("method,route", [
-        ("GET", "/api/users"), ("POST", "/api/users"), ("PUT", "/api/users/1"), ("DELETE", "/api/users/1"),
-        ("PUT", "/api/users/1/password"),
+        ("GET", "/api/admin/users"), ("POST", "/api/admin/users"), ("PUT", "/api/admin/users/1"),
+        ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"),
+        ("POST", "/api/admin/users/1/lock"), ("POST", "/api/admin/users/1/unlock"),
+        ("POST", "/api/admin/users/1/restore"), ("GET", "/api/admin/stats/overview"), ("GET", "/api/admin/audit"),
     ])
     def test_non_admin_user_routes_403(self, u1, method, route):
         r = u1.request(method, route, json={"username": "x", "password": "yyyyyy"})
@@ -148,73 +156,104 @@ class TestAuth:
 
     def test_admin_cannot_delete_or_demote_self(self, admin):
         me = admin.get("/api/auth/me").json()
-        r = admin.delete(f"/api/users/{me['id']}")
+        r = admin.delete(f"/api/admin/users/{me['id']}")
         assert (r.status_code, r.json()) == (400, {"error": "You cannot delete your own account"})
-        r = admin.put(f"/api/users/{me['id']}", json={"is_active": False})
-        assert (r.status_code, r.json()) == (400, {"error": "You cannot deactivate your own account"})
-        r = admin.put(f"/api/users/{me['id']}", json={"role": "user"})
+        r = admin.post(f"/api/admin/users/{me['id']}/lock")
+        assert (r.status_code, r.json()) == (400, {"error": "You cannot lock your own account"})
+        r = admin.put(f"/api/admin/users/{me['id']}", json={"role": "user"})
         assert (r.status_code, r.json()) == (400, {"error": "You cannot remove your own admin role"})
         assert admin.get("/api/auth/me").json()["role"] == "admin"
 
     def test_admin_user_validation(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_short", "password": "123456789"})
+        r = admin.post("/api/admin/users", json={"username": "qa_short", "password": "123456789"})
         assert r.status_code == 400 and "10 characters" in r.json()["error"]
-        r = admin.post("/api/users", json={"username": "qa_api1", "password": "abcdefghij"})
+        r = admin.post("/api/admin/users", json={"username": "qa_api1", "password": "abcdefghij"})
         assert (r.status_code, r.json()) == (400, {"error": "Username already exists"})
-        r = admin.put("/api/users/999999", json={"role": "user"})
+        r = admin.put("/api/admin/users/999999", json={"role": "user"})
         assert (r.status_code, r.json()) == (404, {"error": "User not found"})
-        r = admin.put("/api/users/999999/password", json={"password": "123"})
+        r = admin.put("/api/admin/users/999999/password", json={"password": "123"})
         assert r.status_code == 400
 
-    def test_inactive_user_cannot_login_and_live_session_dies(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_api_inactive", "password": "inactive-pass1"})
+    def test_locked_user_cannot_login_and_live_session_dies(self, admin):
+        r = admin.post("/api/admin/users", json={"username": "qa_api_inactive", "password": "inactive-pass1"})
         assert r.status_code == 201
         uid = r.json()["id"]
         try:
             s = api_login("qa_api_inactive", "inactive-pass1")
             assert s.get("/api/accounts").status_code == 200
-            r = admin.delete(f"/api/users/{uid}")  # soft delete = deactivate
-            assert r.json() == {"ok": True}
-            assert any(u["id"] == uid and not u["is_active"] for u in admin.get("/api/users").json())
-            assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 401
+            r = admin.post(f"/api/admin/users/{uid}/lock", json={"reason": "qa"})
+            assert r.json() == {"ok": True, "status": "locked"}
+            listed = admin.get("/api/admin/users").json()["items"]
+            assert any(u["id"] == uid and u["status"] == "locked" for u in listed)
+            # A password holder is told the account is blocked; a wrong password stays generic.
+            assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 403
+            assert Api().login("qa_api_inactive", "wrong-password-xx").status_code == 401
             assert s.get("/api/auth/me").status_code == 401, "an already-issued session must stop working"
-            assert s.get("/api/accounts").status_code == 401, "every route must re-check is_active, not just /me"
+            assert s.get("/api/accounts").status_code == 401, "every route must re-check status, not just /me"
             r = s.post("/api/accounts", json={"name": "QA ghost", "account_type": "checking", "currency": "USD"})
             assert r.status_code == 401, r.text
-            r = admin.put(f"/api/users/{uid}", json={"is_active": True})
-            assert r.status_code == 200
+            assert admin.post(f"/api/admin/users/{uid}/unlock").status_code == 200
             assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 200
         finally:
-            admin.delete(f"/api/users/{uid}?permanent=true")
+            _purge(admin, uid, "qa_api_inactive")
+
+    def test_soft_deleted_user_is_hidden_restorable_and_purge_needs_the_trash_first(self, admin):
+        r = admin.post("/api/admin/users", json={"username": "qa_api_trash", "password": "trash-pass-1"})
+        uid = r.json()["id"]
+        try:
+            # Irreversible destruction always takes two deliberate steps.
+            r = admin.delete(f"/api/admin/users/{uid}?permanent=true&confirm=qa_api_trash")
+            assert r.status_code == 409, r.text
+            assert admin.delete(f"/api/admin/users/{uid}").json() == {"ok": True, "status": "deleted"}
+            assert Api().login("qa_api_trash", "trash-pass-1").status_code == 403
+            assert not any(u["id"] == uid for u in admin.get("/api/admin/users").json()["items"])
+            assert any(u["id"] == uid for u in admin.get("/api/admin/users?status=deleted").json()["items"])
+            # The username stays reserved, and re-creating it points at the restore instead.
+            r = admin.post("/api/admin/users", json={"username": "qa_api_trash", "password": "other-pass-99"})
+            assert (r.status_code, r.json()["code"], r.json()["user_id"]) == (409, "username_deleted", uid)
+            assert admin.post(f"/api/admin/users/{uid}/restore").json() == {"ok": True, "status": "active"}
+            assert Api().login("qa_api_trash", "trash-pass-1").status_code == 200
+        finally:
+            _purge(admin, uid, "qa_api_trash")
+
+    def test_purge_requires_the_typed_username(self, admin):
+        r = admin.post("/api/admin/users", json={"username": "qa_api_purge", "password": "purge-pass-1"})
+        uid = r.json()["id"]
+        admin.delete(f"/api/admin/users/{uid}")
+        r = admin.delete(f"/api/admin/users/{uid}?permanent=true&confirm=wrong")
+        assert (r.status_code, r.json()) == (409, {"error": "Type the username to confirm"})
+        assert admin.get(f"/api/admin/users/{uid}").status_code == 200, "nothing was destroyed"
+        _purge(admin, uid, "qa_api_purge")
+        assert admin.get(f"/api/admin/users/{uid}").status_code == 404
 
     def test_demoted_admin_loses_admin_routes_at_once(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_api_admin2", "password": "admin2-pass1", "role": "admin"})
+        r = admin.post("/api/admin/users", json={"username": "qa_api_admin2", "password": "admin2-pass1", "role": "admin"})
         assert r.status_code == 201
         uid = r.json()["id"]
         try:
             s = api_login("qa_api_admin2", "admin2-pass1")
-            assert s.get("/api/users").status_code == 200
-            assert admin.put(f"/api/users/{uid}", json={"role": "user"}).status_code == 200
-            r = s.get("/api/users")
+            assert s.get("/api/admin/users").status_code == 200
+            assert admin.put(f"/api/admin/users/{uid}", json={"role": "user"}).status_code == 200
+            r = s.get("/api/admin/users")
             assert (r.status_code, r.json()) == (403, {"error": "Admin access required"})
             assert s.get("/api/auth/me").json()["role"] == "user"
             assert s.get("/api/accounts").status_code == 200, "a demoted admin keeps a working user session"
         finally:
-            admin.delete(f"/api/users/{uid}?permanent=true")
+            _purge(admin, uid, "qa_api_admin2")
 
     def test_permanent_delete_removes_per_user_settings(self, admin):
-        r = admin.post("/api/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
+        r = admin.post("/api/admin/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
         uid = r.json()["id"]
         s = api_login("qa_api_gone", "gone-pass-123")
         assert s.put("/api/settings", json={"openrouter_model": "qa/gone-model"}).status_code == 200
         assert s.get("/api/settings").json()["openrouter_model"] == "qa/gone-model"
-        assert admin.delete(f"/api/users/{uid}?permanent=true").json() == {"ok": True}
-        r = admin.post("/api/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
+        assert _purge(admin, uid, "qa_api_gone") == {"ok": True, "purged": True}
+        r = admin.post("/api/admin/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
         try:
             s2 = api_login("qa_api_gone", "gone-pass-123")
             assert s2.get("/api/settings").json()["openrouter_model"] == "", "settings must not survive a permanent delete"
         finally:
-            admin.delete(f"/api/users/{r.json()['id']}?permanent=true")
+            _purge(admin, r.json()["id"], "qa_api_gone")
 
     def test_security_headers_on_pages_and_api(self, anon):
         for path in ("/login.html", "/api/health"):

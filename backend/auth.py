@@ -3,11 +3,12 @@ import re
 from functools import wraps
 from urllib.parse import parse_qs
 
-from flask import Blueprint, jsonify, session
+from flask import Blueprint, g, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import db
+import user_state
 from util import api_error, audit, json_body, to_int
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -105,14 +106,15 @@ def password_problem(password, label="Password"):
 
 def refresh_session_user():
     """before_request hook: the signed cookie only proves who logged in; the account row decides
-    what it may do now. Deactivated or deleted users lose the session, role changes apply at once."""
+    what it may do now. Locked or deleted users lose the session, role changes apply at once."""
     uid = session.get("user_id")
     if uid is None:
         return
-    row = db.query("SELECT role, is_active FROM users WHERE id = %s", (uid,), one=True)
-    if not row or not row["is_active"]:
+    row = db.query("SELECT id, role, status FROM users WHERE id = %s", (uid,), one=True)
+    if not user_state.can_sign_in(row):
         session.clear()
         return
+    g.user_row = row
     if session.get("role") != row["role"]:
         session["role"] = row["role"]
 
@@ -171,15 +173,21 @@ def login():
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     user = db.query("SELECT * FROM users WHERE username = %s", (username,), one=True)
-    usable = bool(user and user["is_active"])
-    ok = check_password_hash(user["password_hash"] if usable else _DUMMY_HASH, str(password))
-    if not (usable and ok):
+    # The dummy compare keeps an unknown username as slow as a known one.
+    ok = check_password_hash(user["password_hash"] if user else _DUMMY_HASH, str(password))
+    if not (user and ok):
         return api_error("Invalid username or password", 401)
+    if not user_state.can_sign_in(user):
+        # Only someone who already proved the password gets to learn the account is blocked, and
+        # locked and deleted read identically so the two cannot be told apart.
+        audit("auth.login.blocked", {"status": user["status"]}, user_id=user["id"])
+        return api_error(user_state.BLOCKED_MESSAGE, 403)
     session.clear()
     session.permanent = True
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["role"] = user["role"]
+    db.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
     audit("auth.login")
     return with_theme_cookie(jsonify(_me_payload(user)), (user.get("preferences") or {}).get("theme"))
 
@@ -194,7 +202,7 @@ def logout():
 @login_required
 def me():
     user = db.query("SELECT * FROM users WHERE id = %s", (session["user_id"],), one=True)
-    if not user or not user["is_active"]:
+    if not user_state.can_sign_in(user):
         session.clear()
         return api_error("Not authenticated", 401)
     return jsonify(_me_payload(user))

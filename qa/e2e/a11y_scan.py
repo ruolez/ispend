@@ -21,7 +21,7 @@ OUT = os.path.join(ROOT, 'qa', 'reports', 'a11y-scan.json')
 AXE_LOCAL = os.path.join(HERE, 'vendor', 'axe.min.js')
 AXE_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js'
 
-PAGES = ['index', 'transactions', 'review', 'import', 'statements', 'categories', 'rules', 'reports', 'budgets', 'insights', 'settings', 'login']
+PAGES = ['index', 'transactions', 'review', 'import', 'statements', 'categories', 'rules', 'reports', 'budgets', 'insights', 'settings', 'admin', 'login']
 THEMES = ['light', 'dark']
 VIEWPORTS = [(1440, 900), (1024, 768), (390, 844)]
 QUICK = '--quick' in sys.argv

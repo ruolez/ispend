@@ -18,8 +18,9 @@ PAGES = {
     "budgets": "/budgets.html",
     "insights": "/insights.html",
     "settings": "/settings.html",
+    "admin": "/admin.html",
 }
-CHART_PAGES = {"index", "categories", "reports"}
+CHART_PAGES = {"index", "categories", "reports", "admin"}
 SLOW_MS = 1500
 BAD_TEXT = re.compile(r"(\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|\$NaN|−NaN|\bInvalid Date\b)")
 
@@ -29,6 +30,7 @@ DENY_WORDS = [
     "upload", "learn", "pair", "dismiss", "flip", "reparse", "renormalize", "re-detect", "discard", "undo",
     "forget", "roll back", "archive", "restore", "deactivate", "activate", "duplicate", "import", "accept", "reject",
     "regenerate", "rename", "create", "copy", "set budget", "remove budget", "change limit", "tag", "new tag", "split", "unsplit", "remove split",
+    "lock", "unlock", "trash", "purge", "make admin", "make regular user", "add user",
 ]
 
 

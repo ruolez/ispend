@@ -91,8 +91,8 @@ Everything else (API keys, AI switches) lives in the database and is edited in S
 
 ```
 backend/            Flask app: auth, accounts, categories, statements (import), transactions,
-                    review, rules, merchants, reports, ai; importer/ and bank_profiles/ packages;
-                    migrations/*.sql applied at startup; tests/
+                    review, rules, merchants, reports, ai, admin; importer/ and bank_profiles/
+                    packages; migrations/*.sql applied at startup; tests/
 frontend/           static pages + css/ js/ vendor/ fonts/
 nginx/nginx.conf    static files + /api proxy
 docker-compose.yml  production; docker-compose.dev.yml overlay for live reload
@@ -105,8 +105,30 @@ install.sh          Ubuntu installer / updater
 - **Tags** (`tags`, `transaction_tags`) are free labels across categories. Rows carry `tag_ids`; filter with `?tag=1,2` (`&tag_mode=all`) or `?tag=none`; the CSV export has a `Tags` column.
 - **Splits** (`transaction_splits`) divide one row over several categories. The parent keeps its amount and a primary category (the first line); the category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line while totals, trends and merchants keep the parent amount. Lines must be at least two, share the transaction's sign and add up to its amount — the API validates and a deferred trigger enforces it. Recategorising, rejecting a suggestion or marking a transfer removes the split.
 
+## Administration
+
+Admins get an **Admin** page (`/admin.html`) with three tabs:
+
+- **Overview** — users, sign-ins, transactions and statements over time, storage, AI usage and bank
+  profiles. Storage is reported twice: *on disk* (a scan of the statements volume, so it includes OCR
+  output and orphaned files) and *uploaded originals* (the database's own accounting, de-duplicated by
+  content hash). AI usage is reported in tokens, never an estimated cost.
+- **Users** — create, reset a password, change role, and move an account through its lifecycle:
+  **active → locked** (signed out at once, data intact) → **trash** (hidden and unable to sign in, but
+  restorable) → **deleted permanently** (rows and uploaded files destroyed). Permanent deletion is only
+  possible from the trash and asks you to type the username; locking and trashing are undoable.
+- **Activity** — the `audit_log`, filterable by user, action and text, exportable as CSV. Retention for
+  the log and for the trash is configurable on the Overview tab.
+
+If an instance ever loses its last administrator (manual SQL, a restore), promote one from the host:
+
+```bash
+docker compose exec backend python -c "import db; db.promote_admin('admin')"
+```
+
 ## Security notes
 
 - Session cookies (HttpOnly, SameSite=Lax, Secure when installed with HTTPS); use the installer's Let's Encrypt option when the app is reachable from the internet.
 - Uploaded statements are stored in a private Docker volume and are only downloadable by their owner.
+- Locked and deleted accounts return the same message at sign-in, so a password holder cannot tell which happened; a wrong password is always the generic "Invalid username or password".
 - Every mutating action is written to `audit_log`.

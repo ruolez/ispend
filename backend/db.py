@@ -141,6 +141,24 @@ def _seed_admin(conn):
     conn.commit()
 
 
+def promote_admin(username):
+    """Escape hatch: _seed_admin only fires when the users table is empty, so an instance that
+    loses its last admin (manual SQL, a restore) has no way back in through the API.
+        docker compose exec backend python -c "import db; db.promote_admin('admin')"
+    """
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET role = 'admin', status = 'active', locked_at = NULL, "
+                        "deleted_at = NULL, updated_at = now() WHERE username = %s", (username,))
+            if not cur.rowcount:
+                raise SystemExit(f"No user named {username!r}")
+        conn.commit()
+        print(f"{username} is now an active admin")
+    finally:
+        conn.close()
+
+
 def _seed_categories(conn):
     """Every user gets the default taxonomy once; users who deleted it all keep it empty."""
     import seed_categories

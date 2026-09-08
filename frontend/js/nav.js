@@ -19,6 +19,9 @@ const NAV_GROUPS = [
     { page: 'budgets', href: '/budgets.html', label: 'Budgets', icon: 'target', key: 'b' },
     { page: 'insights', href: '/insights.html', label: 'Insights', icon: 'lightbulb' },
   ] },
+  { label: 'Admin', adminOnly: true, items: [
+    { page: 'admin', href: '/admin.html', label: 'Admin', icon: 'shield', key: 'a', adminOnly: true },
+  ] },
 ];
 const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Settings', icon: 'settings', key: 's' };
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_SETTINGS];
@@ -62,7 +65,7 @@ function paintPinnedViews(me) {
   });
 }
 function navItemHtml(i, activePage) {
-  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.page === activePage ? 'aria-current="page"' : ''}>
+  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
@@ -86,7 +89,7 @@ async function initNav(activePage) {
       <div class="sb-brand"><span class="sb-mark">${icon('activity')}</span><span class="sb-name">iSpend</span>
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
-        ${NAV_GROUPS.map((g) => `<div class="sb-group"><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
+        ${NAV_GROUPS.map((g) => `<div class="sb-group" ${g.adminOnly ? 'data-admin-only hidden' : ''}><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
@@ -160,7 +163,8 @@ async function initNav(activePage) {
   ui.shortcuts.register(']', () => setSidebarMode('full'));
   ui.shortcuts.register('?', () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []), { description: 'Shortcuts' });
   ui.shortcuts.register('/', () => openPalette(), { description: 'Search' });
-  NAV_ITEMS.filter((i) => i.key).forEach((i) => ui.shortcuts.register(`g ${i.key}`, () => { location.href = i.href; }, { description: `Go to ${i.label}` }));
+  NAV_ITEMS.filter((i) => i.key).forEach((i) => ui.shortcuts.register(`g ${i.key}`, () => { location.href = i.href; },
+    { description: `Go to ${i.label}`, when: () => !i.adminOnly || (window.currentUser || {}).role === 'admin' }));
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); } });
 
   // Auth gate
@@ -183,9 +187,10 @@ async function initNav(activePage) {
   const prefs = me.preferences || {};
   if (prefs.theme && !Theme.hasStored()) Theme.set(prefs.theme);
   if (prefs.density && !Theme.hasStoredDensity()) Theme.setDensity(prefs.density);
-  if (me.role !== 'admin') {
-    $$('[data-admin-only]').forEach((el) => el.remove());
-  }
+  // Admin markup ships hidden and is revealed here, so a regular user never sees it flash on a
+  // slow connection; non-admins still get it removed outright.
+  if (me.role === 'admin') $$('[data-admin-only]').forEach((el) => el.removeAttribute('hidden'));
+  else $$('[data-admin-only]').forEach((el) => el.remove());
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);
   paintPinnedViews(me);
@@ -213,6 +218,7 @@ function openUserMenu(anchor) {
     { divider: true },
     { label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) },
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
+    ...(me.role === 'admin' ? [{ label: 'Admin', icon: 'shield', href: '/admin.html' }] : []),
     { label: 'Settings', icon: 'settings', href: '/settings.html' },
     { divider: true },
     { label: 'Sign out', icon: 'log-out', onClick: async () => {
@@ -281,7 +287,8 @@ function openPalette() {
     { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
     { group: 'Actions', label: 'Show split transactions', icon: 'split', run: () => { location.href = '/transactions.html?split=1&range=all'; } },
   ];
-  const pages = NAV_ITEMS.map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
+  const pages = NAV_ITEMS.filter((i) => !i.adminOnly || (window.currentUser || {}).role === 'admin')
+    .map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 
   async function search(q) {
     const mySeq = ++seq;

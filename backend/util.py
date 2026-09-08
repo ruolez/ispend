@@ -1,10 +1,12 @@
+import csv
+import io
 import json
 import random
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from flask import abort, jsonify, request, session
+from flask import Response, abort, jsonify, request, session
 
 import db
 
@@ -76,6 +78,19 @@ def csv_safe(value):
     return value
 
 
+def csv_response(rows, filename, columns=None):
+    """Rows -> a downloadable CSV. Shared by the reports exports and the admin activity log."""
+    buf = io.StringIO()
+    if rows:
+        columns = columns or list(rows[0].keys())
+        w = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: csv_safe("" if v is None else v) for k, v in r.items()})
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 AUDIT_RETENTION_DAYS = 180
 
 
@@ -87,7 +102,18 @@ def audit(action, detail=None, user_id=None):
         (user_id, action, json.dumps(detail, default=str) if detail is not None else None),
     )
     if random.random() < 0.005:  # noqa: S311 - sampling, not security  # roughly one prune per 200 writes keeps the log bounded without a scheduler
-        db.execute("DELETE FROM audit_log WHERE created_at < now() - make_interval(days => %s)", (AUDIT_RETENTION_DAYS,))
+        # Read the setting only here: audit() is on hot paths, so the common write path must not
+        # gain a second query.
+        db.execute("DELETE FROM audit_log WHERE created_at < now() - make_interval(days => %s)",
+                   (audit_retention_days(),))
+
+
+def audit_retention_days():
+    raw = db.get_setting("audit_retention_days")
+    try:
+        return max(7, min(3650, int(raw)))
+    except (TypeError, ValueError):
+        return AUDIT_RETENTION_DAYS
 
 
 def money(v):
