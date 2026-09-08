@@ -16,6 +16,7 @@ import pytest
 
 from conftest import (Api, FIXTURES, QA_USERS, add_txn, api_login, cat_by_slug, create_account, import_fixture,
                       list_all, upload, wait_status)
+from ratelimit import login_with_retry
 
 TODAY = datetime.now(ZoneInfo("America/Chicago")).date()
 
@@ -67,6 +68,7 @@ MUTATING_ROUTES = [
     ("POST", "/api/insights/anomalies/1/dismiss"), ("DELETE", "/api/insights/anomalies/1/dismiss"),
     ("POST", "/api/budgets"), ("PUT", "/api/budgets/1"), ("DELETE", "/api/budgets/1"), ("POST", "/api/budgets/copy"),
     ("POST", "/api/tags"), ("PUT", "/api/tags/1"), ("DELETE", "/api/tags/1"),
+    ("PUT", "/api/transactions/1/splits"), ("DELETE", "/api/transactions/1/splits"),
 ]
 
 
@@ -93,12 +95,12 @@ class TestAuth:
         assert (r.status_code, r.json()) == (401, {"error": "Invalid username or password"})
 
     def test_login_missing_body(self):
-        r = Api().post("/api/auth/login")
+        r = login_with_retry(lambda: Api().post("/api/auth/login"))
         assert (r.status_code, r.json()) == (401, {"error": "Invalid username or password"})
 
     def test_login_wrong_content_type(self):
-        r = Api().post("/api/auth/login", data="username=admin&password=admin",
-                       headers={"Content-Type": "application/x-www-form-urlencoded"})
+        r = login_with_retry(lambda: Api().post("/api/auth/login", data="username=admin&password=admin",
+                                                headers={"Content-Type": "application/x-www-form-urlencoded"}))
         assert r.status_code == 401
 
     def test_me_matches_login_and_session_persists(self, u1, qa_users):
@@ -324,6 +326,8 @@ class TestIsolation:
         ("PUT", "/api/tags/{tag}", {"name": "pwned"}),
         ("DELETE", "/api/tags/{tag}", None),
         ("PUT", "/api/transactions/{txn}", {"tag_ids": ["{tag}"]}),
+        ("PUT", "/api/transactions/{txn}/splits", {"lines": []}),
+        ("DELETE", "/api/transactions/{txn}/splits", None),
     ])
     def test_foreign_object_by_id_is_404(self, u2, victim, method, path, body):
         url = path.format(txn=victim["txn"]["id"], st=victim["statement"], rule=victim["rule"],
@@ -1046,7 +1050,7 @@ class TestTransactions:
         assert r.status_code == 200 and r.headers["Content-Type"].startswith("text/csv")
         assert "attachment; filename=transactions-" in r.headers["Content-Disposition"]
         rows = list(csv.reader(io.StringIO(r.text)))
-        assert rows[0] == ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags"]
+        assert rows[0] == ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags", "Split"]
         items, first = list_all(u1, account_id=a, **{"from": f"{y}-08-01", "to": f"{y}-08-31"})
         assert len(rows) - 1 == first["total"] == 5
         assert sorted(money(x[5]) for x in rows[1:]) == sorted(money(t["amount"]) for t in items)
@@ -1208,7 +1212,7 @@ class TestCategories:
         assert [c["id"] for c in u1.get("/api/categories").json()] == ids
         # delete root cascades to children
         r = u1.delete(f"/api/categories/{root['id']}")
-        assert r.status_code == 200 and r.json()["references"] == {"transactions": 0, "rules": 0, "merchants": 0}
+        assert r.status_code == 200 and r.json()["references"] == {"transactions": 0, "rules": 0, "merchants": 0, "splits": 0}
         flat = {c["id"] for c in u1.get("/api/categories?flat=1").json()}
         assert root["id"] not in flat and child["id"] not in flat
         assert u1.delete(f"/api/categories/{twin['id']}").status_code == 200
@@ -1235,7 +1239,7 @@ class TestCategories:
         rule = u1.post("/api/rules", json={"pattern": "qa merge", "category_id": src["id"]}).json()
         r = u1.delete(f"/api/categories/{src['id']}")
         assert r.status_code == 409
-        assert r.json()["references"] == {"transactions": 1, "rules": 1, "merchants": 1}
+        assert r.json()["references"] == {"transactions": 1, "rules": 1, "merchants": 1, "splits": 0}
         assert "1 transaction, 1 rule, 1 remembered merchant still use this category" in r.json()["error"]
         assert u1.get(f"/api/transactions/{t['id']}").json()["category_id"] == src["id"]
         r = u1.delete(f"/api/categories/{src['id']}?reassign_to={src['id']}")
@@ -1516,6 +1520,75 @@ class TestBudgets:
         assert u2.get("/api/budgets").json()["budgets"] == []
 
 
+class TestSplits:
+    def test_split_lifecycle_attribution_filters_and_export(self, u1, manual):
+        y, acct = manual["year"], manual["acct"]
+        a = u1.post("/api/categories", json={"name": "QA Split A", "kind": "expense"}).json()
+        b = u1.post("/api/categories", json={"name": "QA Split B", "kind": "expense"}).json()
+        t = add_txn(u1, acct, f"{y}-06-15", "-50.00", "QA SPLIT MARKET")
+        tid = t["id"]
+        day = {"from": f"{y}-06-15", "to": f"{y}-06-15", "account_id": acct}
+        try:
+            lines = [{"category_id": a["id"], "amount": -30, "note": "  veg  "}, {"category_id": b["id"], "amount": "-20.00"}]
+            r = u1.put(f"/api/transactions/{tid}/splits", json={"lines": lines})
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert (body["split_count"], body["category_id"], body["category_status"]) == (2, a["id"], "confirmed")
+            assert [(s["category_name"], s["amount"], s["note"]) for s in body["splits"]] == [("QA Split A", -30.0, "veg"), ("QA Split B", -20.0, None)]
+            detail = u1.get(f"/api/transactions/{tid}").json()
+            assert len(detail["splits"]) == 2 and any(e["kind"] == "split" for e in detail["events"])
+            # category reports see the lines, totals see the parent once
+            cats = {c["name"]: (c["total"], c["count"]) for c in u1.get("/api/reports/by-category", params={**day, "level": "sub"}).json()["categories"]}
+            assert (cats["QA Split A"], cats["QA Split B"]) == ((30.0, 1), (20.0, 1))
+            assert u1.get("/api/reports/summary", params=day).json()["expenses"] == 50.0
+            # filters and export
+            items, _ = list_all(u1, account_id=acct, range="all", cat=b["id"])
+            assert tid in [i["id"] for i in items]
+            items, _ = list_all(u1, account_id=acct, range="all", split=1)
+            assert [i["id"] for i in items] == [tid] and items[0]["split_count"] == 2
+            rows = list(csv.reader(io.StringIO(u1.get("/api/transactions/export", params={"account_id": acct, "range": "all", "split": 1}).text)))
+            assert rows[0][-1] == "Split" and rows[1][-1] == "QA Split A 30.00 · QA Split B 20.00"
+            # validation, exact messages
+            bad = [
+                ({"lines": lines[:1]}, 400, "A split needs at least two lines"),
+                ({"lines": [lines[0], {"category_id": b["id"], "amount": -19}]}, 400, "Lines add up to -49.00 but the transaction is -50.00 (-1.00 left)"),
+                ({"lines": [lines[0], {"category_id": b["id"], "amount": 20}]}, 400, "Line 2 must be negative like the transaction"),
+                ({"lines": [lines[0], {"category_id": 999999, "amount": -20}]}, 404, "Category not found"),
+                ({"lines": [lines[0], {"category_id": cat_by_slug(u1, "transfers")["id"], "amount": -20}]}, 400, "Transfer categories cannot be used in a split"),
+            ]
+            for payload, status, msg in bad:
+                r = u1.put(f"/api/transactions/{tid}/splits", json=payload)
+                assert (r.status_code, r.json()["error"]) == (status, msg), payload
+            assert u1.get(f"/api/transactions/{tid}").json()["split_count"] == 2
+            # flipping the sign flips the lines
+            assert u1.post("/api/transactions/bulk", json={"ids": [tid], "action": "flip_sign"}).json()["updated"] == 1
+            assert [s["amount"] for s in u1.get(f"/api/transactions/{tid}").json()["splits"]] == [30.0, 20.0]
+            u1.post("/api/transactions/bulk", json={"ids": [tid], "action": "flip_sign"})
+            # recategorising drops the split; so does marking it a transfer
+            assert u1.put(f"/api/transactions/{tid}", json={"category_id": b["id"], "learn": False}).json()["split_count"] == 0
+            assert [e["detail"]["reason"] for e in u1.get(f"/api/transactions/{tid}").json()["events"] if e["kind"] == "split" and e["detail"].get("removed")] == ["recategorized"]
+            assert u1.put(f"/api/transactions/{tid}/splits", json={"lines": lines}).json()["split_count"] == 2
+            assert u1.put(f"/api/transactions/{tid}", json={"is_transfer": True}).json()["split_count"] == 0
+            r = u1.put(f"/api/transactions/{tid}/splits", json={"lines": lines})
+            assert (r.status_code, r.json()["error"]) == (400, "Transfers cannot be split")
+            u1.put(f"/api/transactions/{tid}", json={"is_transfer": False})
+            # unsplit
+            u1.put(f"/api/transactions/{tid}/splits", json={"lines": lines})
+            r = u1.delete(f"/api/transactions/{tid}/splits").json()
+            assert (r["removed"], r["split_count"], r["splits"]) == (True, 0, [])
+            assert u1.delete(f"/api/transactions/{tid}/splits").json()["removed"] is False
+            # a category used by a split line cannot be deleted without a merge
+            u1.put(f"/api/transactions/{tid}/splits", json={"lines": lines})
+            r = u1.delete(f"/api/categories/{b['id']}")
+            assert r.status_code == 409 and r.json()["references"]["splits"] == 1 and "1 split line" in r.json()["error"]
+            assert u1.delete(f"/api/categories/{b['id']}?reassign_to={a['id']}").status_code == 200
+            assert [s["category_id"] for s in u1.get(f"/api/transactions/{tid}").json()["splits"]] == [a["id"], a["id"]]
+        finally:
+            u1.delete(f"/api/transactions/{tid}")
+            u1.delete(f"/api/categories/{b['id']}")
+            u1.delete(f"/api/categories/{a['id']}")
+
+
 class TestTags:
     def test_crud_filters_facets_and_export(self, u1, manual):
         acct = manual["acct"]
@@ -1546,7 +1619,7 @@ class TestTags:
         assert (listed[trip["id"]]["txn_count"], listed[work["id"]]["txn_count"]) == (2, 1)
         # export carries the names
         rows = list(csv.reader(io.StringIO(u1.get("/api/transactions/export", params={"account_id": acct, "range": "all", "tag": trip["id"]}).text)))
-        assert rows[0][-1] == "Tags" and sorted(r[-1] for r in rows[1:]) == ["QA Trip", "QA Trip; QA Work"]
+        assert rows[0][-2] == "Tags" and sorted(r[-2] for r in rows[1:]) == ["QA Trip", "QA Trip; QA Work"]
         # rename / recolour / foreign tag / untag / delete cascades
         assert u1.put(f"/api/tags/{work['id']}", json={"name": "QA Office", "color": "c3"}).json()["name"] == "QA Office"
         assert u1.put(f"/api/transactions/{a['id']}", json={"tag_ids": [999999]}).status_code == 404

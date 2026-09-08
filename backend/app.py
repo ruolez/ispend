@@ -1,6 +1,7 @@
 import logging
 
 import psycopg2
+import psycopg2.errors
 from flask import Flask, jsonify
 from werkzeug.exceptions import HTTPException
 
@@ -64,6 +65,10 @@ def create_app():
     @app.errorhandler(404)
     def not_found(_e):
         return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(psycopg2.errors.RaiseException)
+    def db_rule(e):
+        return jsonify({"error": (e.diag.message_primary or "Rejected by a database rule").strip()}), 400
 
     @app.errorhandler(ValueError)
     @app.errorhandler(psycopg2.DataError)

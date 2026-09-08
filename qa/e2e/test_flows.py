@@ -1235,7 +1235,7 @@ def test_f4_transactions(page, qapi):
         page.locator("#btn-export").click()
     data = pathlib.Path(dl.value.path()).read_text()
     rdr = list(csv.reader(io.StringIO(data)))
-    F.eq(rdr[0], ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags"], "CSV header")
+    F.eq(rdr[0], ["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags", "Split"], "CSV header")
     F.eq(len(rdr) - 1, S["total_all"], "CSV row count = total")
     first_ui = page.locator("#tx-body tr[data-id]").first
     F.eq(rdr[1][3], first_ui.locator(".merchant-name").inner_text().split("\n")[0].strip(), "first CSV row merchant = first UI row")

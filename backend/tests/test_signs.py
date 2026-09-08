@@ -1,6 +1,9 @@
+import contextlib
 import os
 import sys
+import types
 import unittest
+from unittest import mock
 from datetime import date
 from decimal import Decimal
 
@@ -11,12 +14,32 @@ _stubs.install()
 
 import dedupe  # noqa: E402
 import signs  # noqa: E402
+import util  # noqa: E402
 from importer.generic import looks_inverted  # noqa: E402
 
 
 def row(i, amount, desc="COFFEE", day=1):
     return {"id": i, "account_id": 7, "txn_date": date(2026, 5, day), "amount": Decimal(amount),
             "description_clean": desc, "fingerprint": "old", "occurrence": 1}
+
+
+class FlipSignsDbTest(unittest.TestCase):
+    def test_split_lines_are_negated_with_the_parent(self):
+        calls = []
+
+        def query(sql, params=None, **kw):
+            calls.append(("query", sql, params))
+            return [row(1, "12.50")] if "FROM transactions WHERE user_id" in sql else []
+
+        def execute(sql, params=None, **kw):
+            calls.append(("execute", sql, params))
+            return 1
+        fake = types.SimpleNamespace(query=query, execute=execute, transaction=contextlib.nullcontext,
+                                     execute_values=lambda sql, rows, **kw: calls.append(("execute_values", sql, rows)))
+        with mock.patch.object(signs, "db", fake), mock.patch.object(util, "db", fake):
+            self.assertEqual(signs.flip_signs(1, [1]), 1)
+        self.assertIn(("execute", "UPDATE transaction_splits SET amount = -amount WHERE transaction_id = ANY(%s)", ([1],)), calls)
+        self.assertEqual(calls[-1][0], "execute_values")
 
 
 class PlanFlipsTest(unittest.TestCase):

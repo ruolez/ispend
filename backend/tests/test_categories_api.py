@@ -63,6 +63,14 @@ class CategoriesApiTest(unittest.TestCase):
         self.assertIn("7 transactions, 2 rules", res.get_json()["error"])
         self.assertEqual(self.x.sql("DELETE FROM categories"), [])
 
+    def test_delete_counts_split_lines_as_references(self):
+        self.q.routes += [("SELECT * FROM categories WHERE id", CAT), ("SELECT id FROM categories WHERE parent_id", []),
+                          ("AS transactions", {"transactions": 0, "rules": 0, "merchants": 0, "splits": 3})]
+        res = self._call("delete", "/api/categories/3")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("3 split lines still use this category", res.get_json()["error"])
+        self.assertEqual(self.q.sql("AS splits")[0][1], (1, [3], 1, [3], 1, [3], 1, [3]))
+
     def test_delete_with_reassignment_moves_everything_then_deletes_children_too(self):
         self.q.routes += [("SELECT * FROM categories WHERE id", CAT), ("SELECT id FROM categories WHERE parent_id", [{"id": 4}]),
                           ("AS transactions", {"transactions": 7, "rules": 2, "merchants": 1}),
@@ -73,6 +81,7 @@ class CategoriesApiTest(unittest.TestCase):
         self.assertEqual(moved[:3], [("UPDATE transactions", (8, [3, 4], 1)), ("UPDATE rules", (8, [3, 4], 1)),
                                      ("UPDATE import_rows", (8, [3, 4]))])
         self.assertEqual([p for _s, p in self.x.sql("UPDATE merchant_memory SET category_id")], [(8, [3, 4], 1)])
+        self.assertEqual([p for _s, p in self.x.sql("UPDATE transaction_splits s SET category_id")], [(8, [3, 4], 1)])
         self.assertEqual([p for _s, p in self.x.sql("DELETE FROM categories")], [([3, 4],)])
 
     def test_reassign_target_must_be_owned_and_different(self):

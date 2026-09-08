@@ -254,7 +254,7 @@ class FlowTest(unittest.TestCase):
             with self.subTest(report=name):
                 sql = self._sql(fn, "spending")
                 self.assertIn("t.amount < 0", sql)
-                self.assertIn("-t.amount", sql)
+                self.assertRegex(sql, r"-(t\.amount|COALESCE\(s\.amount, t\.amount\))")
 
     def test_endpoint_flow_param(self):
         app = Flask(__name__)

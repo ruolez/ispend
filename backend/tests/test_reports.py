@@ -157,6 +157,42 @@ class MonthlyDrillDownTest(unittest.TestCase):
         self.assertEqual((params[0], params[-1], out["parent_id"], out["series"]), (42, 42, 42, []))
 
 
+class SplitAttributionSqlTest(unittest.TestCase):
+    """Only the category breakdowns read split lines; totals, trends and merchants keep the parent amount."""
+
+    def _capture(self, fn, *args, **kw):
+        calls = []
+
+        def query(sql, params=None, one=False, **k):
+            calls.append(sql)
+            return {"income": 0, "expenses": 0, "txn_count": 0, "uncategorized": 0, "transfers": 0, "suggested": 0} if one else []
+        with mock.patch.object(reports, "db", types.SimpleNamespace(query=query)):
+            fn(*args, **kw)
+        return " ".join(" ".join(calls).split())
+
+    def test_breakdowns_join_the_lines(self):
+        for label, sql in (
+            ("by_category", self._capture(reports.by_category, 1, JAN15, JAN15)),
+            ("monthly", self._capture(reports.monthly_by_category, 1, 3)),
+            ("monthly parent", self._capture(reports.monthly_by_category, 1, 3, parent_id=4)),
+            ("month_over_month", self._capture(reports.month_over_month, 1, "2026-01")),
+        ):
+            self.assertIn("LEFT JOIN transaction_splits s ON s.transaction_id = t.id", sql, label)
+            self.assertIn("COALESCE(s.category_id, t.category_id)", sql, label)
+            self.assertIn("COALESCE(s.amount, t.amount)", sql, label)
+            self.assertNotIn("SUM(-t.amount)", sql, label)
+        self.assertIn("COUNT(DISTINCT t.id) AS count", self._capture(reports.by_category, 1, JAN15, JAN15))
+
+    def test_other_reports_keep_the_parent_amount(self):
+        for label, sql in (
+            ("summary", self._capture(reports.summary, 1, JAN15, JAN15)),
+            ("trends", self._capture(reports.trends, 1, 3)),
+            ("top_merchants", self._capture(reports.top_merchants, 1, JAN15, JAN15)),
+            ("largest", self._capture(reports.largest, 1, JAN15, JAN15)),
+        ):
+            self.assertNotIn("transaction_splits", sql, label)
+
+
 class CompareMonthsTest(unittest.TestCase):
     def _run(self, **kw):
         calls = []

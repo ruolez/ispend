@@ -200,6 +200,20 @@ _CAT_JOIN = """
 """
 
 
+# Split lines stand in for the parent row in the category breakdowns; every other report keeps the parent amount.
+_CAT_JOIN_LINES = """
+    LEFT JOIN transaction_splits s ON s.transaction_id = t.id
+    LEFT JOIN categories c ON c.id = COALESCE(s.category_id, t.category_id)
+    LEFT JOIN categories p ON p.id = c.parent_id
+    LEFT JOIN categories g ON g.id = COALESCE(p.id, c.id)
+"""
+
+
+def _line_amt(flow):
+    """Positive magnitude of a split line, or of the row when it is not split."""
+    return "COALESCE(s.amount, t.amount)" if flow == "income" else "-COALESCE(s.amount, t.amount)"
+
+
 def _cat_row(r, total_all):
     total = _f(r["total"])
     return {
@@ -218,8 +232,8 @@ def by_category(uid, start, end, level="top", account_ids=None, include_transfer
     else:
         select = "g.id, g.name, g.color, g.icon, g.parent_id"
     rows = db.query(
-        f"""SELECT {select}, SUM({_amt(flow)}) AS total, COUNT(*) AS count
-            FROM transactions t {_CAT_JOIN}
+        f"""SELECT {select}, SUM({_line_amt(flow)}) AS total, COUNT(DISTINCT t.id) AS count
+            FROM transactions t {_CAT_JOIN_LINES}
             WHERE {where} AND t.txn_date BETWEEN %s AND %s{acct_sql}
             GROUP BY {select}
             ORDER BY total DESC""",
@@ -259,8 +273,9 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
             f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
                        c.id AS category_id,
                        CASE WHEN c.id = %s THEN 'Directly in ' || c.name ELSE c.name END AS name,
-                       c.color, SUM({_amt(flow)}) AS total
-                FROM transactions t JOIN categories c ON c.id = t.category_id
+                       c.color, SUM({_line_amt(flow)}) AS total
+                FROM transactions t LEFT JOIN transaction_splits s ON s.transaction_id = t.id
+                JOIN categories c ON c.id = COALESCE(s.category_id, t.category_id)
                 WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s
                   AND c.user_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
                 GROUP BY 1, 2, 3, 4""",
@@ -269,8 +284,8 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
     else:
         rows = db.query(
             f"""SELECT to_char(date_trunc('month', t.txn_date), 'YYYY-MM') AS month,
-                       g.id AS category_id, g.name, g.color, SUM({_amt(flow)}) AS total
-                FROM transactions t {_CAT_JOIN}
+                       g.id AS category_id, g.name, g.color, SUM({_line_amt(flow)}) AS total
+                FROM transactions t {_CAT_JOIN_LINES}
                 WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s{acct_sql}
                 GROUP BY 1, 2, 3, 4""",
             (uid, first, last, *acct_params),
@@ -391,9 +406,9 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False,
     acct_sql, acct_params = _acct(account_ids)
     rows = db.query(
         f"""SELECT g.id, g.name, g.color, g.icon,
-                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_amt(flow)} END), 0) AS current,
-                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_amt(flow)} END), 0) AS previous
-            FROM transactions t {_CAT_JOIN}
+                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_line_amt(flow)} END), 0) AS current,
+                   COALESCE(SUM(CASE WHEN t.txn_date BETWEEN %s AND %s THEN {_line_amt(flow)} END), 0) AS previous
+            FROM transactions t {_CAT_JOIN_LINES}
             WHERE {flow_where(flow, include_transfers)} AND (t.txn_date BETWEEN %s AND %s OR t.txn_date BETWEEN %s AND %s){acct_sql}
             GROUP BY g.id, g.name, g.color, g.icon
             ORDER BY current DESC, previous DESC""",

@@ -54,5 +54,6 @@ def flip_signs(user_id, txn_ids, reason=None):
                 "UPDATE transactions SET amount = %s, fingerprint = %s, occurrence = %s, updated_at = now() WHERE id = %s",
                 (amount, fp, occ, txn_id), commit=False,
             )
+        db.execute("UPDATE transaction_splits SET amount = -amount WHERE transaction_id = ANY(%s)", (ids,), commit=False)
         record_events([(p[0], "manual", {"flip_sign": True, "reason": reason}, user_id) for p in plan], commit=False)
     return len(plan)

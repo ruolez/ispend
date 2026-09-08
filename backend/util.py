@@ -212,6 +212,18 @@ def clean_restore_items(items, own_ids, own_category_ids, own_rule_ids, own_pair
     return out
 
 
+def drop_splits(ids, user_id, reason, commit=True):
+    """A recategorised, rejected or transferred parent loses its split lines; returns the ids that had some."""
+    if not ids:
+        return []
+    had = [r["id"] for r in (db.query(
+        "SELECT DISTINCT transaction_id AS id FROM transaction_splits WHERE transaction_id = ANY(%s)", (list(ids),)) or [])]
+    if had:
+        db.execute("DELETE FROM transaction_splits WHERE transaction_id = ANY(%s)", (had,), commit=commit)
+        record_events([(i, "split", {"removed": True, "reason": reason}, user_id) for i in had], commit=commit)
+    return had
+
+
 def record_event(transaction_id, kind, detail=None, user_id=None, commit=True):
     """Append one row to transaction_events (history timeline in the UI)."""
     if user_id is None:

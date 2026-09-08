@@ -243,14 +243,16 @@ def delete_category(cat_id):
     refs = db.query(
         """SELECT (SELECT COUNT(*) FROM transactions WHERE user_id = %s AND category_id = ANY(%s)) AS transactions,
                   (SELECT COUNT(*) FROM rules WHERE user_id = %s AND category_id = ANY(%s)) AS rules,
-                  (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %s AND category_id = ANY(%s)) AS merchants""",
-        (uid, ids, uid, ids, uid, ids), one=True,
+                  (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %s AND category_id = ANY(%s)) AS merchants,
+                  (SELECT COUNT(*) FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
+                   WHERE t.user_id = %s AND s.category_id = ANY(%s)) AS splits""",
+        (uid, ids, uid, ids, uid, ids, uid, ids), one=True,
     )
     reassign = to_int(request.args.get("reassign_to"), "reassign_to")
-    in_use = refs["transactions"] or refs["rules"] or refs["merchants"]
+    in_use = refs["transactions"] or refs["rules"] or refs["merchants"] or refs.get("splits")
     if in_use and not reassign:
         parts = [_count(refs["transactions"], "transaction"), _count(refs["rules"], "rule"),
-                 _count(refs["merchants"], "remembered merchant")]
+                 _count(refs["merchants"], "remembered merchant"), _count(refs.get("splits"), "split line")]
         msg = ", ".join(p for p in parts if p) + " still use this category. Merge it into another category instead."
         return jsonify({"error": msg, "references": dict(refs)}), 409
     target = None
@@ -271,6 +273,8 @@ def _move_references(uid, ids, dst_id):
     db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
     db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
     db.execute("UPDATE import_rows SET category_id = %s WHERE category_id = ANY(%s)", (dst_id, ids), commit=False)
+    db.execute("""UPDATE transaction_splits s SET category_id = %s FROM transactions t
+                  WHERE t.id = s.transaction_id AND s.category_id = ANY(%s) AND t.user_id = %s""", (dst_id, ids, uid), commit=False)
     db.execute("""DELETE FROM merchant_memory m WHERE m.user_id = %s AND m.category_id = ANY(%s)
                   AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.user_id = m.user_id
                               AND o.merchant_key = m.merchant_key AND o.category_id = %s

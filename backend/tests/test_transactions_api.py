@@ -98,12 +98,20 @@ class BuildFiltersTest(unittest.TestCase):
                 "q": "star", "status": "uncategorized", "transfers": "exclude", "min": "5", "max": "50",
                 "statement_id": "9"}
         sql, params = tapi.build_filters(args, 42)
-        self.assertEqual(params, [42, [1, 2], [5], [5], date(2026, 1, 1), date(2026, 1, 31),
+        self.assertEqual(params, [42, [1, 2], [5], [5], [5], [5], date(2026, 1, 1), date(2026, 1, 31),
                                   "%star%", "%star%", "%star%", "%star%", Decimal("5"), Decimal("50"), 9])
         for frag in ("t.account_id = ANY", "t.category_id IS NULL", "t.txn_date >=", "ILIKE",
                      "t.category_id IS NULL AND NOT t.is_transfer", "NOT t.is_transfer", "abs(t.amount) >=",
                      "t.statement_id = %s"):
             self.assertIn(frag, sql)
+
+    def test_split_filters(self):
+        sql, params = tapi.build_filters({"split": "1"}, 1)
+        self.assertIn("EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)", sql)
+        self.assertEqual(params, [1])
+        sql, params = tapi.build_filters({"category_id": "5"}, 1)
+        self.assertIn("s.category_id = ANY(%s)", sql)
+        self.assertEqual(params, [1, [5], [5], [5], [5]])
 
     def test_tag_filters(self):
         sql, params = tapi.build_filters({"tag": "3,4"}, 1)
@@ -156,6 +164,76 @@ class CursorTest(unittest.TestCase):
         self.assertIn(") > (", sql)
         self.assertEqual(tapi.cursor_clause("-date", "garbage!!"), ("", []))
         self.assertEqual(tapi.cursor_clause("-date", None), ("", []))
+
+
+ROW = {"id": 1, "amount": Decimal("-50.00"), "is_transfer": False, "category_id": None, "split_count": 0, "merchant_key": "M", "statement_id": None}
+LINES = [{"category_id": 3, "amount": "-30", "note": "lunch"}, {"category_id": 4, "amount": "-20"}]
+
+
+class SplitsEndpointTest(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(tapi.bp)
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as s:
+            s["user_id"] = 1
+
+    def _fake(self, row=ROW, cats=({"id": 3, "kind": "expense"}, {"id": 4, "kind": "expense"}), had=()):
+        def handler(sql, params, one):
+            if "FROM transactions t WHERE t.id = %s" in sql:
+                return row
+            if "SELECT id, kind FROM categories" in sql:
+                return list(cats)
+            if "DISTINCT transaction_id AS id" in sql:
+                return [{"id": i} for i in had]
+            return []
+        return FakeDB(handler)
+
+    def test_replace_writes_lines_primary_category_and_event(self):
+        fake = self._fake()
+        with patch_db(fake):
+            res = self.client.put("/api/transactions/1/splits", json={"lines": LINES})
+        self.assertEqual(res.status_code, 200, res.get_data())
+        self.assertEqual(json.loads(res.get_data())["splits"], [])
+        kinds = [(c[0], c[1].split()[0], c[1].split()[1]) for c in fake.calls if c[0] != "query" and "audit_log" not in c[1]]
+        self.assertEqual(kinds, [("execute", "DELETE", "FROM"), ("execute_values", "INSERT", "INTO"), ("execute", "UPDATE", "transactions"),
+                                 ("execute", "INSERT", "INTO")])
+        ins = [c for c in fake.calls if c[0] == "execute_values"][0]
+        self.assertEqual(ins[2], [(1, 3, Decimal("-30.00"), "lunch", 0), (1, 4, Decimal("-20.00"), None, 1)])
+        upd = [c for c in fake.calls if c[0] == "execute" and "UPDATE transactions" in c[1]][0]
+        self.assertEqual(upd[2], (3, 1))
+        ev = [c for c in fake.calls if c[0] == "execute" and "transaction_events" in c[1]][0]
+        self.assertEqual(ev[2][:2], (1, "split"))
+
+    def test_rejections(self):
+        cases = [
+            (self._fake(), {"lines": LINES[:1]}, 400, "A split needs at least two lines"),
+            (self._fake(), {"lines": [LINES[0], {"category_id": 4, "amount": -19}]}, 400, "Lines add up to -49.00 but the transaction is -50.00 (-1.00 left)"),
+            (self._fake(row={**ROW, "is_transfer": True}), {"lines": LINES}, 400, "Transfers cannot be split"),
+            (self._fake(cats=({"id": 3, "kind": "expense"},)), {"lines": LINES}, 404, "Category not found"),
+            (self._fake(cats=({"id": 3, "kind": "expense"}, {"id": 4, "kind": "transfer"})), {"lines": LINES}, 400, "Transfer categories cannot be used in a split"),
+            (self._fake(row=None), {"lines": LINES}, 404, "Transaction not found"),
+        ]
+        for fake, body, status, msg in cases:
+            with patch_db(fake):
+                res = self.client.put("/api/transactions/1/splits", json=body)
+            self.assertEqual((res.status_code, json.loads(res.get_data())["error"]), (status, msg), body)
+            self.assertFalse(any(c[0] != "query" for c in fake.calls), msg)
+
+    def test_clear_removes_lines_and_records_the_event(self):
+        fake = self._fake(had=(1,))
+        with patch_db(fake):
+            res = self.client.delete("/api/transactions/1/splits")
+        body = json.loads(res.get_data())
+        self.assertEqual((res.status_code, body["removed"], body["splits"]), (200, True, []))
+        self.assertTrue(any(c[0] == "execute" and "DELETE FROM transaction_splits" in c[1] and c[2] == ([1],) for c in fake.calls))
+        ev = [c for c in fake.calls if c[0] == "execute_values"][0]
+        self.assertEqual(ev[2][0][:2], (1, "split"))
+        self.assertIn('"reason": "unsplit"', ev[2][0][2])
+        fake = self._fake()
+        with patch_db(fake):
+            self.assertFalse(json.loads(self.client.delete("/api/transactions/1/splits").get_data())["removed"])
 
 
 class ListEndpointTest(unittest.TestCase):

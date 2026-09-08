@@ -108,6 +108,53 @@ class DatabaseIntegrationTest(unittest.TestCase):
         confirmed = self._insert_txn("-20.00", transfers, "confirmed", "t2")
         self.assertEqual((confirmed["is_transfer"], confirmed["is_excluded"]), (True, True))
 
+    def _rejected(self, fn):
+        import psycopg2
+
+        with self.assertRaises(psycopg2.errors.RaiseException) as ctx:
+            fn()
+        self.db.get_db().rollback()
+        return ctx.exception.diag.message_primary
+
+    def test_split_trigger_enforces_count_sign_and_sum(self):
+        groceries, shopping = self._cat("groceries"), self._cat("shopping")
+        txn = self._insert_txn("-50.00", groceries, "confirmed", "s1")["id"]
+        insert = "INSERT INTO transaction_splits (transaction_id, category_id, amount, sort_order) VALUES %s"
+        self.db.execute_values(insert, [(txn, groceries, Decimal("-30.00"), 0), (txn, shopping, Decimal("-20.00"), 1)])
+        count = lambda: self.db.query("SELECT COUNT(*) AS n FROM transaction_splits WHERE transaction_id = %s", (txn,), one=True)["n"]  # noqa: E731
+        self.assertEqual(count(), 2)
+        self.assertEqual(self._rejected(lambda: self.db.execute_values(insert, [(txn, shopping, Decimal("-5.00"), 2)])),
+                         "Split lines must add up to the transaction amount")
+        self.assertEqual(self._rejected(lambda: self.db.execute(
+            "DELETE FROM transaction_splits WHERE transaction_id = %s AND sort_order = 1", (txn,))), "A split needs at least two lines")
+        self.assertEqual(self._rejected(lambda: self.db.execute("UPDATE transactions SET amount = -60 WHERE id = %s", (txn,))),
+                         "Split lines must add up to the transaction amount")
+        self.assertEqual(self._rejected(lambda: self.db.execute(
+            "UPDATE transaction_splits SET amount = 30 WHERE transaction_id = %s AND sort_order = 0", (txn,))),
+            "Split lines must have the same sign as the transaction")
+        self.assertEqual(count(), 2)
+        import signs
+
+        self.assertEqual(signs.flip_signs(self.uid, [txn]), 1)
+        amounts = [r["amount"] for r in self.db.query("SELECT amount FROM transaction_splits WHERE transaction_id = %s ORDER BY sort_order", (txn,))]
+        self.assertEqual(amounts, [Decimal("30.00"), Decimal("20.00")])
+        self.db.execute("DELETE FROM transaction_splits WHERE transaction_id = %s", (txn,))
+        self.assertEqual(count(), 0)
+
+    def test_split_lines_attribute_category_reports_without_changing_totals(self):
+        import reports
+
+        groceries, shopping = self._cat("groceries"), self._cat("shopping")
+        txn = self._insert_txn("-80.00", groceries, "confirmed", "s2")["id"]
+        self.db.execute_values("INSERT INTO transaction_splits (transaction_id, category_id, amount, sort_order) VALUES %s",
+                               [(txn, groceries, Decimal("-50.00"), 0), (txn, shopping, Decimal("-30.00"), 1)])
+        day = date(2026, 1, 5)
+        by_cat = {c["id"]: (c["total"], c["count"]) for c in reports.by_category(self.uid, day, day, level="sub")}
+        self.assertEqual((by_cat[groceries], by_cat[shopping]), ((50.0, 1), (30.0, 1)))
+        self.assertEqual(reports.summary(self.uid, day, day)["expenses"], 80.0)
+        self.db.execute("DELETE FROM transactions WHERE id = %s", (txn,))
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM transaction_splits WHERE transaction_id = %s", (txn,), one=True)["n"], 0)
+
     def test_reimport_skips_every_row_and_discard_rolls_back(self):
         import importer
 

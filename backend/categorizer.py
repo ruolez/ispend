@@ -8,7 +8,7 @@ from rapidfuzz import fuzz, process
 import builtin_hints
 import db
 import rules as rules_mod
-from util import record_events
+from util import record_events, drop_splits
 
 FUZZY_CUTOFF = 90  # plain ratio: near-identical keys only, never token subsets (UBER vs UBER EATS)
 
@@ -156,6 +156,7 @@ def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manua
             (ids,),
         )
         record_events([(i, "manual", {"category_id": None}, user_id) for i in ids])
+        drop_splits(ids, user_id, "recategorized")
         return len(ids)
     db.execute(
         """UPDATE transactions SET category_id = %s, category_status = 'confirmed', category_source = %s,
@@ -165,6 +166,7 @@ def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manua
     )
     record_events([(r["id"], source if source in ("manual", "merchant", "ai", "rule") else "manual",
                     {"category_id": category_id}, user_id) for r in rows])
+    drop_splits(ids, user_id, "recategorized")
     if learn_memory:
         seen = {}
         for r in rows:

@@ -1,6 +1,10 @@
-"""Verifies the committed qa_flows report snapshot (qa/fixtures/report-snapshots/qa_flows) against
-the running stack. Skips when the snapshot or the qa_flows user is missing, or when the account
-holds no transactions (test_flows.py must have run its import flow first).
+"""Verifies a captured report snapshot against the running stack.
+
+No snapshot is committed: `test_flows.py` deletes and re-creates qa_flows on every run, so its
+account and category ids (and therefore the payloads) differ from run to run. Capture and verify
+around a change instead — `report_snapshot.py capture --user admin --dir <path outside the repo>`
+before a migration, `verify` after — and point this test at that directory when you want it in a
+pytest run. It skips when the directory is missing.
 
     <venv>/bin/pytest qa/e2e/test_report_snapshot.py -q -p no:cacheprovider
 Set REPORT_SNAPSHOT_DIR / REPORT_SNAPSHOT_USER to verify another capture (e.g. admin's, kept outside the repo).

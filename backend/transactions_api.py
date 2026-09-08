@@ -12,9 +12,10 @@ import dedupe
 import merchant
 import config
 import db
+import splits
 import transfers
 from auth import login_required
-from util import (api_error, audit, clean_restore_items, csv_safe, json_body, parse_int_list, record_event, record_events,
+from util import (drop_splits, api_error, audit, clean_restore_items, csv_safe, json_body, parse_int_list, record_event, record_events,
                   row_json, rows_json, snapshot, to_int)
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
@@ -23,7 +24,8 @@ ITEM_FIELDS = """t.id, t.account_id, t.statement_id, t.txn_date, t.posted_date, 
     t.description_raw, t.description_clean, t.merchant_key, t.merchant_name,
     t.category_id, t.category_status, t.category_source, t.category_rule_id, t.category_confidence,
     t.is_transfer, t.transfer_pair_id, t.is_excluded, t.notes, t.created_at, t.updated_at,
-    COALESCE((SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) FROM transaction_tags tt WHERE tt.transaction_id = t.id), ARRAY[]::int[]) AS tag_ids"""
+    COALESCE((SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) FROM transaction_tags tt WHERE tt.transaction_id = t.id), ARRAY[]::int[]) AS tag_ids,
+    (SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count"""
 
 RANGES = ("this-week", "last-week", "this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all")
 STATUSES = ("all", "uncategorized", "suggested", "confirmed", "transfer", "excluded")
@@ -121,8 +123,10 @@ def build_filters(args, user_id):
         cat_ids = parse_int_list([c for c in raw_cats if c != "none"])
         parts = []
         if cat_ids:
-            parts.append("t.category_id = ANY(%s) OR t.category_id IN (SELECT id FROM categories WHERE parent_id = ANY(%s))")
-            params.extend([cat_ids, cat_ids])
+            parts.append("t.category_id = ANY(%s) OR t.category_id IN (SELECT id FROM categories WHERE parent_id = ANY(%s))"
+                         " OR EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id AND (s.category_id = ANY(%s)"
+                         " OR s.category_id IN (SELECT id FROM categories WHERE parent_id = ANY(%s))))")
+            params.extend([cat_ids, cat_ids, cat_ids, cat_ids])
         if "none" in raw_cats:
             parts.append("t.category_id IS NULL")
         if parts:
@@ -195,6 +199,8 @@ def build_filters(args, user_id):
         elif tag_ids:
             sql += " AND EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag_id = ANY(%s))"
             params.append(tag_ids)
+    if args.get("split") in ("1", "true"):
+        sql += " AND EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)"
     return sql, params
 
 
@@ -327,7 +333,9 @@ def export_csv():
         f"""SELECT t.txn_date, a.name AS account, t.description_raw, t.merchant_name,
                    COALESCE(p.name || ' > ' || c.name, c.name) AS category, t.amount, t.currency, t.notes,
                    t.is_transfer,
-                   (SELECT string_agg(g.name, '; ' ORDER BY g.name) FROM transaction_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.transaction_id = t.id) AS tags
+                   (SELECT string_agg(g.name, '; ' ORDER BY g.name) FROM transaction_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.transaction_id = t.id) AS tags,
+                   (SELECT string_agg(COALESCE(sc.name, 'Uncategorized') || ' ' || to_char(abs(s.amount), 'FM999999990.00'), ' · ' ORDER BY s.sort_order, s.id)
+                    FROM transaction_splits s LEFT JOIN categories sc ON sc.id = s.category_id WHERE s.transaction_id = t.id) AS split_lines
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
@@ -339,7 +347,7 @@ def export_csv():
     def generate():
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags"])
+        writer.writerow(["Date", "Account", "Description", "Merchant", "Category", "Amount", "Currency", "Notes", "Transfer", "Tags", "Split"])
         yield buf.getvalue()
         for r in rows:
             buf.seek(0)
@@ -347,7 +355,7 @@ def export_csv():
             writer.writerow([
                 r["txn_date"].isoformat(), csv_safe(r["account"]), csv_safe(r["description_raw"]),
                 csv_safe(r["merchant_name"]), csv_safe(r["category"] or ""), f"{r['amount']:.2f}", r["currency"],
-                csv_safe(r["notes"] or ""), "yes" if r["is_transfer"] else "", csv_safe(r["tags"] or ""),
+                csv_safe(r["notes"] or ""), "yes" if r["is_transfer"] else "", csv_safe(r["tags"] or ""), csv_safe(r["split_lines"] or ""),
             ])
             yield buf.getvalue()
 
@@ -478,7 +486,65 @@ def get_transaction(txn_id):
         statement = db.query("SELECT id, original_filename, bank_profile FROM statements WHERE id = %s",
                              (row["statement_id"],), one=True)
     return jsonify({**row_json(row), "events": _events(txn_id), "merchant_others": rows_json(others),
-                    "statement": statement})
+                    "statement": statement, "splits": _splits(txn_id)})
+
+
+def _splits(txn_id):
+    rows = db.query(
+        """SELECT s.id, s.category_id, s.amount, s.note, s.sort_order, c.name AS category_name, c.color AS category_color,
+                  c.icon AS category_icon, c.parent_id AS category_parent_id
+           FROM transaction_splits s LEFT JOIN categories c ON c.id = s.category_id
+           WHERE s.transaction_id = %s ORDER BY s.sort_order, s.id""",
+        (txn_id,),
+    ) or []
+    return rows_json(rows)
+
+
+@bp.put("/<int:txn_id>/splits")
+@login_required
+def set_splits(txn_id):
+    """Replace the split lines (>= 2, same sign, summing to the amount); the first line's category
+    becomes the row's primary category. The deferred DB trigger backs up this validation."""
+    uid = session["user_id"]
+    row = _get_own(txn_id, uid)
+    if not row:
+        return api_error("Transaction not found", 404)
+    if row["is_transfer"]:
+        return api_error("Transfers cannot be split")
+    lines, problem = splits.validate_splits(row["amount"], json_body().get("lines"))
+    if problem:
+        return api_error(problem)
+    cat_ids = sorted({ln["category_id"] for ln in lines})
+    own_cats = db.query("SELECT id, kind FROM categories WHERE user_id = %s AND id = ANY(%s)", (uid, cat_ids)) or []
+    if len(own_cats) != len(cat_ids):
+        return api_error("Category not found", 404)
+    if any(c["kind"] == "transfer" for c in own_cats):
+        return api_error("Transfer categories cannot be used in a split")
+    with db.transaction():
+        db.execute("DELETE FROM transaction_splits WHERE transaction_id = %s", (txn_id,), commit=False)
+        db.execute_values(
+            "INSERT INTO transaction_splits (transaction_id, category_id, amount, note, sort_order) VALUES %s",
+            [(txn_id, ln["category_id"], ln["amount"], ln["note"], i) for i, ln in enumerate(lines)], commit=False,
+        )
+        db.execute(
+            """UPDATE transactions SET category_id = %s, category_status = 'confirmed', category_source = 'manual',
+                   category_rule_id = NULL, category_confidence = 1.0, updated_at = now() WHERE id = %s""",
+            (lines[0]["category_id"], txn_id), commit=False,
+        )
+        record_event(txn_id, "split", {"lines": len(lines), "category_ids": [ln["category_id"] for ln in lines]}, uid, commit=False)
+    audit("transaction.split", {"id": txn_id, "lines": len(lines)})
+    return jsonify({**row_json(_get_own(txn_id, uid)), "splits": _splits(txn_id)})
+
+
+@bp.delete("/<int:txn_id>/splits")
+@login_required
+def clear_splits(txn_id):
+    uid = session["user_id"]
+    if not _get_own(txn_id, uid):
+        return api_error("Transaction not found", 404)
+    removed = drop_splits([txn_id], uid, "unsplit")
+    audit("transaction.unsplit", {"id": txn_id})
+    return jsonify({**row_json(_get_own(txn_id, uid)), "splits": [], "removed": bool(removed)})
 
 
 @bp.get("/<int:txn_id>/events")
@@ -582,6 +648,7 @@ def update_transaction(txn_id):
                 (transfers_cat, transfers_cat, txn_id),
             )
             record_event(txn_id, "transfer", {"is_transfer": True}, uid)
+            drop_splits([txn_id], uid, "transfer")
         else:
             transfers.unpair(uid, txn_id)
     if data.get("is_excluded") is not None and not data.get("is_transfer"):
@@ -706,6 +773,7 @@ def bulk():
             (uid, touched),
         ) if touched else 0
         record_events([(i, "manual", {"rejected": True}, uid) for i in touched])
+        drop_splits(touched, uid, "rejected")
     elif action == "set_transfer":
         transfers_cat = transfers._transfer_category_id(uid, set())
         updated = db.execute(
@@ -717,6 +785,7 @@ def bulk():
             (transfers_cat, transfers_cat, own),
         )
         record_events([(i, "transfer", {"is_transfer": True}, uid) for i in own])
+        drop_splits(own, uid, "transfer")
     elif action == "unset_transfer":
         pairs = [r["transfer_pair_id"] for r in (db.query(
             "SELECT transfer_pair_id FROM transactions WHERE id = ANY(%s) AND transfer_pair_id IS NOT NULL", (own,)) or [])]

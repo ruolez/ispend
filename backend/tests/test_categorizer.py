@@ -127,6 +127,15 @@ class ApplyManualTest(unittest.TestCase):
         self.assertEqual([c for c in fake.calls if "merchant_memory" in str(c[1])], [])
         self.assertIn("category_id = NULL", [c for c in fake.calls if c[0] == "execute"][0][1])
 
+    def test_recategorising_drops_split_lines(self):
+        fake = FakeDB(lambda sql, params: [{"id": 1, "merchant_key": "X", "merchant_name": "X"}] if sql.strip().startswith("SELECT") else None)
+        with patch_db(fake):
+            categorizer.apply_manual(1, [1], 5, learn_memory=False)
+        self.assertEqual([c[2] for c in fake.calls if c[0] == "execute" and "DELETE FROM transaction_splits" in c[1]], [([1],)])
+        events = [c for c in fake.calls if c[0] == "execute_values"]
+        self.assertEqual([e[2][0][1] for e in events], ["manual", "split"])
+        self.assertIn('"reason": "recategorized"', events[1][2][0][2])
+
     def test_empty_ids(self):
         with patch_db(FakeDB()):
             self.assertEqual(categorizer.apply_manual(1, [], 5), 0)

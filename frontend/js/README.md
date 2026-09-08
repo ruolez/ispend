@@ -147,6 +147,9 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
 
+## Splits
+`PUT /api/transactions/:id/splits {lines:[{category_id, amount, note}]}` (>= 2 lines, same sign, sum = amount; first line becomes the primary category), `DELETE` unsplits. Rows carry `split_count`; detail carries `splits[]`; `?split=1` filters. Category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line; summary/trends/merchants keep the parent amount. Recategorising, rejecting or marking a transfer drops the split (event `split {removed}`).
+
 ## Tags
 `/api/tags` CRUD; rows carry `tag_ids`; `PUT /api/transactions/:id {tag_ids}` replaces, bulk `tag`/`untag {tag_ids}` add or remove; list filter `?tag=1,2|none[&tag_mode=all]`, `facets.tags`. Chips: `.tagchip` (neutral surface + coloured dot). Tag manager lives on the Categories page.
 
