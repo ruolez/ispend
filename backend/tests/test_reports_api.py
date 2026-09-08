@@ -44,6 +44,17 @@ class ResolveRangeTest(unittest.TestCase):
             r = reports.resolve_range(name, now=NOW)
             self.assertEqual((r["start"], r["end"], r["prev_start"], r["prev_end"]), expected, name)
 
+    def test_week_presets_follow_the_week_start_preference(self):
+        # NOW (2026-09-03) is a Thursday
+        r = reports.resolve_range("this-week", now=NOW)
+        self.assertEqual((r["start"], r["end"], r["prev_start"], r["prev_end"]), (date(2026, 8, 30), date(2026, 9, 5), date(2026, 8, 23), date(2026, 8, 29)))
+        r = reports.resolve_range("this-week", now=NOW, week_start=1)
+        self.assertEqual((r["start"], r["end"]), (date(2026, 8, 31), date(2026, 9, 6)))
+        r = reports.resolve_range("last-week", now=NOW, week_start=1)
+        self.assertEqual((r["start"], r["end"], r["prev_start"], r["prev_end"]), (date(2026, 8, 24), date(2026, 8, 30), date(2026, 8, 17), date(2026, 8, 23)))
+        self.assertEqual(reports.week_bounds(date(2026, 1, 1), 0), (date(2025, 12, 28), date(2026, 1, 3)))  # across a year boundary
+        self.assertEqual(reports.week_bounds(date(2026, 9, 6), 0), (date(2026, 9, 6), date(2026, 9, 12)))  # a Sunday starts its own week
+
     def test_custom_and_all(self):
         r = reports.resolve_range(None, "2026-03-01", "2026-03-10", now=NOW)
         self.assertEqual((r["name"], r["start"], r["end"], r["prev_start"], r["prev_end"]),

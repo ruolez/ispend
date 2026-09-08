@@ -27,7 +27,9 @@ def _range():
         value = request.args.get(key)
         if value and reports._parse_date(value) is None:
             abort(400, f"{key} must be a date (YYYY-MM-DD)")
-    return reports.resolve_range(request.args.get("range"), request.args.get("from"), request.args.get("to"))
+    rng = request.args.get("range")
+    week_start = reports.user_week_start(_uid()) if rng in ("this-week", "last-week") else 0
+    return reports.resolve_range(rng, request.args.get("from"), request.args.get("to"), week_start=week_start)
 
 
 def _csv_response(rows, filename, columns=None):

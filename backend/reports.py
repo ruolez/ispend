@@ -36,6 +36,7 @@ def cashflow_where(include_transfers=False):
     return "t.user_id = %s" + ("" if include_transfers else _NOT_TRANSFER)
 
 RANGE_LABELS = {
+    "this-week": "This week", "last-week": "Last week",
     "this-month": "This month", "last-month": "Last month", "last-30": "Last 30 days",
     "last-90": "Last 90 days", "this-year": "This year", "last-year": "Last year",
     "all": "All time", "custom": "Custom",
@@ -77,11 +78,31 @@ def _parse_date(s):
         return None
 
 
-def resolve_range(range_name=None, date_from=None, date_to=None, now=None):
+def week_bounds(ref, week_start=0):
+    """(first, last) day of ref's week; week_start counts Sunday as 0 like JavaScript's getDay()."""
+    dow = (ref.weekday() + 1 - int(week_start or 0)) % 7
+    start = ref - timedelta(days=dow)
+    return start, start + timedelta(days=6)
+
+
+def user_week_start(uid):
+    row = db.query("SELECT preferences->>'week_start' AS ws FROM users WHERE id = %s", (uid,), one=True)
+    try:
+        return int((row or {}).get("ws") or 0) % 7
+    except (TypeError, ValueError):
+        return 0
+
+
+def resolve_range(range_name=None, date_from=None, date_to=None, now=None, week_start=0):
     """-> {name, label, start, end, prev_start, prev_end}; end is inclusive."""
     t = now or today()
     name = (range_name or "").strip() or ("custom" if (date_from or date_to) else "this-month")
-    if name == "this-month":
+    if name in ("this-week", "last-week"):
+        start, end = week_bounds(t, week_start)
+        if name == "last-week":
+            start, end = start - timedelta(days=7), end - timedelta(days=7)
+        prev_start, prev_end = start - timedelta(days=7), end - timedelta(days=7)
+    elif name == "this-month":
         start, end = month_bounds(t.year, t.month)
         py, pm = shift_month(t.year, t.month, -1)
         prev_start, prev_end = month_bounds(py, pm)
@@ -469,7 +490,7 @@ def anomalies(uid, lookback_days=45):
 # ---------- Dashboard aggregate ----------
 
 def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=None):
-    r = resolve_range(range_name or ("custom" if (date_from or date_to) else "this-month"), date_from, date_to)
+    r = resolve_range(range_name or ("custom" if (date_from or date_to) else "this-month"), date_from, date_to, week_start=user_week_start(uid))
     cur = summary(uid, r["start"], r["end"], account_ids)
     prev = summary(uid, r["prev_start"], r["prev_end"], account_ids) if r["prev_start"] else None
     cats = by_category(uid, r["start"], r["end"], "top", account_ids)

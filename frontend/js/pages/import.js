@@ -8,6 +8,7 @@ const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credi
 const LAST_ACCOUNT_KEY = 'ispend.importAccount';
 function rememberAccount(id) { try { if (id) localStorage.setItem(LAST_ACCOUNT_KEY, String(id)); } catch { /* ignore */ } }
 function rememberedAccount() { try { const v = Number(localStorage.getItem(LAST_ACCOUNT_KEY)); return imp.accounts.some((a) => a.id === v) ? v : null; } catch { return null; } }
+function defaultAccount() { const v = Number((((window.currentUser || {}).preferences) || {}).default_account_id) || null; return v && imp.accounts.some((a) => a.id === v) ? v : null; }
 
 const imp = {
   step: 'upload',
@@ -446,9 +447,10 @@ function autoAccount(f) {
   if (!s || s.status !== 'previewed' || s.account_id || f.autoAccountTried) return false;
   f.autoAccountTried = true;
   const suggested = s.suggested_account_id && imp.accounts.some((a) => a.id === s.suggested_account_id) ? s.suggested_account_id : null;
-  const pick = suggested || rememberedAccount();
+  const remembered = rememberedAccount();
+  const pick = suggested || remembered || defaultAccount();
   if (!pick) return false;
-  changeAccount(f, pick, { reason: suggested ? '(matched from the statement)' : '(your last import)' });
+  changeAccount(f, pick, { reason: suggested ? '(matched from the statement)' : remembered ? '(your last import)' : '(your default account)' });
   return true;
 }
 async function setRows(f, body) {

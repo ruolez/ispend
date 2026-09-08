@@ -124,6 +124,8 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
 
 /* ---------- Date ranges ---------- */
 const RANGE_PRESETS = [
+  { key: 'this-week', label: 'This week' },
+  { key: 'last-week', label: 'Last week' },
   { key: 'this-month', label: 'This month' },
   { key: 'last-month', label: 'Last month' },
   { key: 'last-30', label: 'Last 30 days' },
@@ -138,7 +140,11 @@ function rangeDates(value) {
   const iso = (d) => toISODate(d);
   if (!value || value.preset === 'all' || (!value.preset && !value.from && !value.to)) return { from: null, to: null };
   if (value.from || value.to) return { from: value.from || null, to: value.to || null };
+  const ws = Number((((window.currentUser || {}).preferences) || {}).week_start) || 0; // 0 = Sunday, like Date#getDay
+  const weekStart = new Date(y, m, today.getDate() - ((today.getDay() - ws + 7) % 7));
   switch (value.preset) {
+    case 'this-week': return { from: iso(weekStart), to: iso(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6)) };
+    case 'last-week': return { from: iso(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7)), to: iso(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 1)) };
     case 'this-month': return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
     case 'last-month': return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
     case 'last-30': return { from: iso(new Date(y, m, today.getDate() - 29)), to: iso(today) };

@@ -7,6 +7,8 @@ const isInc = () => state.flow === 'income';
 const flowWord = () => (isInc() ? 'income' : 'spending');
 
 initNav('reports').then(async (me) => {
+  const ob = ((me && me.preferences) || {}).onboarding || {};
+  if (!ob.reports_opened) api('/api/auth/me/preferences', { method: 'PUT', body: { onboarding: { ...ob, reports_opened: true } } }).then((p) => { if (window.currentUser) window.currentUser.preferences = p; }).catch(() => {});
   state.currency = await store.displayCurrency();
   const q = qs();
   state.tab = TABS.includes(q.tab) ? q.tab : 'category';
@@ -18,6 +20,10 @@ initNav('reports').then(async (me) => {
   state.vs = q.vs || null;
   state.transfers = q.transfers === '1';
   state.flow = q.flow === 'income' ? 'income' : 'spending';
+  state.pct = q.pct === '1';
+  if (/^[a-z_]+:(asc|desc)$/.test(q.msort || '')) { const [key, dir] = q.msort.split(':'); state.sort = { key, dir }; }
+  state.trendSel = q.trend ? new Set(q.trend.split(',').filter(Boolean)) : null;
+  state.iso = /^(c\d+|i\d+)$/.test(q.iso || '') ? q.iso : null;
   paintFlow();
   state.flowSeg = ui.segmented($('#flow-seg'), { onChange: (b) => { if (!b || b.dataset.flow === state.flow) return; setFlow(b.dataset.flow); sync(); loadTab(true); } });
   paintFlow();
@@ -40,7 +46,9 @@ initNav('reports').then(async (me) => {
   switchTab(state.tab, true);
 });
 
-function setFlow(flow) { state.flow = flow; isolated = null; state.trendSel = null; paintFlow(); }
+function setFlow(flow) { state.flow = flow; isolated = null; state.iso = null; state.trendSel = null; paintFlow(); }
+/* Stable key for a report series: its category id, else its position (used by ?trend= and ?iso=). */
+function seriesKey(s, i) { return s.category_id != null ? `c${s.category_id}` : `i${i}`; }
 function paintFlow() { if (state.flowSeg) state.flowSeg.select(state.flow === 'income' ? 1 : 0, { focus: false, silent: true }); }
 function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Transfers and excluded transactions are left out.'; }
 function shiftMonth(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
@@ -53,7 +61,8 @@ function renderAcctBtn() {
   $('#acct-btn').innerHTML = `${icon('landmark', 'ico-sm')}<span>${esc(label)}</span>${icon('chevron-down', 'ico-sm')}`;
 }
 function sync() {
-  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, vs: state.tab === 'compare' && state.vs && state.vs !== prevMonthOf(state.month) ? state.vs : null, transfers: state.transfers ? '1' : null, flow: isInc() ? 'income' : null }, { replace: true });
+  setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, vs: state.tab === 'compare' && state.vs && state.vs !== prevMonthOf(state.month) ? state.vs : null, transfers: state.transfers ? '1' : null, flow: isInc() ? 'income' : null,
+    pct: state.pct ? '1' : null, msort: state.sort.key === 'total' && state.sort.dir === 'desc' ? null : `${state.sort.key}:${state.sort.dir}`, trend: state.trendSel ? Array.from(state.trendSel).join(',') : null, iso: state.iso || null }, { replace: true });
 }
 function switchTab(tab, noPush) {
   state.tab = tab;
@@ -117,7 +126,7 @@ async function loadCategory(force) {
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
       <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
-  if (!state.pctSeg) state.pctSeg = ui.segmented($('#pct-seg'), { onChange: (b) => { if (!b) return; state.pct = b.dataset.mode === 'pct'; loadCategory(); } });
+  if (!state.pctSeg) state.pctSeg = ui.segmented($('#pct-seg'), { onChange: (b) => { if (!b) return; state.pct = b.dataset.mode === 'pct'; sync(); loadCategory(); } });
   state.pctSeg.select(state.pct ? 1 : 0, { focus: false, silent: true });
   const rq = rangeToQuery(state.range);
   const seq = ++state.seq;
@@ -142,6 +151,7 @@ async function fillParentSelect() {
   sel.addEventListener('change', () => { state.parent = sel.value ? Number(sel.value) : null; isolated = null; setQs({ parent: state.parent }, { replace: true, merge: true }); loadTab(true); });
 }
 function renderStack(data) {
+  if (state.iso) { const k = data.series.findIndex((s, i) => seriesKey(s, i) === state.iso); isolated = k >= 0 ? k : null; }
   fillParentSelect();
   const title = $('#stack-title'); if (title) title.textContent = data.parent_id ? `${isInc() ? 'Income s' : 'S'}ubcategories by month` : `${isInc() ? 'Income' : 'Spending'} by month`;
   const body = $('#ch-stack').closest('.chart-body'); body.classList.remove('is-loading');
@@ -161,7 +171,7 @@ function renderStack(data) {
     },
   }));
   legend.innerHTML = data.series.map((s, i) => `<button type="button" class="legend-item ${isolated != null && isolated !== i ? 'is-off' : ''}" data-i="${i}"><span class="legend-name"><i class="dot" style="--c:${seriesColor(s)}"></i>${esc(s.name)}</span><span class="legend-val">${fmtMoney(s.total, cur)}</span></button>`).join('');
-  legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const i = Number(b.dataset.i); isolated = isolated === i ? null : i; chart.data.datasets.forEach((d, j) => { chart.setDatasetVisibility(j, isolated == null || isolated === j); }); chart.update(); $$('.legend-item', legend).forEach((l, j) => l.classList.toggle('is-off', isolated != null && isolated !== j)); };
+  legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const i = Number(b.dataset.i); isolated = isolated === i ? null : i; state.iso = isolated == null ? null : seriesKey(data.series[i], i); sync(); chart.data.datasets.forEach((d, j) => { chart.setDatasetVisibility(j, isolated == null || isolated === j); }); chart.update(); $$('.legend-item', legend).forEach((l, j) => l.classList.toggle('is-off', isolated != null && isolated !== j)); };
 }
 async function renderCatTable(res) {
   $('#cat-range-label').textContent = rangeLabel(state.range);
@@ -199,7 +209,7 @@ function renderTrend(data) {
   if (!state.trendSel) state.trendSel = new Set(['total', ...data.series.slice(0, 2).map((s, i) => keyOf(s, i))]);
   const colorOf = (s) => s.key === 'total' ? charts.theme().text2 : seriesColor(s);
   chipsEl.innerHTML = all.map((s) => `<button type="button" class="chip ${state.trendSel.has(s.key) ? 'active' : ''}" data-key="${s.key}" style="--c:${colorOf(s)}" aria-pressed="${state.trendSel.has(s.key)}"><i class="dot" style="--c:${colorOf(s)}"></i>${esc(s.name)}</button>`).join('');
-  chipsEl.onclick = (e) => { const b = e.target.closest('[data-key]'); if (!b) return; const k = b.dataset.key; if (state.trendSel.has(k)) state.trendSel.delete(k); else { if (state.trendSel.size >= 4) { toast('Up to 4 lines at a time', { type: 'info', duration: 1500 }); return; } state.trendSel.add(k); } renderTrend(data); };
+  chipsEl.onclick = (e) => { const b = e.target.closest('[data-key]'); if (!b) return; const k = b.dataset.key; if (state.trendSel.has(k)) state.trendSel.delete(k); else { if (state.trendSel.size >= 4) { toast('Up to 4 lines at a time', { type: 'info', duration: 1500 }); return; } state.trendSel.add(k); } sync(); renderTrend(data); };
   const sel = all.filter((s) => state.trendSel.has(s.key));
   charts.makeChart($('#ch-trend'), (t) => ({
     type: 'line',
@@ -225,7 +235,7 @@ function renderMerchants(res, cats) {
   const tb = $('#merch-table'); const cur = state.currency;
   const { key, dir } = state.sort;
   const rows = [...res.merchants].sort((a, b) => { const va = a[key], vb = b[key]; const r = typeof va === 'string' ? va.localeCompare(vb) : (va - vb); return dir === 'asc' ? r : -r; });
-  $$('#panel-merchants th.sortable').forEach((th) => { th.setAttribute('aria-sort', th.dataset.sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'); th.onclick = () => { state.sort = { key: th.dataset.sort, dir: state.sort.key === th.dataset.sort && state.sort.dir === 'desc' ? 'asc' : 'desc' }; renderMerchants(res, cats); }; });
+  $$('#panel-merchants th.sortable').forEach((th) => { th.setAttribute('aria-sort', th.dataset.sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'); th.onclick = () => { state.sort = { key: th.dataset.sort, dir: state.sort.key === th.dataset.sort && state.sort.dir === 'desc' ? 'asc' : 'desc' }; sync(); renderMerchants(res, cats); }; });
   if (!rows.length) { tb.innerHTML = `<tr><td colspan="7">${ui.emptyState({ icon: 'search', title: isInc() ? 'No income in this period' : 'No merchants in this period' })}</td></tr>`; return; }
   const max = Math.max(...rows.map((m) => m.total));
   tb.innerHTML = rows.map((m, i) => { const c = cats.get(m.category_id); const color = c ? (c.color || c.parent_color) : null; return `<tr class="is-clickable" data-href="/transactions.html${toQuery({ q: m.merchant_name, range: 'all' })}">

@@ -81,6 +81,13 @@ class RangeBoundsTest(unittest.TestCase):
         self.assertEqual(tapi.range_bounds("last-year", ref), (date(2025, 1, 1), date(2025, 12, 31)))
         self.assertEqual(tapi.range_bounds("all", ref), (None, None))
 
+    def test_week_presets(self):
+        sunday = date(2026, 3, 15)
+        self.assertEqual(tapi.range_bounds("this-week", sunday), (date(2026, 3, 15), date(2026, 3, 21)))
+        self.assertEqual(tapi.range_bounds("this-week", sunday, week_start=1), (date(2026, 3, 9), date(2026, 3, 15)))
+        self.assertEqual(tapi.range_bounds("last-week", sunday), (date(2026, 3, 8), date(2026, 3, 14)))
+        self.assertEqual(tapi.week_bounds(date(2026, 1, 1), 6), (date(2025, 12, 27), date(2026, 1, 2)))
+
     def test_last_month_across_january(self):
         self.assertEqual(tapi.range_bounds("last-month", date(2026, 1, 5)), (date(2025, 12, 1), date(2025, 12, 31)))
 

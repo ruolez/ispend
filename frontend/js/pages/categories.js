@@ -2,6 +2,9 @@
 const SLOTS = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
 const KIND_LABEL = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 const state = { tree: [], flat: [], totals: {}, counts: {}, selected: null, currency: 'USD', dragId: null };
+/* 6-month trend per category: a rename or a colour change re-renders the panel, and re-fetching
+   six months of reports for unchanged numbers is wasted work. load() clears it. */
+const trendCache = new Map();
 const COLLAPSED_KEY = 'ispend.catCollapsed';
 let collapsed = new Set();
 try { collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')); } catch { collapsed = new Set(); }
@@ -20,22 +23,28 @@ initNav('categories').then(async (me) => {
   await load();
 });
 
+/* Tree-only refresh for edits that do not move money between categories (rename, colour, reorder, create). */
+async function refreshTree() {
+  state.tree = await store.categories({ force: true });
+  state.flat = await store.categoriesFlat();
+  render();
+  renderSide();
+}
 async function load() {
+  trendCache.clear();
   $('#cat-error').innerHTML = '';
   if (!state.tree.length) $('#cat-tree').innerHTML = `<div class="cat-empty">${ui.skeletonList(8)}</div>`;
   try {
-    const [tree, top, sub, topInc, subInc] = await Promise.all([
+    const [tree, sub, subInc] = await Promise.all([
       store.categories({ force: true }),
-      api('/api/reports/by-category?range=this-month&level=top').catch(() => ({ categories: [] })),
       api('/api/reports/by-category?range=this-month&level=sub').catch(() => ({ categories: [] })),
-      api('/api/reports/by-category?range=this-month&level=top&flow=income').catch(() => ({ categories: [] })),
       api('/api/reports/by-category?range=this-month&level=sub&flow=income').catch(() => ({ categories: [] })),
     ]);
     state.tree = tree;
     state.flat = await store.categoriesFlat();
     state.totals = {};
-    [top, topInc].forEach((r) => r.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; }));
     [sub, subInc].forEach((r) => r.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; }));
+    tree.forEach((p) => { state.totals[p.id] = (state.totals[p.id] || 0) + (p.children || []).reduce((a, ch) => a + (state.totals[ch.id] || 0), 0); });
   } catch (err) {
     $('#cat-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
     return;
@@ -160,13 +169,22 @@ async function onAction(e) {
 
 /* ---------- Select + side panel ---------- */
 function select(id) {
-  state.selected = state.selected === id ? null : id;
+  // on narrow screens the panel is a drawer, so re-selecting a row reopens it instead of clearing the selection
+  const narrow = window.matchMedia('(max-width: 960px)').matches;
+  state.selected = !narrow && state.selected === id ? null : id;
   setQs({ id: state.selected }, { replace: true, merge: true });
   $$('.cat-row').forEach((r) => { const on = Number(r.dataset.id) === state.selected; r.classList.toggle('is-selected', on); r.setAttribute('aria-selected', on); });
   if (state.selected) setRoving($(`.cat-row[data-id="${state.selected}"]`));
   const selRow = state.selected ? $(`.cat-row[data-id="${state.selected}"] .cat-name`) : null;
   setPageTitle(selRow ? selRow.textContent.trim() : '');
   renderSide();
+  // below 960px the side column sits under the tree, off-screen: open the panel as a drawer instead
+  const cat = state.selected ? findCat(state.selected) : null;
+  if (cat && narrow) {
+    const d = ui.drawer({ title: cat.name, html: sideHtml(cat), width: 420 });
+    d.el.classList.add('cat-side-drawer');
+    loadSideTrend(cat, d.el);
+  }
 }
 
 async function renderSide() {
@@ -176,9 +194,13 @@ async function renderSide() {
     host.innerHTML = `<div class="card"><div class="card-body">${ui.emptyState({ icon: 'tags', title: 'Select a category', body: 'See its recent trend, counts and actions here.' })}</div></div>`;
     return;
   }
+  host.innerHTML = `<div class="card"><div class="card-body">${sideHtml(cat)}</div></div>`;
+  loadSideTrend(cat);
+}
+function sideHtml(cat) {
   const total = state.totals[cat.id] || 0;
   const count = cat.depth === 0 ? countOf(state.tree.find((p) => p.id === cat.id) || cat) : (cat.txn_count || 0);
-  host.innerHTML = `<div class="card"><div class="card-body">
+  return `
     <div class="side-head"><button type="button" class="cat-icon cat-icon-lg" data-act="side-icon" data-id="${cat.id}" aria-label="Change icon" style="--c:${catColor(cat.color)}" data-tip="Change icon">${icon(cat.icon || 'tag')}</button>
       <div class="grow"><div class="side-title">${esc(cat.name)}</div><div class="side-sub">${esc(cat.parent_name ? `${cat.parent_name} › subcategory` : `${KIND_LABEL[cat.kind] || 'Expense'} category`)}</div></div></div>
     <div class="side-stats"><div class="side-stat"><div class="l">This month</div><div class="v">${fmtMoney(total, state.currency)}</div></div><div class="side-stat"><div class="l">Transactions</div><div class="v">${fmtNumber(count)}</div></div></div>
@@ -190,8 +212,7 @@ async function renderSide() {
       <button type="button" class="btn btn-ghost btn-sm" data-act="side-color" data-id="${cat.id}">${icon('circle')}Change color</button>
       <button type="button" class="btn btn-ghost btn-sm" data-act="side-merge" data-id="${cat.id}">${icon('split')}Merge into another category</button>
       <button type="button" class="btn btn-ghost btn-sm text-danger" data-act="side-delete" data-id="${cat.id}">${icon('trash')}Delete</button>
-    </div></div></div>`;
-  loadSideTrend(cat);
+    </div>`;
 }
 
 function lastMonths(n) {
@@ -201,11 +222,11 @@ function lastMonths(n) {
 }
 function monthRange(ym) { const [y, m] = ym.split('-').map(Number); return { from: `${ym}-01`, to: `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` }; }
 
-async function loadSideTrend(cat) {
+async function loadSideTrend(cat, root = document) {
   const months = lastMonths(6);
   const level = cat.depth === 0 ? 'top' : 'sub';
-  let values = null;
-  if (level === 'top') {
+  let values = trendCache.get(cat.id) || null;
+  if (!values && level === 'top') {
     // One call: the monthly report already carries the top-level series (top 7 + Other).
     try {
       const data = await api(`/api/reports/monthly${toQuery({ months: 6, ...(cat.kind === 'income' ? { flow: 'income' } : {}) })}`);
@@ -219,8 +240,9 @@ async function loadSideTrend(cat) {
       values = res.map((r) => { const row = r.categories.find((c) => c.id === cat.id); return row ? row.total : 0; });
     } catch { values = months.map(() => 0); }
   }
+  trendCache.set(cat.id, values);
   if (state.selected !== cat.id) return;
-  const canvas = $('#side-chart'); if (!canvas) return;
+  const canvas = $('#side-chart', root); if (!canvas) return;
   try { await loadScript('/vendor/chart.umd.js'); } catch { canvas.closest('.chart-body').classList.remove('is-loading'); return; }
   if (state.selected !== cat.id) return;
   canvas.closest('.chart-body').classList.remove('is-loading');
@@ -245,7 +267,7 @@ function startRename(id) {
     const name = input.value.trim();
     if (!save || !name || name === cat.name) { span.textContent = cat.name; return; }
     span.textContent = name;
-    try { await api(`/api/categories/${id}`, { method: 'PUT', body: { name } }); store.invalidate('categories'); toast('Renamed', { type: 'success' }); await load(); }
+    try { await api(`/api/categories/${id}`, { method: 'PUT', body: { name } }); store.invalidate('categories'); toast('Renamed', { type: 'success' }); await refreshTree(); }
     catch (err) { span.textContent = cat.name; toast(err.message, { type: 'error' }); }
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } e.stopPropagation(); });
@@ -274,7 +296,7 @@ function openStylePopover(anchor, cat, mode = 'color') {
     if (!sw && !ic) return;
     const body = sw ? { color: sw.dataset.color, propagate_color: isParent && (el.querySelector('#prop-color') || {}).checked !== false } : { icon: ic.dataset.icon };
     pop.close();
-    try { await api(`/api/categories/${cat.id}`, { method: 'PUT', body }); store.invalidate('categories'); toast(sw ? 'Color updated' : 'Icon updated', { type: 'success' }); await load(); }
+    try { await api(`/api/categories/${cat.id}`, { method: 'PUT', body }); store.invalidate('categories'); toast(sw ? 'Color updated' : 'Icon updated', { type: 'success' }); await refreshTree(); }
     catch (err) { toast(err.message, { type: 'error' }); }
   });
 }
@@ -298,7 +320,7 @@ function openMenu(anchor, cat) {
 
 /* ---------- Reorder ---------- */
 async function reorderTo(ids) {
-  try { await api('/api/categories/reorder', { method: 'PUT', body: { ids } }); store.invalidate('categories'); await load(); }
+  try { await api('/api/categories/reorder', { method: 'PUT', body: { ids } }); store.invalidate('categories'); await refreshTree(); }
   catch (err) { toast(err.message, { type: 'error' }); }
 }
 function move(id, dir) {
@@ -354,7 +376,7 @@ function openCategoryModal(parent) {
       store.invalidate('categories');
       toast(`Created ${cat.name}`, { type: 'success' });
       state.selected = cat.id;
-      await load();
+      await refreshTree();
     } }],
   });
   m.el.querySelector('#cf-colors').addEventListener('click', (e) => { const b = e.target.closest('.swatch'); if (!b) return; color = b.dataset.color; $$('.swatch', m.el).forEach((s) => s.classList.toggle('active', s === b)); });

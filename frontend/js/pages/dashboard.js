@@ -18,13 +18,14 @@ function setPeriod(v) {
   state.drill = null;
   periodSet(state.period);
   const q = rangeToQuery(state.period);
-  setQs({ range: q.range === 'this-month' ? null : q.range, from: q.from, to: q.to }, { replace: true, merge: true });
+  setQs({ range: q.range === 'this-month' ? null : q.range, from: q.from, to: q.to, drill: null }, { replace: true, merge: true });
   load();
 }
 
 initNav('dashboard').then(async (me) => {
   state.me = me;
   state.period = initialRange(qs(), { preset: 'this-month' });
+  state.drill = Number(qs().drill) || null;
   state.currency = await store.displayCurrency();
   state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setPeriod({ preset: b.dataset.range }) });
   $('[data-month="prev"]').innerHTML = icon('chevron-left');
@@ -38,7 +39,8 @@ initNav('dashboard').then(async (me) => {
   document.body.addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]'); if (!a) return;
     if (a.dataset.act === 'reload') load();
-    if (a.dataset.act === 'drill-up') { state.drill = null; renderDonut(state.data); }
+    if (a.dataset.act === 'drill-up') { state.drill = null; setQs({ drill: null }); renderDonut(state.data); }
+    if (a.dataset.act === 'setup-dismiss') dismissSetup();
   });
   load();
 });
@@ -94,6 +96,8 @@ async function load() {
   if (seq !== state.seq) return;
   state.data = data;
   state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
+  if (state.drill && !(state.subCounts.get(state.drill) > 0)) { state.drill = null; setQs({ drill: null }); }
+  renderSetup(data);
   const hasAny = data.kpis.txn_count > 0 || data.monthly.some((m) => m.spent || m.income) || data.recent.length > 0;
   $('#dash-body').hidden = !hasAny;
   $('#dash-empty').hidden = hasAny;
@@ -118,6 +122,38 @@ async function load() {
   renderIncome(data);
   renderRecent(data);
   renderAttention(data);
+}
+
+/* ---------- first-run checklist ---------- */
+function renderSetup(data) {
+  const host = $('#dash-setup');
+  const s = data && data.setup;
+  const ob = ((state.me && state.me.preferences) || {}).onboarding || {};
+  if (!s || ob.dismissed || s.statements >= 3) { host.hidden = true; return; }
+  const steps = [
+    { done: s.statements > 0, label: 'Import a statement', sub: 'CSV, Excel or PDF from your bank', href: '/import.html' },
+    { done: s.transactions > 0 && s.needs_review === 0, label: 'Review categories', sub: s.needs_review ? `${plural(s.needs_review, 'charge')} waiting for a decision` : 'Confirm what iSpend guessed', href: '/review.html' },
+    { done: s.rules > 0, label: 'Create a rule', sub: 'Categorize future imports automatically', href: '/rules.html?new=1' },
+    { done: !!ob.reports_opened, label: 'Open Reports', sub: 'See where the money goes, month by month', href: '/reports.html' },
+    { done: !!s.ai_configured, label: 'Turn on AI suggestions', sub: 'Optional · needs an OpenRouter key', href: '/settings.html#ai', optional: true },
+  ];
+  const required = steps.filter((x) => !x.optional);
+  const done = required.filter((x) => x.done).length;
+  if (done === required.length) { host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = `<header class="card-head"><h2>Get set up</h2><div class="card-actions"><span class="text-3 fs-sm" id="setup-count">${done} of ${required.length} done</span><button type="button" class="btn btn-ghost btn-xs" data-act="setup-dismiss">Hide</button></div></header>
+    <div class="card-body"><div class="progress mb-3" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="${required.length}" aria-valuenow="${done}"><span style="width:${Math.round((done / required.length) * 100)}%"></span></div>
+    <ol class="setup-steps">${steps.map((x) => `<li class="${x.done ? 'is-done' : ''}">${icon(x.done ? 'check-circle' : 'circle', 'ico-sm')}<a href="${x.href}"><span class="setup-label">${esc(x.label)}${x.optional ? ' <span class="text-4">(optional)</span>' : ''}</span><span class="setup-sub">${esc(x.sub)}</span></a></li>`).join('')}</ol></div>`;
+}
+async function dismissSetup() {
+  const prev = { ...(((state.me && state.me.preferences) || {}).onboarding || {}) };
+  const save = async (ob) => {
+    const p = await api('/api/auth/me/preferences', { method: 'PUT', body: { onboarding: ob } });
+    state.me.preferences = p; if (window.currentUser) window.currentUser.preferences = p;
+    renderSetup(state.data);
+  };
+  try { await save({ ...prev, dismissed: true }); } catch (err) { toast(err.message, { type: 'error' }); return; }
+  ui.undoable('Checklist hidden', () => save({ ...prev, dismissed: false }));
 }
 
 /* ---------- KPIs ---------- */
@@ -286,7 +322,7 @@ async function renderDonut(data) {
 }
 /* First click on a top-level category drills into its subcategories; a leaf (or a second click) opens transactions. */
 function pickCategory(c) {
-  if (!state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0) { state.drill = c.id; renderDonut(state.data); return; }
+  if (!state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0) { state.drill = c.id; setQs({ drill: c.id }); renderDonut(state.data); return; }
   goCategory(c);
 }
 function goCategory(c) {

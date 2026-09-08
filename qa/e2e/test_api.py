@@ -845,7 +845,7 @@ class TestTransactions:
             sorted((t["txn_date"] for t in r.json()["items"]), reverse=True), "invalid sort falls back to -date"
 
     def test_list_range_presets(self, u1, manual):
-        for rng in ("this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all",
+        for rng in ("this-week", "last-week", "this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all",
                     f"month:{manual['year']}-08", "month:2024-13", "bogus"):
             r = u1.get("/api/transactions", params={"range": rng, "account_id": manual["acct"]})
             assert r.status_code == 200, rng
@@ -858,6 +858,17 @@ class TestTransactions:
         last_year = TODAY.year - 1
         items, _ = list_all(u1, account_id=manual["acct"], range="last-year")
         assert all(t["txn_date"].startswith(str(last_year)) for t in items)
+        # the week presets honour the account's week_start preference (0 = Sunday)
+        import datetime as _dt
+        assert u1.put("/api/auth/me/preferences", json={"week_start": 1}).status_code == 200
+        monday = TODAY - _dt.timedelta(days=TODAY.weekday())
+        wk = add_txn(u1, manual["acct"], monday.isoformat(), "-3.00", "QA WEEK MARKER")
+        items, _ = list_all(u1, account_id=manual["acct"], range="this-week")
+        assert any(t["id"] == wk["id"] for t in items)
+        summary = u1.get("/api/reports/summary", params={"range": "this-week"}).json()
+        assert summary["range"]["start"] == monday.isoformat()
+        assert u1.put("/api/auth/me/preferences", json={"week_start": 0}).status_code == 200
+        u1.delete(f"/api/transactions/{wk['id']}")
 
     def test_list_limit_and_cursor_extremes(self, u1, manual):
         a = manual["acct"]

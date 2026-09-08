@@ -796,7 +796,8 @@ function readRuleForm(el, categoryId) {
 /* ---------- manual entry ---------- */
 function openAddModal() {
   const accounts = Array.from(tx.accounts.values()).filter((a) => a.is_active);
-  const preferred = tx.filters.acct.length === 1 ? tx.filters.acct[0] : (accounts[0] || {}).id;
+  const prefDefault = Number((((window.currentUser || {}).preferences) || {}).default_account_id) || null;
+  const preferred = tx.filters.acct.length === 1 ? tx.filters.acct[0] : (prefDefault && accounts.some((a) => a.id === prefDefault)) ? prefDefault : (accounts[0] || {}).id;
   const startNew = !accounts.length;
   let categoryId = null; let kind = 'charge';
   const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];

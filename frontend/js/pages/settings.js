@@ -1,8 +1,9 @@
 /* Settings page: Accounts, AI (per user), Appearance, Users (admin), My account. */
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TAB_META = {
   accounts: { label: 'Accounts', icon: 'landmark' },
   ai: { label: 'AI', icon: 'sparkles' },
-  appearance: { label: 'Appearance', icon: 'sun' },
+  appearance: { label: 'Preferences', icon: 'sliders' },
   users: { label: 'Users', icon: 'users' },
   account: { label: 'My account', icon: 'user' },
 };
@@ -274,10 +275,13 @@ function setDirty(v) {
 }
 
 /* ---------- Appearance ---------- */
-function renderAppearance() {
+async function renderAppearance() {
   const host = $('#appearance-panel');
   const mode = Theme.get(), density = Theme.density();
   const prefCur = (state.me.preferences && state.me.preferences.currency) || '';
+  const prefAcct = (state.me.preferences && state.me.preferences.default_account_id) || '';
+  const prefWeek = Number((state.me.preferences && state.me.preferences.week_start) || 0);
+  const accts = (await store.accounts().catch(() => [])).filter((a) => a.is_active);
   const opt = (name, value, title, desc, checked) => `<label class="radio-item ${checked ? 'is-checked' : ''}"><input type="radio" name="${name}" value="${value}" ${checked ? 'checked' : ''}><div><div class="radio-title">${title}</div><div class="radio-desc">${desc}</div></div></label>`;
   host.innerHTML = `
     <div class="label mb-2">Theme</div>
@@ -285,7 +289,25 @@ function renderAppearance() {
     <div class="label mb-2">Density</div>
     <div class="radio-list mb-6" id="density-radios">${opt('density', 'comfortable', 'Comfortable', 'Roomier rows in tables', density !== 'compact')}${opt('density', 'compact', 'Compact', 'More rows on screen', density === 'compact')}</div>
     <div class="label mb-2">Display currency</div>
-    <div class="field" style="max-width:320px"><select id="pref-currency" class="select" aria-label="Display currency"><option value="" ${!prefCur ? 'selected' : ''}>Auto (from your accounts)</option><option value="USD" ${prefCur === 'USD' ? 'selected' : ''}>USD · US dollar</option><option value="CAD" ${prefCur === 'CAD' ? 'selected' : ''}>CAD · Canadian dollar</option></select><div class="hint">Used for dashboard, report and insight totals. Each transaction always shows its account's currency.</div></div>`;
+    <div class="field" style="max-width:320px"><select id="pref-currency" class="select" aria-label="Display currency"><option value="" ${!prefCur ? 'selected' : ''}>Auto (from your accounts)</option><option value="USD" ${prefCur === 'USD' ? 'selected' : ''}>USD · US dollar</option><option value="CAD" ${prefCur === 'CAD' ? 'selected' : ''}>CAD · Canadian dollar</option></select><div class="hint">Used for dashboard, report and insight totals. Each transaction always shows its account's currency.</div></div>
+    <div class="label mb-2">Default account</div>
+    <div class="field" style="max-width:320px"><select id="pref-account" class="select" aria-label="Default account"><option value="">— None —</option>${accts.map((a) => `<option value="${a.id}" ${String(a.id) === String(prefAcct) ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select><div class="hint">Preselected when you add a transaction by hand, and used for imports that no statement matches.</div></div>
+    <div class="label mb-2">Week starts on</div>
+    <div class="field" style="max-width:320px"><select id="pref-week" class="select" aria-label="Week starts on">${WEEKDAYS.map((d, i) => `<option value="${i}" ${i === prefWeek ? 'selected' : ''}>${d}</option>`).join('')}</select><div class="hint">Sets the “This week” and “Last week” ranges.</div></div>`;
+  host.querySelector('#pref-account').addEventListener('change', async (e) => {
+    try {
+      const prefs = await api('/api/auth/me/preferences', { method: 'PUT', body: { default_account_id: e.target.value ? Number(e.target.value) : null } });
+      state.me.preferences = prefs; if (window.currentUser) window.currentUser.preferences = prefs;
+      toast(e.target.value ? 'Default account saved' : 'No default account', { type: 'success' });
+    } catch (err) { toast(err.message, { type: 'error' }); }
+  });
+  host.querySelector('#pref-week').addEventListener('change', async (e) => {
+    try {
+      const prefs = await api('/api/auth/me/preferences', { method: 'PUT', body: { week_start: Number(e.target.value) } });
+      state.me.preferences = prefs; if (window.currentUser) window.currentUser.preferences = prefs;
+      toast(`Weeks now start on ${WEEKDAYS[Number(e.target.value)]}`, { type: 'success' });
+    } catch (err) { toast(err.message, { type: 'error' }); }
+  });
   host.querySelector('#theme-radios').addEventListener('change', (e) => { setThemePref(e.target.value); paintRadios(host.querySelector('#theme-radios')); });
   host.querySelector('#density-radios').addEventListener('change', (e) => { Theme.setDensity(e.target.value); api('/api/auth/me/preferences', { method: 'PUT', body: { density: e.target.value } }).catch(() => {}); paintRadios(host.querySelector('#density-radios')); });
   host.querySelector('#pref-currency').addEventListener('change', async (e) => {

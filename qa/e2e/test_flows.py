@@ -379,6 +379,17 @@ def test_f1_first_run(page, qapi):
     empty = page.locator("#dash-empty")
     F.check("Import your first statement" in empty.inner_text(), "dashboard empty-state title")
     F.check(page.locator("#dash-body").is_hidden(), "charts hidden on empty dashboard")
+    setup = page.locator("#dash-setup")
+    F.check(setup.is_visible() and "0 of 4 done" in setup.inner_text(), f"first-run checklist shows 0 of 4: {setup.inner_text()[:80]!r}")
+    F.check(setup.locator("li").count() == 5 and setup.locator("li.is-done").count() == 0, "five steps, none done")
+    page.locator("#dash-setup [data-act='setup-dismiss']").click()
+    t = toast(page, "Checklist hidden")
+    F.check("Undo" in t and setup.is_hidden(), "hiding the checklist offers Undo")
+    F.check((qapi.get("/api/auth/me")["preferences"].get("onboarding") or {}).get("dismissed") is True, "dismissal saved to preferences")
+    click_undo(page)
+    toast(page, "Undone")
+    page.wait_for_timeout(400)
+    F.check(setup.is_visible(), "undo shows the checklist again")
     kpi_vals = [v.inner_text() for v in page.locator("#kpis .stat-value").all()]
     F.note(f"empty dashboard KPI values: {kpi_vals}")
     F.check(all(v in ("$0.00", "+$0.00", "—", "0%") for v in kpi_vals), f"empty KPIs should read $0.00 / —, got {kpi_vals}")
@@ -1418,6 +1429,8 @@ def test_f5_review(page, qapi):
     F.eq(pill_value(page), qapi.get("/api/review/count")["total"], "pill updated without reload")
     F.check(f"{q['remaining_items'] - g0['count']}" in page.locator("#rv-progress").inner_text(), "progress decremented")
     shot(page, "F5-after-resolve", full=True)
+    S["setup_after_resolve"] = qapi.get("/api/reports/dashboard")["setup"]
+    F.check(S["setup_after_resolve"]["statements"] >= 1 and S["setup_after_resolve"]["rules"] >= 1, f"dashboard setup block counts imports and the new rule: {S['setup_after_resolve']}")
 
     # undo the resolve: rows go back to uncategorized, the rule disappears, the card returns
     click_undo(page)
@@ -1794,6 +1807,29 @@ def test_f7_categories(page, qapi):
     page.wait_for_timeout(500)
     F.check(cat_by_name(qapi, "QA Child") is None, "empty category deleted")
 
+    # renaming refreshes the tree without re-fetching the reports
+    seen = []
+    handler = lambda req: seen.append(req.url) if "/api/reports/by-category" in req.url else None
+    page.on("request", handler)
+    page.locator(f".cat-row[data-id='{parent['id']}'] [data-act='rename']").click()
+    page.locator(".cat-name-input").fill("QA Parent Renamed Twice")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(800)
+    page.remove_listener("request", handler)
+    F.check(cat_by_name(qapi, "QA Parent Renamed Twice") is not None, "second rename persisted")
+    F.check(len(seen) == 0, f"a rename issues no report requests (saw {len(seen)})")
+    # tablet width: selecting a category opens the details as a drawer
+    page.set_viewport_size({"width": 900, "height": 800})
+    page.wait_for_timeout(300)
+    page.locator(f".cat-row[data-id='{parent['id']}'] .cat-name").click()
+    page.wait_for_selector(".drawer", timeout=5000)
+    F.check("QA Parent Renamed Twice" in page.locator(".drawer #drawer-title").inner_text(), "drawer titled with the category name")
+    F.check(page.locator(".drawer [data-act='side-color']").count() == 1, "drawer carries the category actions")
+    page.keyboard.press("Escape")
+    page.wait_for_selector(".drawer", state="detached", timeout=5000)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.wait_for_timeout(300)
+
     # store cache invalidation: rename Streaming, then check other pages without reload of the app
     # (a second tab holds its own store copy: does it go stale?)
     page2 = page.context.new_page()
@@ -1836,6 +1872,8 @@ def test_f7_categories(page, qapi):
 # ---------------------------------------------------------------------------------------------
 def test_f8_reports(page, qapi):
     F = Soft("F8", page, S["rec"])
+    qapi.put("/api/auth/me/preferences", {"onboarding": {"reports_opened": False}})  # F4's `g p` shortcut already visited Reports
+    F.check(not (qapi.get("/api/auth/me")["preferences"].get("onboarding") or {}).get("reports_opened"), "Reports not yet marked as opened")
     # recurring data: the detector only looks back 730 days, so the Aug-2024 fixture rows are out of its window
     # (today is 2026-09); seed a NETFLIX monthly series in the last four months instead.
     import datetime as dt

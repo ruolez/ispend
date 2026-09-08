@@ -116,7 +116,7 @@ dateRangePicker({ anchor, value:{preset:'this-month'} | {from:'2026-01-01', to:'
 rangeLabel(value) → 'Last month' | 'Jan 1 – Jan 31'; rangeToQuery(value) → {range} | {from,to}; rangeFromQuery(qs(), fallback); rangeDates(value) → {from,to} ISO
 mountRangeButton(btnEl, value, onChange)   // renders a .btn-secondary trigger and wires the picker
 ```
-Presets: this-month, last-month, last-30, last-90, this-year, last-year, all.
+Presets: this-week, last-week (week start from the account preference `week_start`, 0 = Sunday), this-month, last-month, last-30, last-90, this-year, last-year, all.
 
 ## charts.js — `charts` (+ globals `makeChart`, `destroyChart`, `catColor`)
 ```js

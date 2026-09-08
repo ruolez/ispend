@@ -24,7 +24,7 @@ ITEM_FIELDS = """t.id, t.account_id, t.statement_id, t.txn_date, t.posted_date, 
     t.category_id, t.category_status, t.category_source, t.category_rule_id, t.category_confidence,
     t.is_transfer, t.transfer_pair_id, t.is_excluded, t.notes, t.created_at, t.updated_at"""
 
-RANGES = ("this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all")
+RANGES = ("this-week", "last-week", "this-month", "last-month", "last-30", "last-90", "this-year", "last-year", "all")
 STATUSES = ("all", "uncategorized", "suggested", "confirmed", "transfer", "excluded")
 SORTS = {
     "-date": ("t.txn_date DESC, t.id DESC", "<"),
@@ -40,9 +40,12 @@ def today():
     return datetime.now(ZoneInfo(config.APP_TIMEZONE)).date()
 
 
-def range_bounds(name, ref=None):
-    """Named preset -> (from, to) dates (inclusive); None means unbounded."""
+def range_bounds(name, ref=None, week_start=0):
+    """Named preset -> (from, to) dates (inclusive); None means unbounded. week_start: 0 = Sunday … 6 = Saturday."""
     ref = ref or today()
+    if name in ("this-week", "last-week"):
+        start, end = week_bounds(ref, week_start)
+        return (start, end) if name == "this-week" else (start - timedelta(days=7), start - timedelta(days=1))
     if name == "this-month":
         return ref.replace(day=1), None
     if name == "last-month":
@@ -66,6 +69,21 @@ def range_bounds(name, ref=None):
         except ValueError:
             return None, None
     return None, None
+
+
+def week_bounds(ref, week_start=0):
+    """(first, last) day of ref's week; week_start counts Sunday as 0 like JavaScript's getDay()."""
+    dow = (ref.weekday() + 1 - int(week_start or 0)) % 7
+    start = ref - timedelta(days=dow)
+    return start, start + timedelta(days=6)
+
+
+def user_week_start(uid):
+    row = db.query("SELECT preferences->>'week_start' AS ws FROM users WHERE id = %s", (uid,), one=True)
+    try:
+        return int((row or {}).get("ws") or 0) % 7
+    except (TypeError, ValueError):
+        return 0
 
 
 def _parse_date(value):
@@ -112,7 +130,10 @@ def build_filters(args, user_id):
     d_to = _parse_date(args.get("to"))
     rng = args.get("range")
     if rng and (rng in RANGES or rng.startswith("month:")) and not (d_from or d_to):
-        d_from, d_to = range_bounds(rng)
+        if rng in ("this-week", "last-week"):
+            d_from, d_to = range_bounds(rng, week_start=user_week_start(user_id))
+        else:
+            d_from, d_to = range_bounds(rng)
     if d_from:
         sql += " AND t.txn_date >= %s"
         params.append(d_from)
