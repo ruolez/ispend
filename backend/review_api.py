@@ -6,7 +6,7 @@ import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
-from util import api_error, audit, json_body, parse_int_list, record_events, rows_json, to_int
+from util import api_error, audit, json_body, parse_int_list, record_events, rows_json, snapshot, to_int
 
 log = logging.getLogger(__name__)
 
@@ -115,13 +115,14 @@ def resolve():
             return api_error("Category not found", 404)
     elif not mark_transfer:
         return api_error("Choose a category or mark as transfer")
+    before = snapshot(uid, own)
     try:
         with db.transaction():
             updated, rule_id = _resolve(uid, own, category_id, mark_transfer, learn, data.get("create_rule"))
     except ResolveError as e:
         return api_error(str(e))
     audit("review.resolve", {"count": updated, "category_id": category_id, "rule_id": rule_id, "transfer": mark_transfer})
-    return jsonify({"updated": updated, "rule_id": rule_id})
+    return jsonify({"updated": updated, "rule_id": rule_id, "ids": own, "before": before})
 
 
 def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):

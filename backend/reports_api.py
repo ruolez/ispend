@@ -5,6 +5,7 @@ import io
 from flask import Blueprint, Response, abort, jsonify, request, session
 
 import db
+import openrouter
 import reports
 from auth import login_required
 from util import api_error, audit, csv_safe, json_body, parse_int_list
@@ -55,11 +56,36 @@ def _flow():
     return "income" if request.args.get("flow") == "income" else "spending"
 
 
+def setup_status(uid, data):
+    """What a new account has done so far; drives the dashboard's first-run checklist."""
+    counts = db.query(
+        """SELECT (SELECT COUNT(*) FROM statements WHERE user_id = %s AND status = 'committed') AS statements,
+                  (SELECT COUNT(*) FROM rules WHERE user_id = %s) AS rules,
+                  (SELECT COUNT(*) FROM transactions WHERE user_id = %s) AS transactions""",
+        (uid, uid, uid), one=True,
+    ) or {}
+    review = data.get("review_count") or {}
+    try:
+        ai = bool(openrouter.configured(uid))
+    except Exception:  # noqa: BLE001 - a status flag must never break the dashboard
+        ai = False
+    return {
+        "accounts": len(data.get("accounts") or []),
+        "statements": int(counts.get("statements") or 0),
+        "transactions": int(counts.get("transactions") or 0),
+        "needs_review": int(review.get("uncategorized") or 0) + int(review.get("suggested") or 0),
+        "rules": int(counts.get("rules") or 0),
+        "ai_configured": ai,
+    }
+
+
 @bp.get("/dashboard")
 @login_required
 def dashboard():
-    return jsonify(reports.dashboard(_uid(), request.args.get("range"), _accounts(),
-                                     request.args.get("from"), request.args.get("to")))
+    uid = _uid()
+    data = reports.dashboard(uid, request.args.get("range"), _accounts(), request.args.get("from"), request.args.get("to"))
+    data["setup"] = setup_status(uid, data)
+    return jsonify(data)
 
 
 @bp.get("/summary")

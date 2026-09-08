@@ -171,6 +171,38 @@ class PreferenceValidationTest(unittest.TestCase):
                 auth.clean_preferences(body)
 
 
+class PreferenceCollectionsTest(unittest.TestCase):
+    VIEW = {"id": "v_abc", "name": " Big Amazon ", "query": "?q=amazon&min=100&range=this-year", "pinned": 1}
+
+    def test_saved_views_are_normalised(self):
+        clean = auth.clean_preferences({"saved_views": [self.VIEW]})
+        self.assertEqual(clean, {"saved_views": [{"id": "v_abc", "name": "Big Amazon", "query": "?q=amazon&min=100&range=this-year",
+                                                  "pinned": True, "page": "transactions"}]})
+
+    def test_saved_views_limits_and_rejections(self):
+        too_many = [{**self.VIEW, "id": f"v{i}"} for i in range(auth.MAX_SAVED_VIEWS + 1)]
+        bad = [
+            {"saved_views": too_many}, {"saved_views": [{**self.VIEW, "query": "?open=5"}]},
+            {"saved_views": [{**self.VIEW, "id": "Bad Id!"}]}, {"saved_views": [self.VIEW, self.VIEW]},
+            {"saved_views": [{**self.VIEW, "name": ""}]}, {"saved_views": [{**self.VIEW, "query": "q=x"}]},
+            {"saved_views": [{**self.VIEW, "page": "reports"}]}, {"saved_views": "nope"},
+            {"review_skips": [1]}, {"review_skips": ["x" * 121]}, {"onboarding": []},
+        ]
+        for body in bad:
+            with self.assertRaises(ValueError, msg=body):
+                auth.clean_preferences(body)
+
+    def test_review_skips_dedupe_and_cap(self):
+        keys = [f"k{i}" for i in range(auth.MAX_REVIEW_SKIPS + 5)] + ["k0"]
+        clean = auth.clean_preferences({"review_skips": keys})
+        self.assertEqual(len(clean["review_skips"]), auth.MAX_REVIEW_SKIPS)
+        self.assertEqual(clean["review_skips"][:2], ["k0", "k1"])
+
+    def test_onboarding_keeps_known_booleans_only(self):
+        self.assertEqual(auth.clean_preferences({"onboarding": {"dismissed": 1, "reports_opened": None, "x": True}}),
+                         {"onboarding": {"dismissed": True, "reports_opened": False}})
+
+
 class ThemeCookieTest(unittest.TestCase):
     def test_login_sets_a_readable_theme_cookie_from_preferences(self):
         app = build_app()

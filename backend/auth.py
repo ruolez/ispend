@@ -1,5 +1,7 @@
 import json
+import re
 from functools import wraps
+from urllib.parse import parse_qs
 
 from flask import Blueprint, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -10,7 +12,64 @@ from util import api_error, audit, json_body, to_int
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
-PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start"}
+PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start", "saved_views", "review_skips", "onboarding"}
+TX_VIEW_KEYS = {"range", "from", "to", "acct", "cat", "status", "flow", "q", "sort", "min", "max", "transfers", "merchant_key"}
+VIEW_ID = re.compile(r"^[a-z0-9_-]{1,16}$")
+MAX_SAVED_VIEWS = 20
+MAX_REVIEW_SKIPS = 300
+
+
+def _clean_saved_views(value):
+    """[{id, name, query, pinned, page}] for the Transactions page; the query is a filter string only."""
+    if not isinstance(value, list):
+        raise ValueError("saved_views must be a list")
+    if len(value) > MAX_SAVED_VIEWS:
+        raise ValueError(f"At most {MAX_SAVED_VIEWS} saved views")
+    out, seen = [], set()
+    for v in value:
+        if not isinstance(v, dict):
+            raise ValueError("Each saved view must be an object")
+        vid = v.get("id")
+        if not isinstance(vid, str) or not VIEW_ID.match(vid):
+            raise ValueError("Invalid view id")
+        if vid in seen:
+            raise ValueError("Duplicate view id")
+        seen.add(vid)
+        name = str(v.get("name") or "").strip()
+        if not 1 <= len(name) <= 60:
+            raise ValueError("View name must be 1-60 characters")
+        query = v.get("query")
+        if not isinstance(query, str) or not query.startswith("?") or len(query) > 600:
+            raise ValueError("View query must be a short filter string")
+        bad = set(parse_qs(query[1:], keep_blank_values=True)) - TX_VIEW_KEYS
+        if bad:
+            raise ValueError(f"View query has unsupported keys: {', '.join(sorted(bad))}")
+        page = v.get("page") or "transactions"
+        if page != "transactions":
+            raise ValueError("Unsupported view page")
+        out.append({"id": vid, "name": name, "query": query, "pinned": bool(v.get("pinned")), "page": page})
+    return out
+
+
+def _clean_review_skips(value):
+    if not isinstance(value, list):
+        raise ValueError("review_skips must be a list")
+    out = []
+    for k in value:
+        if not isinstance(k, str) or not k or len(k) > 120:
+            raise ValueError("Invalid review skip key")
+        if k not in out:
+            out.append(k)
+    return out[:MAX_REVIEW_SKIPS]
+
+
+def _clean_onboarding(value):
+    if not isinstance(value, dict):
+        raise ValueError("onboarding must be an object")
+    return {k: bool(value.get(k)) for k in ("dismissed", "reports_opened") if k in value}
+
+
+PREFERENCE_CLEANERS = {"saved_views": _clean_saved_views, "review_skips": _clean_review_skips, "onboarding": _clean_onboarding}
 PREFERENCE_CHOICES = {"theme": ("system", "light", "dark"), "density": ("comfortable", "compact"), "currency": ("", "USD", "CAD")}
 MIN_PASSWORD_LEN = 10
 _DUMMY_HASH = generate_password_hash("not-a-real-password")
@@ -32,6 +91,8 @@ def clean_preferences(data):
             out[key] = to_int(value, "default_account_id")
         elif key == "week_start":
             out[key] = to_int(value, "week_start", lo=0, hi=6)
+        elif key in PREFERENCE_CLEANERS:
+            out[key] = PREFERENCE_CLEANERS[key](value)
     return out
 
 

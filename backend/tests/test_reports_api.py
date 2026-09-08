@@ -64,6 +64,25 @@ CAT_ROWS = [
 ]
 
 
+class DashboardSetupTest(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.secret_key = "test"
+        self.app.register_blueprint(reports_api.bp)
+
+    def test_dashboard_carries_a_setup_block(self):
+        base = {"range": {}, "kpis": {"txn_count": 3}, "accounts": [{"id": 1}], "review_count": {"uncategorized": 2, "suggested": 1}}
+        counts = {"statements": 1, "rules": 0, "transactions": 3}
+        with mock.patch.object(reports, "dashboard", return_value=dict(base)), \
+                mock.patch.object(DB, "query", return_value=counts, create=True) as q, \
+                mock.patch.object(reports_api.openrouter, "configured", return_value=True):
+            with self.app.test_request_context("/api/reports/dashboard"):
+                session["user_id"] = 1
+                data = json.loads(reports_api.dashboard().get_data())
+        self.assertEqual(data["setup"], {"accounts": 1, "statements": 1, "transactions": 3, "needs_review": 3, "rules": 0, "ai_configured": True})
+        self.assertEqual(q.call_args.args[1], (1, 1, 1))
+
+
 class ByCategoryEndpointTest(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)

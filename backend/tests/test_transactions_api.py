@@ -11,6 +11,7 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 
 import db  # noqa: E402
 import transactions_api as tapi  # noqa: E402
+import util  # noqa: E402
 from flask import Flask  # noqa: E402
 
 
@@ -38,6 +39,36 @@ class FakeDB:
 def patch_db(fake):
     return mock.patch.multiple(db, query=fake.query, execute=fake.execute, execute_values=fake.execute_values,
                                transaction=fake.transaction, create=True)
+
+
+class CleanRestoreItemsTest(unittest.TestCase):
+    OWN = {1, 2}
+    ITEM = {"id": 1, "category_id": 5, "category_status": "confirmed", "category_source": "manual", "category_rule_id": 9,
+            "category_confidence": "1", "ai_rationale": None, "is_transfer": 0, "is_excluded": "yes", "transfer_pair_id": 2}
+
+    def test_drops_foreign_rows_and_unlinks_missing_rules_and_partners(self):
+        out = util.clean_restore_items([self.ITEM, {"id": 3, "category_id": 5}, "junk"], self.OWN, {5}, set(), set())
+        self.assertEqual(out, [{"id": 1, "category_id": 5, "category_status": "confirmed", "category_source": "manual",
+                                "category_rule_id": None, "category_confidence": 1.0, "ai_rationale": None, "is_transfer": False,
+                                "is_excluded": True, "transfer_pair_id": None}])
+
+    def test_keeps_links_that_still_exist(self):
+        out = util.clean_restore_items([self.ITEM], self.OWN, {5}, {9}, {2})
+        self.assertEqual((out[0]["category_rule_id"], out[0]["transfer_pair_id"]), (9, 2))
+
+    def test_rejections(self):
+        for bad in ({**self.ITEM, "category_id": 6}, {**self.ITEM, "category_status": "weird"}, {**self.ITEM, "category_source": "guess"},
+                    {**self.ITEM, "category_confidence": 2}, {**self.ITEM, "category_confidence": "x"}, {**self.ITEM, "id": "abc"}):
+            with self.assertRaises(ValueError, msg=bad):
+                util.clean_restore_items([bad], self.OWN, {5}, {9}, {2})
+        with self.assertRaises(ValueError):
+            util.clean_restore_items({"id": 1}, self.OWN, {5}, {9}, {2})
+
+    def test_missing_fields_default_to_uncategorized(self):
+        out = util.clean_restore_items([{"id": 2}], self.OWN, set(), set(), set())
+        self.assertEqual(out[0], {"id": 2, "category_id": None, "category_status": "none", "category_source": None, "category_rule_id": None,
+                                  "category_confidence": None, "ai_rationale": None, "is_transfer": False, "is_excluded": False,
+                                  "transfer_pair_id": None})
 
 
 class RangeBoundsTest(unittest.TestCase):
@@ -192,6 +223,64 @@ class ListEndpointTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         upd = [c for c in fake.calls if c[0] == "execute" and "is_excluded = %s" in c[1]][0]
         self.assertEqual(upd[2], (True, [1, 2]))
+
+    def test_bulk_returns_before_snapshot_captured_before_the_change(self):
+        snap_row = {"id": 1, "category_id": 5, "category_status": "confirmed", "category_source": "ai", "category_rule_id": None,
+                    "category_confidence": Decimal("0.80"), "ai_rationale": "looks like coffee", "is_transfer": False,
+                    "is_excluded": False, "transfer_pair_id": None}
+
+        def handler(sql, params, one):
+            return [snap_row] if "ai_rationale" in sql else [{"id": 1}]
+        fake = FakeDB(handler)
+        with patch_db(fake):
+            body = json.loads(self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "exclude"}).get_data())
+        self.assertEqual(body, {"updated": 1, "before": [{**snap_row, "category_confidence": 0.8}]})
+        kinds = [(c[0], "ai_rationale" in c[1], "is_excluded = %s" in c[1]) for c in fake.calls]
+        self.assertLess(kinds.index(("query", True, False)), kinds.index(("execute", False, True)))
+
+    def test_bulk_delete_has_no_before(self):
+        fake = FakeDB(lambda sql, params, one: [{"id": 1}])
+        with patch_db(fake):
+            body = json.loads(self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "delete"}).get_data())
+        self.assertEqual(body, {"updated": 1})
+        self.assertFalse(any("ai_rationale" in c[1] for c in fake.calls))
+
+    def test_bulk_restore_writes_every_field_and_records_a_manual_event(self):
+        def handler(sql, params, one):
+            if "FROM categories" in sql:
+                return [{"id": 5}]
+            if "FROM rules" in sql:
+                return [{"id": 9}]
+            return [{"id": 1}, {"id": 2}]
+        fake = FakeDB(handler)
+        item = {"id": 1, "category_id": 5, "category_status": "suggested", "category_source": "ai", "category_rule_id": 9,
+                "category_confidence": 0.7, "ai_rationale": "r", "is_transfer": False, "is_excluded": True, "transfer_pair_id": 2}
+        with patch_db(fake):
+            res = self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "restore", "items": [item, {"id": 42}]})
+        self.assertEqual(json.loads(res.get_data()), {"updated": 1})
+        upd = [c for c in fake.calls if c[0] == "execute" and "category_confidence = %s" in c[1]]
+        self.assertEqual(len(upd), 1)
+        self.assertEqual(upd[0][2], (5, "suggested", "ai", 9, 0.7, "r", False, True, 2, 1, 1))
+        ev = [c for c in fake.calls if c[0] == "execute_values"][0]
+        self.assertEqual(ev[2][0][:2], (1, "manual"))
+        self.assertIn('"restored": true', ev[2][0][2])
+
+    def test_bulk_restore_rejects_a_foreign_category(self):
+        fake = FakeDB(lambda sql, params, one: [] if "FROM categories" in sql else [{"id": 1}])
+        with patch_db(fake):
+            res = self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "restore", "items": [{"id": 1, "category_id": 5}]})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(any(c[0] == "execute" for c in fake.calls))
+
+    def test_list_facets_include_excluded(self):
+        def handler(sql, params, one):
+            if "COUNT(*) AS total" in sql:
+                return {"total": 4, "sum_in": 0, "sum_out": 0, "sum_skipped": 0, "skipped": 3, "uncategorized": 0, "suggested": 0,
+                        "transfer": 1, "excluded": 2}
+            return {} if one else []
+        with patch_db(FakeDB(handler)):
+            body = json.loads(self.client.get("/api/transactions").get_data())
+        self.assertEqual(body["facets"]["status"], {"uncategorized": 0, "suggested": 0, "transfer": 1, "excluded": 2})
 
     def test_rule_draft_uses_merchant_key(self):
         row = {"id": 1, "merchant_name": "Starbucks", "merchant_key": "STARBUCKS", "description_clean": "STARBUCKS 12",

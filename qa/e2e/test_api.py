@@ -241,6 +241,22 @@ class TestAuth:
         assert "evil" not in prefs
         assert u1.get("/api/auth/me").json()["preferences"]["theme"] == "dark"
 
+    def test_preferences_saved_views_skips_and_onboarding(self, u1):
+        view = {"id": "v_big", "name": "Big Amazon", "query": "?q=amazon&min=100&range=this-year", "pinned": True}
+        r = u1.put("/api/auth/me/preferences", json={"saved_views": [view], "review_skips": ["AMAZON", "t12", "AMAZON"],
+                                                     "onboarding": {"dismissed": True}})
+        assert r.status_code == 200, r.text
+        prefs = r.json()
+        assert prefs["saved_views"] == [{**view, "page": "transactions"}]
+        assert prefs["review_skips"] == ["AMAZON", "t12"] and prefs["onboarding"] == {"dismissed": True}
+        me = u1.get("/api/auth/me").json()["preferences"]
+        assert me["saved_views"] == prefs["saved_views"] and me["review_skips"] == ["AMAZON", "t12"]
+        r = u1.put("/api/auth/me/preferences", json={"saved_views": [{**view, "query": "?open=5"}]})
+        assert r.status_code == 400 and "unsupported keys" in r.json()["error"]
+        r = u1.put("/api/auth/me/preferences", json={"saved_views": [{**view, "id": "no spaces"}]})
+        assert (r.status_code, r.json()) == (400, {"error": "Invalid view id"})
+        assert u1.put("/api/auth/me/preferences", json={"saved_views": [], "review_skips": [], "onboarding": {"dismissed": False}}).status_code == 200
+
 
 # ======================================================================================
 # 2. Authorization / IDOR: qa_api2 attacks qa_api1's objects
@@ -912,25 +928,25 @@ class TestTransactions:
     def test_bulk_actions(self, u1, manual):
         ids = [manual["txns"][2]["id"], manual["txns"][5]["id"]]  # the two bookstore rows
         r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "categorize", "category_id": manual["cat_a"]["id"], "learn": False})
-        assert r.json() == {"updated": 2}
+        assert r.json()["updated"] == 2
         assert all(u1.get(f"/api/transactions/{i}").json()["category_id"] == manual["cat_a"]["id"] for i in ids)
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "exclude"}).json() == {"updated": 2}
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "exclude"}).json()["updated"] == 2
         assert u1.get(f"/api/transactions/{ids[0]}").json()["is_excluded"] is True
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "include"}).json() == {"updated": 2}
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "set_transfer"}).json() == {"updated": 2}
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "include"}).json()["updated"] == 2
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "set_transfer"}).json()["updated"] == 2
         assert u1.get(f"/api/transactions/{ids[0]}").json()["is_transfer"] is True
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "unset_transfer"}).json() == {"updated": 2}
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "unset_transfer"}).json()["updated"] == 2
         assert u1.get(f"/api/transactions/{ids[0]}").json()["is_transfer"] is False
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "flip_sign"}).json() == {"updated": 2}
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "flip_sign"}).json()["updated"] == 2
         assert money(u1.get(f"/api/transactions/{ids[0]}").json()["amount"]) == money("10")
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "flip_sign"}).json() == {"updated": 2}
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "accept_suggestion"}).json() == {"updated": 0}
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "reject_suggestion"}).json() == {"updated": 0}
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "flip_sign"}).json()["updated"] == 2
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "accept_suggestion"}).json()["updated"] == 0
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "reject_suggestion"}).json()["updated"] == 0
         r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "categorize", "category_id": manual["cat_b"]["id"], "learn": False})
-        assert r.json() == {"updated": 2}
-        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "uncategorize"}).json() == {"updated": 2}
+        assert r.json()["updated"] == 2
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "uncategorize"}).json()["updated"] == 2
         r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "categorize", "category_id": manual["cat_b"]["id"], "learn": False})
-        assert r.json() == {"updated": 2}
+        assert r.json()["updated"] == 2
         r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "categorize"})
         assert (r.status_code, r.json()) == (400, {"error": "category_id is required"})
         r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "nonsense"})
@@ -939,6 +955,44 @@ class TestTransactions:
         assert (r.status_code, r.json()) == (400, {"error": "ids are required"})
         r = u1.post("/api/transactions/bulk", json={"ids": "1,abc,,2", "action": "delete"})
         assert r.status_code == 404  # junk dropped, nothing owned
+
+    def test_bulk_before_and_restore_roundtrip(self, u1, manual):
+        ids = [manual["txns"][2]["id"], manual["txns"][5]["id"]]
+        r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "exclude"}).json()
+        assert r["updated"] == 2 and sorted(b["id"] for b in r["before"]) == sorted(ids)
+        assert all(b["is_excluded"] is False and b["category_id"] == manual["cat_b"]["id"] for b in r["before"])
+        assert set(r["before"][0]) == {"id", "category_id", "category_status", "category_source", "category_rule_id",
+                                       "category_confidence", "ai_rationale", "is_transfer", "is_excluded", "transfer_pair_id"}
+        assert u1.get(f"/api/transactions/{ids[0]}").json()["is_excluded"] is True
+        r2 = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "restore", "items": r["before"]}).json()
+        assert r2 == {"updated": 2}
+        got = u1.get(f"/api/transactions/{ids[0]}").json()
+        assert got["is_excluded"] is False and got["category_id"] == manual["cat_b"]["id"]
+        assert any(e["kind"] == "manual" and (e.get("detail") or {}).get("restored") for e in got["events"])
+        # set_transfer files the row under Transfers; restoring puts the old category back and clears the flag
+        r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "set_transfer"}).json()
+        assert u1.get(f"/api/transactions/{ids[0]}").json()["is_transfer"] is True
+        assert u1.post("/api/transactions/bulk", json={"ids": ids, "action": "restore", "items": r["before"]}).json() == {"updated": 2}
+        got = u1.get(f"/api/transactions/{ids[0]}").json()
+        assert (got["is_transfer"], got["is_excluded"], got["category_id"]) == (False, False, manual["cat_b"]["id"])
+        # delete carries no snapshot; restore needs items
+        assert "before" not in u1.post("/api/transactions/bulk", json={"ids": ids, "action": "restore", "items": []}).json()
+        r = u1.post("/api/transactions/bulk", json={"ids": ids, "action": "restore"})
+        assert (r.status_code, r.json()) == (400, {"error": "items are required"})
+
+    def test_pair_returns_before_and_restore_unpairs(self, u1, manual):
+        a, b = manual["out_leg"], manual["in_leg"]
+        r = u1.post("/api/transactions/pair", json={"a_id": a["id"], "b_id": b["id"]}).json()
+        assert r["ok"] and sorted(x["id"] for x in r["before"]) == sorted([a["id"], b["id"]])
+        assert all(x["transfer_pair_id"] is None and x["is_transfer"] is False for x in r["before"])
+        assert u1.get(f"/api/transactions/{a['id']}").json()["transfer_pair_id"] == b["id"]
+        assert u1.post("/api/transactions/bulk", json={"ids": [a["id"], b["id"]], "action": "restore", "items": r["before"]}).json() == {"updated": 2}
+        got = u1.get(f"/api/transactions/{a['id']}").json()
+        assert (got["is_transfer"], got["transfer_pair_id"], got["category_id"]) == (False, None, None)
+        r = u1.post("/api/transactions/auto-pair", json={"min_confidence": 0.5}).json()
+        assert set(r) == {"paired", "before"} and isinstance(r["before"], list)
+        if r["paired"]:
+            u1.post("/api/transactions/bulk", json={"ids": [x["id"] for x in r["before"]], "action": "restore", "items": r["before"]})
 
     def test_bulk_delete_and_single_delete(self, u1, manual):
         a = manual["acct"]
@@ -1309,6 +1363,7 @@ class TestReview:
         r = u1.post("/api/review/resolve", json={"ids": grp["ids"], "category_id": manual["cat_a"]["id"],
                                                  "create_rule": {"pattern": "reviewbait", "name": "QA review rule"}})
         assert r.status_code == 200 and r.json()["updated"] == 2 and r.json()["rule_id"]
+        assert sorted(r.json()["ids"]) == sorted(grp["ids"]) and all(b["category_id"] is None for b in r.json()["before"])
         rid = r.json()["rule_id"]
         for t in (a, b):
             got = u1.get(f"/api/transactions/{t['id']}").json()
@@ -1573,6 +1628,8 @@ class TestReports:
         assert d["recurring"]["count"] >= 1 and d["recurring"]["monthly_total"] >= 40.0
         assert any(a["id"] == manual["acct"] for a in d["accounts"])
         assert set(d["review_count"]) == {"uncategorized", "suggested"}
+        assert set(d["setup"]) == {"accounts", "statements", "transactions", "needs_review", "rules", "ai_configured"}
+        assert d["setup"]["transactions"] >= 9 and d["setup"]["accounts"] >= 2 and d["setup"]["ai_configured"] is False
         assert d["range"]["name"] == "custom"
         d2 = u1.get("/api/reports/dashboard").json()
         assert d2["range"]["name"] == "this-month" and d2["range"]["start"] == TODAY.replace(day=1).isoformat()
@@ -1765,6 +1822,8 @@ class TestRobustness:
         ("POST", "/api/rules/preview", {"pattern": None, "match_type": None}),
         ("PUT", "/api/rules/reorder", {"ids": None}),
         ("POST", "/api/transactions/bulk", {"ids": None, "action": None, "category_id": None, "learn": None}),
+        ("POST", "/api/transactions/bulk", {"ids": ["{txn}"], "action": "restore", "items": None}),
+        ("POST", "/api/transactions/bulk", {"ids": ["{txn}"], "action": "restore", "items": [None, 1, {"id": "{txn}", "category_id": "x"}]}),
         ("POST", "/api/transactions/pair", {"a_id": None, "b_id": None}),
         ("POST", "/api/transactions/auto-pair", {"min_confidence": None}),
         ("POST", "/api/review/resolve", {"ids": None, "category_id": None, "mark_transfer": None, "learn": None,

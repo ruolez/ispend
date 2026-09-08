@@ -117,6 +117,81 @@ def parse_int_list(value):
     return out
 
 
+# Everything a bulk change can alter on a transaction row besides the amount. A bulk/resolve/pair
+# response carries these values as captured *before* the change; POST /bulk {action: "restore"}
+# writes them back so the client's Undo is exact (ai_rationale, rule links and pairings included).
+SNAPSHOT_FIELDS = ("category_id", "category_status", "category_source", "category_rule_id", "category_confidence",
+                   "ai_rationale", "is_transfer", "is_excluded", "transfer_pair_id")
+RESTORE_STATUSES = ("none", "suggested", "confirmed")
+RESTORE_SOURCES = ("manual", "rule", "merchant", "builtin", "ai")
+
+
+def snapshot(user_id, ids):
+    """Undo-relevant fields of the user's rows among ids, as JSON-safe dicts ordered by id."""
+    if not ids:
+        return []
+    rows = db.query(
+        f"SELECT id, {', '.join(SNAPSHOT_FIELDS)} FROM transactions WHERE user_id = %s AND id = ANY(%s) ORDER BY id",
+        (user_id, list(ids)),
+    ) or []
+    return rows_json(rows)
+
+
+def _opt_int(value, name):
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
+
+
+def clean_restore_items(items, own_ids, own_category_ids, own_rule_ids, own_pair_ids):
+    """Validate a restore payload. Rows the user does not own are dropped; a foreign category, a bad
+    status or source raise ValueError; a rule or partner that no longer exists is unlinked."""
+    if not isinstance(items, list):
+        raise ValueError("items must be a list")
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        tid = _opt_int(it.get("id"), "id")
+        if tid is None or tid not in own_ids:
+            continue
+        cat = _opt_int(it.get("category_id"), "category_id")
+        if cat is not None and cat not in own_category_ids:
+            raise ValueError("Category not found")
+        status = it.get("category_status") or "none"
+        if status not in RESTORE_STATUSES:
+            raise ValueError("Invalid category_status")
+        source = it.get("category_source") or None
+        if source is not None and source not in RESTORE_SOURCES:
+            raise ValueError("Invalid category_source")
+        rule_id = _opt_int(it.get("category_rule_id"), "category_rule_id")
+        if rule_id is not None and rule_id not in own_rule_ids:
+            rule_id = None
+        conf = it.get("category_confidence")
+        if conf is not None:
+            try:
+                conf = float(conf)
+            except (TypeError, ValueError):
+                raise ValueError("category_confidence must be a number") from None
+            if not 0 <= conf <= 1:
+                raise ValueError("category_confidence must be between 0 and 1")
+        rationale = it.get("ai_rationale")
+        rationale = str(rationale)[:4000] if rationale not in (None, "") else None
+        pair = _opt_int(it.get("transfer_pair_id"), "transfer_pair_id")
+        if pair is not None and pair not in own_pair_ids:
+            pair = None
+        out.append({
+            "id": tid, "category_id": cat, "category_status": status, "category_source": source,
+            "category_rule_id": rule_id, "category_confidence": conf, "ai_rationale": rationale,
+            "is_transfer": bool(it.get("is_transfer")), "is_excluded": bool(it.get("is_excluded")),
+            "transfer_pair_id": pair,
+        })
+    return out
+
+
 def record_event(transaction_id, kind, detail=None, user_id=None, commit=True):
     """Append one row to transaction_events (history timeline in the UI)."""
     if user_id is None:

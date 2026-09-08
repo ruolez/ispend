@@ -14,7 +14,8 @@ import config
 import db
 import transfers
 from auth import login_required
-from util import api_error, audit, csv_safe, json_body, parse_int_list, record_event, record_events, row_json, rows_json, to_int
+from util import (api_error, audit, clean_restore_items, csv_safe, json_body, parse_int_list, record_event, record_events,
+                  row_json, rows_json, snapshot, to_int)
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
 
@@ -223,7 +224,8 @@ def list_transactions():
                    COUNT(*) FILTER (WHERE t.is_transfer OR t.is_excluded) AS skipped,
                    COUNT(*) FILTER (WHERE t.category_id IS NULL AND NOT t.is_transfer) AS uncategorized,
                    COUNT(*) FILTER (WHERE t.category_status = 'suggested') AS suggested,
-                   COUNT(*) FILTER (WHERE t.is_transfer) AS transfer
+                   COUNT(*) FILTER (WHERE t.is_transfer) AS transfer,
+                   COUNT(*) FILTER (WHERE t.is_excluded AND NOT t.is_transfer) AS excluded
             FROM transactions t WHERE{where}""",
         params, one=True,
     ) or {}
@@ -252,6 +254,7 @@ def list_transactions():
                 "uncategorized": totals.get("uncategorized", 0),
                 "suggested": totals.get("suggested", 0),
                 "transfer": totals.get("transfer", 0),
+                "excluded": totals.get("excluded", 0),
             },
         },
     })
@@ -309,6 +312,7 @@ def pair_transfer():
     data = json_body()
     a_id = to_int(data.get("a_id"), "a_id", required=True)
     b_id = to_int(data.get("b_id"), "b_id", required=True)
+    before = snapshot(session["user_id"], [a_id, b_id])
     try:
         out = transfers.pair(session["user_id"], a_id, b_id)
     except transfers.AlreadyPaired as e:
@@ -318,7 +322,7 @@ def pair_transfer():
     except LookupError as e:
         return api_error(str(e), 404)
     audit("transactions.pair", out)
-    return jsonify({"ok": True, **out})
+    return jsonify({"ok": True, **out, "before": before})
 
 
 @bp.post("/auto-pair")
@@ -329,9 +333,12 @@ def auto_pair():
         min_confidence = min(max(float(data.get("min_confidence") or 0.9), 0.0), 1.0)
     except (TypeError, ValueError):
         return api_error("min_confidence must be a number between 0 and 1")
-    paired = transfers.auto_pair(session["user_id"], min_confidence=min_confidence)
+    uid = session["user_id"]
+    legs = [t["id"] for c in transfers.candidates(uid, limit=1000) if c["confidence"] >= min_confidence for t in (c["a"], c["b"])]
+    before = snapshot(uid, sorted(set(legs)))
+    paired = transfers.auto_pair(uid, min_confidence=min_confidence)
     audit("transactions.auto_pair", {"paired": paired})
-    return jsonify({"paired": paired})
+    return jsonify({"paired": paired, "before": before})
 
 
 @bp.get("/suggest")
@@ -591,6 +598,7 @@ def bulk():
         "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])]
     if not own:
         return api_error("No matching transactions", 404)
+    before = None if action in ("delete", "restore") else snapshot(uid, own)
     updated = 0
     if action == "categorize":
         category_id = to_int(data.get("category_id"), "Category")
@@ -664,7 +672,43 @@ def bulk():
     elif action == "delete":
         _release_partners(own)
         updated = db.execute("DELETE FROM transactions WHERE id = ANY(%s)", (own,))
+    elif action == "restore":
+        try:
+            updated = _restore(uid, own, data.get("items"))
+        except ValueError as e:
+            return api_error(str(e))
+        if updated is None:
+            return api_error("items are required")
     else:
         return api_error("Unknown action")
     audit("transactions.bulk", {"action": action, "count": updated})
-    return jsonify({"updated": updated})
+    body = {"updated": updated}
+    if before is not None:
+        body["before"] = before
+    return jsonify(body)
+
+
+def _restore(uid, own, items):
+    """Write back a `before` snapshot (see util.SNAPSHOT_FIELDS); the client's exact Undo."""
+    if not isinstance(items, list):
+        return None
+    cats = {r["id"] for r in (db.query("SELECT id FROM categories WHERE user_id = %s", (uid,)) or [])}
+    rule_ids = {r["id"] for r in (db.query("SELECT id FROM rules WHERE user_id = %s", (uid,)) or [])}
+    wanted = [it.get("transfer_pair_id") for it in items if isinstance(it, dict) and it.get("transfer_pair_id")]
+    pair_ids = {r["id"] for r in (db.query("SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)",
+                                            (uid, parse_int_list(",".join(str(w) for w in wanted)))) or [])} if wanted else set()
+    clean = clean_restore_items(items, set(own), cats, rule_ids, pair_ids)
+    with db.transaction():
+        for it in clean:
+            db.execute(
+                """UPDATE transactions SET category_id = %s, category_status = %s, category_source = %s, category_rule_id = %s,
+                       category_confidence = %s, ai_rationale = %s, is_transfer = %s, is_excluded = %s, transfer_pair_id = %s,
+                       updated_at = now()
+                   WHERE id = %s AND user_id = %s""",
+                (it["category_id"], it["category_status"], it["category_source"], it["category_rule_id"], it["category_confidence"],
+                 it["ai_rationale"], it["is_transfer"], it["is_excluded"], it["transfer_pair_id"], it["id"], uid),
+                commit=False,
+            )
+    record_events([(it["id"], "manual", {"restored": True, "category_id": it["category_id"], "is_transfer": it["is_transfer"],
+                                         "is_excluded": it["is_excluded"]}, uid) for it in clean])
+    return len(clean)

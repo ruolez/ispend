@@ -100,7 +100,9 @@ class ReviewTest(unittest.TestCase):
             })
         body = json.loads(res.get_data())
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(body, {"updated": 2, "rule_id": 77})
+        self.assertEqual(body, {"updated": 2, "rule_id": 77, "ids": [1, 2], "before": [{"id": 1}, {"id": 2}]})
+        snap = next(i for i, c in enumerate(fake.calls) if "FROM transactions WHERE user_id = %s AND id = ANY(%s) ORDER BY id" in " ".join(c[1].split()))
+        self.assertTrue(all(c[0] == "query" for c in fake.calls[:snap]))  # the snapshot is captured before anything is written
         apply.assert_called_once_with(1, [1, 2], 5, learn_memory=True)
         insert = [c for c in fake.calls if "INSERT INTO rules" in c[1]][0]
         self.assertEqual(insert[2][2], 40)          # priority after the current max
