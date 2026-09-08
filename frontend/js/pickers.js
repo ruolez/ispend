@@ -140,6 +140,10 @@ function rangeDates(value) {
   const iso = (d) => toISODate(d);
   if (!value || value.preset === 'all' || (!value.preset && !value.from && !value.to)) return { from: null, to: null };
   if (value.from || value.to) return { from: value.from || null, to: value.to || null };
+  if (value.preset && value.preset.startsWith('month:')) {
+    const [my, mm] = value.preset.slice(6).split('-').map(Number);
+    return { from: iso(new Date(my, mm - 1, 1)), to: iso(new Date(my, mm, 0)) };
+  }
   const ws = Number((((window.currentUser || {}).preferences) || {}).week_start) || 0; // 0 = Sunday, like Date#getDay
   const weekStart = new Date(y, m, today.getDate() - ((today.getDay() - ws + 7) % 7));
   switch (value.preset) {
@@ -257,6 +261,71 @@ async function tagPicker({ anchor, selected = new Set(), onChange, allowCreate =
 function mountRangeButton(btn, value, onChange) {
   btn.innerHTML = `${icon('calendar', 'ico-sm')}<span>${esc(rangeLabel(value))}</span>${icon('chevron-down', 'ico-sm')}`;
   btn.onclick = () => dateRangePicker({ anchor: btn, value, onChange: (v) => { mountRangeButton(btn, v, onChange); onChange(v); } });
+}
+
+/* ---------- period stepping (‹ label ›) ----------
+   The window before or after the current one, as a picker value; null when there is nothing to step
+   to (all time, an open-ended range, or a step that would start in the future). Whole months and
+   whole years step by month and year so February keeps its length; everything else shifts by its
+   own span. The result is normalised back to a preset when it matches one, so the label stays
+   "Last month" rather than a pair of dates. */
+const ymd = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+function shiftRange(value, dir) {
+  const { from, to } = rangeDates(value);
+  if (!from || !to) return null;
+  const [f, t] = [ymd(from), ymd(to)];
+  const firstOfMonth = f.getDate() === 1;
+  const lastOfMonth = t.getDate() === new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  let nf, nt;
+  if (firstOfMonth && lastOfMonth && f.getMonth() === 0 && t.getMonth() === 11 && f.getFullYear() === t.getFullYear()) {
+    nf = new Date(f.getFullYear() + dir, 0, 1); nt = new Date(t.getFullYear() + dir, 11, 31);
+  } else if (firstOfMonth && lastOfMonth) {
+    const months = (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth()) + 1;
+    nf = new Date(f.getFullYear(), f.getMonth() + dir * months, 1);
+    nt = new Date(nf.getFullYear(), nf.getMonth() + months, 0);
+  } else {
+    const span = Math.round((t - f) / 86400000) + 1;
+    nf = new Date(f.getFullYear(), f.getMonth(), f.getDate() + dir * span);
+    nt = new Date(t.getFullYear(), t.getMonth(), t.getDate() + dir * span);
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (dir > 0 && nf > today) return null;
+  return normalizeRange(toISODate(nf), toISODate(nt));
+}
+/* {from,to} -> the preset with the same dates when there is one (nicer label, shorter URL). */
+function normalizeRange(from, to) {
+  for (const p of RANGE_PRESETS) {
+    if (p.key === 'all') continue;
+    const d = rangeDates({ preset: p.key });
+    if (d.from === from && d.to === to) return { preset: p.key };
+  }
+  const f = ymd(from);
+  if (f.getDate() === 1 && to === toISODate(new Date(f.getFullYear(), f.getMonth() + 1, 0))) {
+    return { preset: `month:${from.slice(0, 7)}` };
+  }
+  return { from, to };
+}
+/* ‹ [range] › — the range button from mountRangeButton between two step buttons.
+   `group` holds [data-period="prev"], [data-period="pick"] and [data-period="next"]. */
+function mountPeriodNav(group, value, onChange) {
+  const prev = group.querySelector('[data-period="prev"]');
+  const next = group.querySelector('[data-period="next"]');
+  const pick = group.querySelector('[data-period="pick"]');
+  mountRangeButton(pick, value, onChange);
+  [[prev, -1, 'chevron-left'], [next, 1, 'chevron-right']].forEach(([btn, dir, ico]) => {
+    const target = shiftRange(value, dir);
+    btn.innerHTML = icon(ico, 'ico-sm');
+    btn.disabled = !target;
+    btn.setAttribute('data-tip', target ? `${dir < 0 ? 'Previous' : 'Next'} period · ${rangeLabel(target)}` : 'No period to step to');
+    btn.onclick = () => { const v = shiftRange(value, dir); if (v) { mountPeriodNav(group, v, onChange); onChange(v); } };
+  });
+}
+function stepPeriod(group, value, dir, onChange) {
+  const v = shiftRange(value, dir);
+  if (!v) return false;
+  mountPeriodNav(group, v, onChange);
+  onChange(v);
+  return true;
 }
 
 

@@ -256,9 +256,10 @@ function toggleSort(key) {
 }
 
 /* ---------- toolbar ---------- */
+function setRange(v) { tx.filters.range = v; periodSet(v); applyFilters(); }
 function paintToolbar() {
   const f = tx.filters;
-  mountRangeButton($('#f-range'), f.range, (v) => { f.range = v; periodSet(v); applyFilters(); });
+  mountPeriodNav($('#f-range').closest('.month-nav'), f.range, setRange);
   const acctBtn = $('#f-accounts');
   acctBtn.innerHTML = `${icon('landmark', 'ico-sm')}<span>${f.acct.length ? (f.acct.length === 1 && acctOf(f.acct[0]) ? esc(acctOf(f.acct[0]).name) : `${f.acct.length} accounts`) : 'All accounts'}</span>${icon('chevron-down', 'ico-sm')}`;
   acctBtn.classList.toggle('active', !!f.acct.length);
@@ -514,6 +515,8 @@ function registerShortcuts() {
   ui.shortcuts.register('k', () => setFocus(Math.max(0, tx.focus - 1)), { when: noLayer, description: 'Previous row' });
   ui.shortcuts.register('ArrowDown', () => setFocus(tx.focus + 1), { when: noLayer });
   ui.shortcuts.register('ArrowUp', () => setFocus(Math.max(0, tx.focus - 1)), { when: noLayer });
+  ui.shortcuts.register('ArrowLeft', () => stepPeriod($('#f-range').closest('.month-nav'), tx.filters.range, -1, setRange), { when: noLayer, description: 'Previous period' });
+  ui.shortcuts.register('ArrowRight', () => stepPeriod($('#f-range').closest('.month-nav'), tx.filters.range, 1, setRange), { when: noLayer, description: 'Next period' });
   ui.shortcuts.register('x', () => { const it = focusedItem(); if (it) toggleSelect(it.id); }, { when: noLayer, description: 'Select row' });
   ui.shortcuts.register('c', () => { const it = focusedItem(); if (it) openPickerFor(it.id); }, { when: noLayer, description: 'Categorize row' });
   ui.shortcuts.register('Enter', () => { const it = focusedItem(); if (it) openDrawer(it.id); }, { when: noLayer, description: 'Open details' });
@@ -522,7 +525,7 @@ function registerShortcuts() {
   ui.shortcuts.register('v', () => openViewsMenu(), { when: noLayer, description: 'Saved views' });
   ui.shortcuts.register('a', () => { const it = focusedItem(); if (it && it.category_status === 'suggested') bulk([it.id], 'accept_suggestion'); }, { when: noLayer, description: 'Accept suggestion' });
   ui.shortcuts.register('Escape', () => { if (tx.selection.size) { tx.selection.clear(); paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
-  window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['v', 'Saved views'], ['Esc', 'Clear selection']] }];
+  window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['v', 'Saved views'], ['← / →', 'Previous / next period'], ['Esc', 'Clear selection']] }];
 }
 
 /* ---------- row interactions ---------- */

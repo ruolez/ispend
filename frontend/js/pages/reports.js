@@ -37,7 +37,9 @@ initNav('reports').then(async (me) => {
   state.monthsSeg = ui.segmented($('#months-seg'), { onChange: (b) => { if (!b) return; state.months = Number(b.dataset.months); paintMonths(); sync(); loadTab(true); } });
   paintMonths();
   document.body.addEventListener('click', onAction);
-  mountRangeButton($('#range-btn'), state.range, (v) => { state.range = v; periodSet(v); sync(); loadTab(true); });
+  mountPeriodNav($('#range-btn').closest('.month-nav'), state.range, setRange);
+  ui.shortcuts.register('ArrowLeft', () => stepPeriod($('#range-btn').closest('.month-nav'), state.range, -1, setRange), { when: () => !ui.layers.length, description: 'Previous period' });
+  ui.shortcuts.register('ArrowRight', () => stepPeriod($('#range-btn').closest('.month-nav'), state.range, 1, setRange), { when: () => !ui.layers.length, description: 'Next period' });
   renderAcctBtn();
   $('#acct-btn').addEventListener('click', () => ui.multiFilter($('#acct-btn'), {
     title: 'Accounts', options: state.accountsList.map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: state.accounts,
@@ -60,6 +62,7 @@ function renderAcctBtn() {
   const label = n === 0 ? 'All accounts' : n === 1 ? ((state.accountsList.find((a) => String(a.id) === Array.from(state.accounts)[0]) || {}).name || '1 account') : `${n} accounts`;
   $('#acct-btn').innerHTML = `${icon('landmark', 'ico-sm')}<span>${esc(label)}</span>${icon('chevron-down', 'ico-sm')}`;
 }
+function setRange(v) { state.range = v; periodSet(v); sync(); loadTab(true); }
 function sync() {
   setQs({ tab: state.tab === 'category' ? null : state.tab, ...rangeToQuery(state.range), acct: state.accounts.size ? Array.from(state.accounts).join(',') : null, months: state.months === 12 ? null : state.months, month: state.tab === 'compare' && state.month !== currentMonth() ? state.month : null, vs: state.tab === 'compare' && state.vs && state.vs !== prevMonthOf(state.month) ? state.vs : null, transfers: state.transfers ? '1' : null, flow: isInc() ? 'income' : null,
     pct: state.pct ? '1' : null, msort: state.sort.key === 'total' && state.sort.dir === 'desc' ? null : `${state.sort.key}:${state.sort.dir}`, trend: state.trendSel ? Array.from(state.trendSel).join(',') : null, iso: state.iso || null }, { replace: true });

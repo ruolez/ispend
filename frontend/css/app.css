@@ -318,6 +318,10 @@ button.catchip:hover { background: var(--surface-3); border-color: var(--border-
 button.catchip--empty:hover { color: var(--text-1); border-style: solid; }
 .catchip--suggested { background: var(--info-soft); color: var(--accent); }
 .catchip--split { background: var(--surface); border-color: var(--border-strong); }
+/* ‹ [period] › stepper: dashboard, budgets, transactions and reports all use this group */
+.month-nav { display: inline-flex; align-items: center; gap: 4px; }
+.month-nav .btn-icon { width: 36px; padding: 0; }
+.month-nav [data-period="pick"], .month-nav #month-btn { gap: 6px; justify-content: space-between; }
 .catchip--split .catchip-count { color: var(--text-3); font-weight: 500; }
 .catchip .ico { width: 13px; height: 13px; }
 .cat-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c, var(--chart-muted)) 16%, transparent); color: var(--c, var(--chart-muted)); flex: 0 0 auto; }

@@ -26,7 +26,11 @@
       <button type="button" class="tab" role="tab" data-tab="cashflow" aria-controls="panel-cashflow">Cash flow</button>
     </div>
     <div class="filter-row" id="filter-row">
-      <button type="button" class="btn btn-secondary" id="range-btn"></button>
+      <div class="month-nav" role="group" aria-label="Period">
+        <button type="button" class="btn btn-secondary btn-icon" data-period="prev" aria-label="Previous period"></button>
+        <button type="button" class="btn btn-secondary" id="range-btn" data-period="pick"></button>
+        <button type="button" class="btn btn-secondary btn-icon" data-period="next" aria-label="Next period"></button>
+      </div>
       <button type="button" class="btn btn-secondary" id="acct-btn"></button>
       <div class="seg" id="flow-seg" aria-label="Money out or money in"><button type="button" class="seg-btn active" data-flow="spending">Spending</button><button type="button" class="seg-btn" data-flow="income">Income</button></div>
       <div class="seg" id="months-seg"><button type="button" class="seg-btn" data-months="6">6m</button><button type="button" class="seg-btn active" data-months="12">12m</button><button type="button" class="seg-btn" data-months="24">24m</button></div>

@@ -116,6 +116,12 @@ tagPicker({ anchor, selected:new Set(ids), onChange(set), allowCreate:true });  
 dateRangePicker({ anchor, value:{preset:'this-month'} | {from:'2026-01-01', to:'2026-01-31'}, onChange(value), allowAll });
 rangeLabel(value) → 'Last month' | 'Jan 1 – Jan 31'; rangeToQuery(value) → {range} | {from,to}; rangeFromQuery(qs(), fallback); rangeDates(value) → {from,to} ISO
 mountRangeButton(btnEl, value, onChange)   // renders a .btn-secondary trigger and wires the picker
+mountPeriodNav(groupEl, value, onChange)   // ‹ [range] › — the trigger between two step buttons; the group holds
+                                           // [data-period="prev"|"pick"|"next"] (markup class .month-nav)
+stepPeriod(groupEl, value, dir, onChange)  // same step from a keyboard shortcut (← / →); false when there is no step
+shiftRange(value, dir)                     // the window before/after this one, or null (all time, open-ended, or the
+                                           // future). Whole months step by month, whole years by year, anything else
+                                           // by its own span; the result normalises back to a preset when it matches one
 ```
 Presets: this-week, last-week (week start from the account preference `week_start`, 0 = Sunday), this-month, last-month, last-30, last-90, this-year, last-year, all.
 

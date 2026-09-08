@@ -1,8 +1,6 @@
 /* Budgets */
 .stat-delta--warn { color: var(--warning); }
-.month-nav { display: inline-flex; align-items: center; gap: 4px; }
-.month-nav .btn-icon { width: 36px; padding: 0; }
-.month-nav #month-btn { gap: 6px; min-width: 170px; justify-content: space-between; }
+.month-nav #month-btn { min-width: 170px; }
 .bud-rows { display: flex; flex-direction: column; }
 .bud-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(120px, 1fr) auto minmax(120px, auto) auto 28px; gap: var(--sp-3); align-items: center; padding: 10px var(--sp-5); border-bottom: 1px solid var(--border); }
 .bud-row:last-child { border-bottom: 0; }

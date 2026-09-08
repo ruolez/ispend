@@ -971,6 +971,28 @@ def test_f4_transactions(page, qapi):
     F.check("Aug 1" in page.locator("#f-range").inner_text() and "Aug 31" in page.locator("#f-range").inner_text(), f"range button label: {page.locator('#f-range').inner_text()!r}")
     shot(page, "F4-filter-custom-range")
 
+    # ‹ › step to the neighbouring period; a whole month steps by month, and ← / → do the same
+    page.locator(".month-nav [data-period='prev']").click()
+    page.wait_for_url(re.compile(r"range=month%3A2024-07"), timeout=5000)
+    page.wait_for_timeout(700)
+    F.check("July 2024" in page.locator("#f-range").inner_text(), f"prev steps a whole month: {page.locator('#f-range').inner_text()!r}")
+    jul_api = qapi.get("/api/transactions?range=month:2024-07&limit=1")
+    F.eq(summary_numbers(page)["count"], jul_api["total"], "stepped range count matches the API")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_url(re.compile(r"range=month%3A2024-08"), timeout=5000)
+    page.wait_for_timeout(600)
+    F.check("August 2024" in page.locator("#f-range").inner_text(), "→ steps back to August")
+    pick_range(page, F, preset="this-month")
+    page.wait_for_timeout(600)
+    F.check(page.locator(".month-nav [data-period='next']").is_disabled() and not page.locator(".month-nav [data-period='prev']").is_disabled(),
+            "next is disabled on the current month, prev stays available")
+    pick_range(page, F, preset="all")
+    page.wait_for_timeout(600)
+    F.check(page.locator(".month-nav [data-period='prev']").is_disabled(), "all time has no period to step to")
+    pick_range(page, F, frm="2024-08-01", to="2024-08-31")
+    page.wait_for_url(re.compile(r"from=2024-08-01&to=2024-08-31"), timeout=5000)
+    page.wait_for_selector("#tx-body tr[data-id]", timeout=10000)
+
     # account filter
     page.locator("#f-accounts").click()
     page.wait_for_selector(".popover [data-v]", timeout=5000)

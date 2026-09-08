@@ -23,7 +23,11 @@
     </div>
     <div class="tbl-toolbar" id="tx-toolbar">
       <button type="button" class="btn btn-secondary" id="f-views" aria-haspopup="menu"></button>
-      <button type="button" class="btn btn-secondary" id="f-range"></button>
+      <div class="month-nav" role="group" aria-label="Period">
+        <button type="button" class="btn btn-secondary btn-icon" data-period="prev" aria-label="Previous period"></button>
+        <button type="button" class="btn btn-secondary" id="f-range" data-period="pick"></button>
+        <button type="button" class="btn btn-secondary btn-icon" data-period="next" aria-label="Next period"></button>
+      </div>
       <button type="button" class="btn btn-secondary" id="f-accounts"></button>
       <button type="button" class="btn btn-secondary" id="f-categories"></button>
       <button type="button" class="btn btn-secondary" id="f-amount"></button>
