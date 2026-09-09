@@ -14,15 +14,23 @@
 <body>
   <main id="main" class="main main--wide">
     <div class="page-head">
-      <div><h1>Admin</h1><div class="page-sub">Users, usage and instance health</div></div>
+      <div><h1>Admin</h1><div class="page-sub" id="admin-sub">Users, usage and instance health</div></div>
       <div class="page-actions" id="admin-actions" hidden>
-        <div class="seg" id="range-seg" aria-label="Time range">
-          <button type="button" class="seg-btn" data-days="7">7d</button>
-          <button type="button" class="seg-btn" data-days="30">30d</button>
-          <button type="button" class="seg-btn active" data-days="90">90d</button>
-          <button type="button" class="seg-btn" data-days="365">1y</button>
+        <div class="adm-actions" data-actions="overview" hidden>
+          <div class="seg" id="range-seg" aria-label="Time range">
+            <button type="button" class="seg-btn" data-days="7">7d</button>
+            <button type="button" class="seg-btn" data-days="30">30d</button>
+            <button type="button" class="seg-btn active" data-days="90">90d</button>
+            <button type="button" class="seg-btn" data-days="365">1y</button>
+          </div>
+          <button type="button" class="btn btn-secondary" data-act="refresh"></button>
         </div>
-        <button type="button" class="btn btn-secondary" data-act="refresh"></button>
+        <div class="adm-actions" data-actions="users" hidden>
+          <button type="button" class="btn btn-primary" data-act="add-user"></button>
+        </div>
+        <div class="adm-actions" data-actions="activity" hidden>
+          <a class="btn btn-secondary" id="a-export" href="/api/admin/audit?format=csv" download></a>
+        </div>
       </div>
     </div>
 
@@ -57,28 +65,31 @@
           </div>
           <div class="grid grid-2 mt-4">
             <section class="card"><header class="card-head"><h2>Bank profiles</h2></header><div class="card-body" id="ov-profiles"></div></section>
-            <section class="card"><header class="card-head"><h2>Housekeeping</h2></header><div class="card-body" id="ov-housekeeping"></div></section>
+            <section class="card"><header class="card-head"><h2>Housekeeping</h2><span class="hint" id="ov-measured"></span></header><div class="card-body" id="ov-housekeeping"></div></section>
           </div>
         </section>
 
         <section class="tab-panel" data-panel="users">
           <div id="users-notice"></div>
           <div class="tbl-toolbar" id="users-toolbar">
-            <input id="u-search" class="input input-sm grow" type="search" placeholder="Search users…" aria-label="Search users">
+            <div class="input-group adm-search"><span class="ico-wrap"></span>
+              <input id="u-search" class="input input-sm" type="search" placeholder="Search users…" aria-label="Search users"></div>
             <button type="button" class="btn btn-secondary btn-sm" id="u-status-btn" aria-haspopup="menu"></button>
             <button type="button" class="btn btn-secondary btn-sm" id="u-role-btn" aria-haspopup="menu"></button>
-            <button type="button" class="btn btn-primary btn-sm" data-act="add-user"></button>
+            <button type="button" class="btn btn-ghost btn-sm" id="u-clear" data-act="clear-filters" hidden>Clear</button>
           </div>
+          <div class="tbl-summary" id="users-summary"></div>
           <div id="users-table"></div>
         </section>
 
         <section class="tab-panel" data-panel="activity">
           <div class="tbl-toolbar" id="audit-toolbar">
-            <input id="a-search" class="input input-sm grow" type="search" placeholder="Search actions…" aria-label="Search activity">
+            <div class="input-group adm-search"><span class="ico-wrap"></span>
+              <input id="a-search" class="input input-sm" type="search" placeholder="Search actions…" aria-label="Search activity"></div>
             <button type="button" class="btn btn-secondary btn-sm" id="a-action-btn" aria-haspopup="menu"></button>
             <button type="button" class="btn btn-secondary btn-sm" id="a-user-chip" data-act="clear-audit-user" hidden></button>
-            <a class="btn btn-secondary btn-sm" id="a-export" href="/api/admin/audit?format=csv" download></a>
           </div>
+          <div class="tbl-summary" id="audit-summary"></div>
           <div id="audit-list"></div>
           <div class="row center mt-4"><button type="button" class="btn btn-secondary btn-sm" data-act="audit-more" hidden>Load more</button></div>
         </section>

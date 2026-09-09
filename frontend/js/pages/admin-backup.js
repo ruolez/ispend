@@ -4,10 +4,23 @@ const BK = { jobs: [], poll: null, upload: null, restoreJob: null, restoreToken:
 const POLL_MS = 1500;
 const RESTORE_TOKEN_KEY = 'ispend.restoreJob';
 
-AdminPanels.register('backup', { label: 'Backup', icon: 'database', load: loadBackup });
+AdminPanels.register('backup', {
+  label: 'Backup', icon: 'database',
+  sub: 'One archive with every user, their data and every uploaded file',
+  actions: `<button type="button" class="btn btn-secondary btn-icon" data-act="reload-backups" aria-label="Refresh backups"></button>
+    <button type="button" class="btn btn-primary" data-act="start-backup"><span class="label">Create a backup</span></button>`,
+  load: loadBackup,
+});
 
 async function loadBackup(host) {
   BK.host = host;
+  if (!BK.wired) {
+    BK.wired = true;
+    $('[data-act="reload-backups"]').innerHTML = icon('refresh');
+    $('[data-act="start-backup"]').innerHTML = `${icon('database')}<span class="label">Create a backup</span>`;
+    // Nothing on screen to update once the tab is hidden; the poll restarts with the next load.
+    window.addEventListener('ispend:admin-tab', (e) => { if (e.detail !== 'backup') { clearInterval(BK.poll); BK.poll = null; } });
+  }
   render();
   await refreshJobs();
   // A restore signs this admin out partway through; the token lets the page keep polling.
@@ -19,28 +32,24 @@ async function loadBackup(host) {
 
 function render() {
   BK.host.innerHTML = `
-    <div class="settings-section">
-      <h2>Back up this server</h2>
+    <section class="settings-section">
+      <div class="adm-sec-head"><h2>Backups</h2></div>
       <div class="sub">One archive with every user, all their data and every uploaded statement.
         Use it to move iSpend to another server.</div>
       <div class="notice notice-warning mb-4">${icon('alert-triangle')}<div>
-        <b>This archive contains everything.</b> Every user's transactions, their password hashes and
+        <b>An archive contains everything.</b> Every user's transactions, their password hashes and
         your OpenRouter API key in plain text. Anyone who obtains the file can restore it onto their
         own server &mdash; store it like a password database. It does <b>not</b> contain this server's
         secret key or database password.</div></div>
-      <div class="row gap-2 mb-4">
-        <button type="button" class="btn btn-primary" data-act="start-backup">${icon('database')}<span class="label">Create a backup</span></button>
-        <button type="button" class="btn btn-secondary btn-icon" data-act="reload-backups" aria-label="Refresh">${icon('refresh')}</button>
-      </div>
       <div id="bk-jobs"></div>
-    </div>
+    </section>
 
-    <div class="settings-section">
-      <h2>Restore onto this server</h2>
+    <section class="settings-section adm-danger">
+      <div class="adm-sec-head"><h2>Restore onto this server</h2><span class="badge badge-danger">Destructive</span></div>
       <div class="sub">Replaces <b>everything</b> on this server with the contents of an archive.
-        A backup of the current data is taken automatically first.</div>
+        A backup of the current data is taken automatically first, and you are signed out when it finishes.</div>
       <div id="bk-restore"></div>
-    </div>`;
+    </section>`;
   renderRestorePanel();
 }
 
@@ -64,7 +73,8 @@ function renderJobs() {
   const host = $('#bk-jobs');
   if (!BK.jobs.length) {
     host.innerHTML = ui.emptyState({ icon: 'database', title: 'No backups yet',
-      body: 'Create one before migrating this server or making a large change.' });
+      body: 'Create one before migrating this server or making a large change.',
+      action: { label: 'Create a backup', act: 'start-backup' } });
     return;
   }
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr>
@@ -85,13 +95,13 @@ function jobRow(j) {
       : `<span class="user-status"><i class="dot" style="--c:var(--success)"></i>Done</span>`;
   const rows = j.stats && j.stats.tables ? Object.values(j.stats.tables).reduce((a, b) => a + b, 0) : null;
   return `<tr data-id="${j.id}">
-    <td><div class="fw-500">${esc(j.filename || '—')}</div>
+    <td><div class="bk-name">${esc(j.filename || '—')}</div>
       ${rows != null ? `<div class="sub">${fmtNumber(rows)} rows · ${fmtNumber((j.stats.files || {}).count || 0)} files</div>` : ''}
       ${(j.warnings || []).length ? `<div class="sub text-warning">${esc(plural(j.warnings.length, 'warning'))}</div>` : ''}</td>
     <td data-label="Kind"><span class="badge badge-neutral">${esc(KIND_LABEL[j.kind] || j.kind)}</span></td>
     <td data-label="Status">${status}</td>
     <td class="right num" data-label="Size">${j.size_bytes ? fmtBytes(j.size_bytes) : '—'}</td>
-    <td class="text-3" data-label="Created">${esc(fmtRelative(j.created_at))}</td>
+    <td class="text-3" data-label="Created" data-tip="${esc(fmtDateTime(j.created_at))}">${esc(fmtRelative(j.created_at))}</td>
     <td class="col-actions"><div class="row-actions">
       ${j.downloadable ? `<a class="btn btn-secondary btn-xs" href="/api/admin/backup/${j.id}/download" download>${icon('download', 'ico-sm')}<span class="label">Download</span></a>` : ''}
       ${busy ? '' : `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="delete-backup" data-id="${j.id}" aria-label="Delete backup">${icon('trash')}</button>`}
@@ -109,7 +119,7 @@ function renderRestorePanel() {
       <div class="bk-drop" id="bk-drop" tabindex="0" role="button" aria-label="Choose a backup archive">
         ${icon('upload', 'ico-lg')}
         <div class="fw-500">Choose a backup archive</div>
-        <div class="sub">Nothing is changed until you confirm on the next screen.</div>
+        <div class="sub">Drop a .zip here, or click to pick one. Nothing is changed until you confirm on the next screen.</div>
         <input type="file" id="bk-file" accept=".zip,application/zip" hidden>
       </div>`;
     return;
@@ -132,13 +142,14 @@ function renderRestorePanel() {
         ? `<div class="notice mt-3">${icon('info')}<div>${u.warnings.map((w) => esc(w.detail || w.kind)).join('<br>')}</div></div>`
         : ''}
     </div></div>
+    <div class="section-label mb-2">What this replaces</div>
     <div class="tbl-wrap mb-4"><table class="tbl"><thead><tr><th>Table</th>
       <th class="right">On this server now</th><th class="right">In the archive</th></tr></thead><tbody>
       ${rows.map(([t, c]) => `<tr><td>${esc(t)}</td>
         <td class="right num ${c.live ? 'text-danger' : 'text-3'}">${fmtNumber(c.live)}</td>
         <td class="right num">${fmtNumber(c.archive)}</td></tr>`).join('')}
     </tbody></table></div>
-    <label class="check mb-4"><input type="checkbox" id="bk-delete-extra">
+    <label class="bk-check mb-4"><input type="checkbox" class="check" id="bk-delete-extra">
       <span>Also delete uploaded files this archive does not reference</span></label>
     <div class="row gap-2">
       <button type="button" class="btn btn-danger-solid" data-act="confirm-restore" ${u.compatible ? '' : 'disabled'}>
@@ -240,7 +251,7 @@ document.addEventListener('click', async (e) => {
     case 'start-backup':
       await ui.busy(el, async () => { await api('/api/admin/backup', { method: 'POST', body: {} }); });
       return refreshJobs();
-    case 'reload-backups': return refreshJobs();
+    case 'reload-backups': return ui.busy(el, () => refreshJobs());
     case 'delete-backup': {
       const job = BK.jobs.find((j) => j.id === id);
       if (!(await ui.confirm({ title: 'Delete this backup?', body: `${job.filename} is removed from the server. Any copy you already downloaded is unaffected.`, confirmText: 'Delete', danger: true }))) return undefined;

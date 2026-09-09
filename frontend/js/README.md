@@ -190,8 +190,22 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Bac
   before deletion. Locked and deleted produce the same 403 message on login so a password holder cannot
   tell them apart; a wrong password stays a generic 401.
 - **Composition.** A sibling feature adds a tab with
-  `window.AdminPanels.register(tab, { label, icon, load(hostEl) })` plus one `<script>` in `admin.html` —
-  no edits to `admin.js`. `js/pages/admin-backup.js` is the worked example.
+  `window.AdminPanels.register(tab, { label, icon, sub, actions, load(hostEl) })` plus one `<script>` in
+  `admin.html` — no edits to `admin.js`. `sub` is the page subtitle for that tab; `actions` is HTML for a
+  page-head action group (`.adm-actions[data-actions=<tab>]`, hidden until the tab is current), so every
+  tab's primary buttons sit in the same place. `js/pages/admin-backup.js` is the worked example.
+- **Tab plumbing.** `showTab()` sets `aria-current="page"` on the nav item, swaps `#admin-sub`, reveals
+  that tab's action group and fires `window` event `ispend:admin-tab` with the tab name — panels use it to
+  drop viewport-fixed state (billing's save bar, backup's poll timer) when their tab goes away. `r`
+  refreshes whichever tab is showing (`refreshCurrent()`), `g u` jumps to Users.
+- **Activity.** Rows render `subject.verb` actions as a sentence (`AUDIT_SUBJECT`/`AUDIT_VERB`/
+  `AUDIT_EXACT` in `admin.js`; unknown verbs fall back to the prettified action) with the family's icon,
+  the raw action in the tooltip, `detail` as key/value chips, and day headers (Today / Yesterday / date).
+  Filtering still sends the raw action, so nothing becomes unsearchable. The username on a row filters
+  the log to that user; the chip in the toolbar clears it.
+- **Billing** edits are saved from a `.floatbar` that appears when the form is dirty (the same pattern as
+  the AI settings), not a button at the end of a long form. A secret whose value comes back as the mask
+  is skipped on save so re-saving the form never blanks it.
 - **Backup tab** (`/api/admin/backup*`): `GET|POST /`, `GET|DELETE /:id`, `GET /:id/download`,
   `POST /upload` (raw octet-stream via `apiUploadRaw`, inspect only), `POST /restore`,
   `GET /restore/:id?token=` — the last one is not admin-gated because a restore signs the admin out

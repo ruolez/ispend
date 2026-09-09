@@ -1,64 +1,120 @@
 #admin-panels { min-width: 0; }
 #admin-panels .tbl td, #admin-panels .tbl th { white-space: nowrap; }
+#admin-panels .tbl .sub { margin-bottom: 0; }              /* .settings-section .sub adds one */
+#admin-panels .card-body > .empty { padding: var(--sp-6) var(--sp-4); }
+#admin-panels .tbl-summary:empty { display: none; }
+/* Settings-style panels are a form, not a dashboard: cap the measure so a label and its control
+   stay near each other on a wide screen. Overview's cards keep the full width. */
+#admin-panels .settings-section { max-width: 840px; }
 
-/* Small labelled figures, used on Overview cards and in the per-user drawer. */
-.adm-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
-.adm-kpis > div { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+/* One action group per tab lives in the page head; showTab() reveals the current one. */
+.adm-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.adm-search { flex: 1 1 180px; max-width: 260px; }
+.adm-search .input { padding-left: 32px; }
+.tbl-toolbar .btn.is-on { border-color: var(--accent); color: var(--accent); }
+
+/* Section headings that carry a status badge (Billing, Backup). */
+.adm-sec-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: 4px; }
+.adm-sec-head h2 { font-size: var(--fs-lg); }
+
+/* Small labelled figures, used on Overview cards, on Billing and in the per-user drawer.
+   Flex rather than a fixed grid: a row of one tile should not stretch across the card. */
+.adm-kpis { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.adm-kpis > div { flex: 1 1 140px; max-width: 280px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }   /* the border carries the tile on the page background too */
 .adm-kpis .l { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.adm-kpis .v { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.adm-kpis .v { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+.adm-kpis .v .u { font-size: var(--fs-sm); font-weight: 500; color: var(--text-3); }
 
 /* A ranked breakdown reads better than a pie at this size and costs no canvas. */
 .adm-bars { display: flex; flex-direction: column; gap: 10px; }
 .adm-bar-head { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); margin-bottom: 4px; }
 .adm-bar-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-bar-row .progress { height: 5px; }
 
 .adm-storage-bar { display: flex; height: 10px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-3); }
 .adm-storage-bar > i { display: block; }
+.adm-legend { display: flex; flex-wrap: wrap; gap: var(--sp-4); font-size: var(--fs-sm); color: var(--text-3); }
+.adm-legend span { display: inline-flex; align-items: center; gap: 6px; }
 
 .adm-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 .adm-reason { color: var(--text-4); margin-left: 4px; vertical-align: middle; }
 .user-status .sub { color: var(--text-4); font-size: var(--fs-xs); margin-left: 6px; }
+#users-table tr.is-trashed td:not(.col-actions) { opacity: 0.65; }
 
+/* Right-hand control column of a .setting-row: a fixed width keeps the label beside it from
+   being squeezed into two lines, and every row lines its control up with the next. */
+.adm-ctl { flex: 0 0 auto; width: 320px; max-width: 100%; display: flex; align-items: center; gap: var(--sp-2); }
+.adm-ctl--sm { width: auto; }
+.adm-ctl > .input, .adm-ctl > .select, .adm-ctl > .input-group { flex: 1 1 auto; min-width: 0; }
+.num-input { width: 84px; }
+.min-w-0 { min-width: 0; }
+
+.adm-drawer-head { flex-wrap: wrap; }
 .adm-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
-.adm-tile { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.adm-tile { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }
 .adm-tile .l { font-size: var(--fs-xs); color: var(--text-3); }
 .adm-tile .v { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* Activity log: a machine action per line, so the family icon and a readable sentence do the
+   scanning work and the raw action stays in the tooltip. */
 .adm-audit { display: flex; flex-direction: column; }
-.adm-audit-item { display: grid; grid-template-columns: 8px 1fr auto; align-items: baseline; gap: var(--sp-3);
+#audit-list .adm-audit { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); padding: 0 var(--sp-5) var(--sp-2); }
+.adm-day { position: sticky; top: var(--topbar-h); z-index: 1; background: var(--surface); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); padding: var(--sp-4) 0 var(--sp-2); }
+.adm-audit-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) 150px 100px; align-items: center; gap: var(--sp-3);
   padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
+.adm-audit-item time { text-align: right; font-size: var(--fs-sm); }
 .adm-audit-item:last-child { border-bottom: 0; }
-.adm-audit-dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--text-4); align-self: center; }
-.adm-audit-dot.is-user { background: var(--warning); }
+.adm-audit-ico { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--text-3); display: grid; place-items: center; }
+.adm-audit-ico.is-danger { background: var(--danger-soft); color: var(--danger-text); }
 .adm-audit-action { font-size: var(--fs-base); font-weight: 500; }
-.adm-audit-detail { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.min-w-0 { min-width: 0; }
-.num-input { width: 84px; }
+.adm-audit-detail { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; overflow: hidden; max-height: 42px; }
+.adm-kv { display: inline-flex; align-items: center; gap: 4px; max-width: 260px; padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adm-kv i { font-style: normal; color: var(--text-4); flex: 0 0 auto; }
+.adm-kv b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.adm-audit-who { min-width: 0; }
+.adm-audit-who .row-link { gap: 6px; color: var(--text-3); font-size: var(--fs-sm); max-width: 100%; }
+.adm-audit--compact .adm-audit-item { grid-template-columns: 24px minmax(0, 1fr) 90px; }
+
+/* Backup tab */
+.adm-danger { border: 1px solid var(--danger-soft); border-radius: var(--r-lg); padding: var(--sp-5); background: var(--danger-soft); }
+.adm-danger .sub { color: var(--text-2); }
+.bk-name { font-family: var(--mono); font-size: var(--fs-sm); word-break: break-all; white-space: normal; }
+.bk-check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.bk-drop { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-6); border: 1px dashed var(--border-strong); border-radius: var(--r-lg);
+  background: var(--surface); text-align: center; cursor: pointer; }
+.bk-drop:hover, .bk-drop:focus-visible { border-color: var(--accent); background: var(--surface-2); }
+.bk-drop .ico-lg { color: var(--text-3); }
+.bk-drop .sub { max-width: 420px; margin-bottom: 0; }
+.bk-drop .progress { width: 100%; }
+.bk-progress { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
+.bk-progress .sub { color: var(--text-3); font-size: var(--fs-xs); }
 
 @media (max-width: 1280px) {
   .adm-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+@media (max-width: 960px) {
+  .adm-day { top: 0; }
+  .adm-audit-item { grid-template-columns: 24px minmax(0, 1fr) 110px 90px; }
+}
 @media (max-width: 768px) {
-  .adm-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .adm-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #admin-panels .tbl td, #admin-panels .tbl th { white-space: normal; }
+  #admin-panels .setting-row { flex-wrap: wrap; }
+  .adm-ctl { width: 100%; }
+  .adm-danger { padding: var(--sp-4); }
 }
 @media (max-width: 640px) {
   #users-toolbar, #audit-toolbar { flex-wrap: wrap; }
-  #u-search, #a-search { flex: 1 0 100%; }
+  .adm-search { flex: 1 0 100%; max-width: none; }
+  .adm-kpis > div { max-width: none; }
 }
 @media (max-width: 480px) {
-  .adm-audit-item { grid-template-columns: 8px 1fr; }
-  .adm-audit-item time { grid-column: 2; }
+  .adm-audit-item { grid-template-columns: 24px minmax(0, 1fr) auto; row-gap: 2px; align-items: start; }
+  .adm-audit-item time { grid-row: 1; grid-column: 3; }
+  .adm-audit-who { grid-row: 2; grid-column: 2; }
+  .adm-audit-who .row-link { max-width: none; }
+  #audit-list .adm-audit { padding: 0 var(--sp-4) var(--sp-2); }
 }
-
-/* Backup tab */
-.bk-drop { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-6); border: 1px dashed var(--border-strong); border-radius: var(--r-lg);
-  background: var(--surface-2); text-align: center; cursor: pointer; }
-.bk-drop:hover, .bk-drop:focus-visible { border-color: var(--accent); background: var(--surface-3); }
-.bk-drop .ico-lg { color: var(--text-3); }
-.bk-drop .progress { width: 100%; }
-.bk-progress { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
-.bk-progress .sub { color: var(--text-3); font-size: var(--fs-xs); }

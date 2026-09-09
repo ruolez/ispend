@@ -91,3 +91,15 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
   real route.
 - Stripe is stubbed in tests by `_stubs.install_stripe()`, which must be called before `billing`
   or `billing_api` are imported.
+
+## Added 2026-09-08 (admin console UI pass)
+- Every tab's primary actions now live in the page head (`#admin-actions > .adm-actions[data-actions=<tab>]`);
+  external panels supply theirs through `AdminPanels.register(..., { sub, actions })`. The nav item of the
+  current tab carries `aria-current="page"`, and `#admin-sub` holds the per-tab subtitle.
+- `showTab()` fires `window` event `ispend:admin-tab` (detail = tab name); billing drops its unsaved-changes
+  `.floatbar` and backup clears its poll timer on it.
+- Users rows are clickable (drawer) with a `[data-act=user-open]` button on the username for the keyboard;
+  `#users-summary` and `#audit-summary` (`.tbl-summary`) carry the counts.
+- Activity rows are humanized (`auditTitle()`), grouped by day (`.adm-day`), and carry `detail` as
+  `.adm-kv` chips; the filter still uses raw action strings.
+- `r` refreshes the current tab (it was advertised in the shortcuts sheet before but never registered).
