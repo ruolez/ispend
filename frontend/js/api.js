@@ -17,6 +17,14 @@ async function api(path, options = {}) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON */ }
+  /* One place catches every blocked write, so no page has to know the rule. */
+  if (res.status === 402 && data && data.code === 'subscription_required') {
+    toast(data.error, { type: 'error', duration: 8000,
+      action: { label: 'Subscribe', fn: () => { location.href = data.billing_url || '/billing.html'; } } });
+    const err = new Error('Subscription required');
+    err.status = 402; err.data = data;
+    throw err;
+  }
   if (!res.ok) {
     const err = new Error((data && data.error) || httpFallback(res.status));
     err.status = res.status;
@@ -39,6 +47,7 @@ const HTTP_FALLBACK = {
   404: 'Not found',
   409: 'That conflicts with something that already exists',
   413: 'That file is too large',
+  402: 'Your subscription has ended',
   429: 'Too many requests — wait a minute and try again',
 };
 function httpFallback(status, verb = 'Request failed') {
@@ -57,10 +66,15 @@ function apiUpload(path, formData, { onProgress } = {}) {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
       if (xhr.status === 401) { loginRedirect(); return reject(new Error('Not authenticated')); }
+      if (xhr.status === 402 && data && data.code === 'subscription_required') {
+        toast(data.error, { type: 'error', duration: 8000,
+          action: { label: 'Subscribe', fn: () => { location.href = data.billing_url || '/billing.html'; } } });
+        return reject(Object.assign(new Error('Subscription required'), { status: 402, data }));
+      }
       if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
       const err = new Error((data && data.error) || httpFallback(xhr.status, 'Upload failed'));
       err.status = xhr.status;
-      reject(err);
+      return reject(err);
     });
     xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
     xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));

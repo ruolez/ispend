@@ -684,3 +684,10 @@ tr:hover .row-actions > .btn-icon, tr:focus-within .row-actions > .btn-icon, tr.
 .row-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; min-height: 24px; }
 .row-link:hover { text-decoration: underline; }
 .row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+
+/* Full-width notice above the page content (trial, grace, read-only, unverified email). */
+.app-banner { border-radius: 0; padding: var(--sp-3) var(--sp-6); align-items: center; }
+.shell > .app-banner + .app-banner { border-top: 1px solid var(--border); }
+/* Read-only accounts: primary create actions are dimmed so they read as intentional rather than
+   broken. Anything not marked still degrades to the 402 toast. */
+body[data-readonly] [data-needs-write] { opacity: 0.45; pointer-events: none; }

@@ -11,3 +11,4 @@ xlrd==2.0.2
 python-dateutil==2.9.0.post0
 rapidfuzz==3.14.6
 regex==2026.9.3
+stripe==15.6.1

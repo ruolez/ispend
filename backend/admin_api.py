@@ -69,8 +69,8 @@ def _retention_days():
 # ---------- Users ----------
 
 _LIST_USERS_SQL = """
-SELECT u.id, u.username, u.role, u.status, u.locked_at, u.lock_reason, u.deleted_at,
-       u.created_at, u.last_login_at,
+SELECT u.id, u.username, u.email, u.email_verified_at, u.role, u.status, u.locked_at,
+       u.lock_reason, u.deleted_at, u.created_at, u.last_login_at,
        COALESCE(t.n, 0) AS txn_count,
        COALESCE(a.n, 0) AS account_count,
        COALESCE(s.n, 0) AS statement_count,
@@ -87,7 +87,7 @@ SELECT u.id, u.username, u.role, u.status, u.locked_at, u.lock_reason, u.deleted
               GROUP BY user_id) s ON s.user_id = u.id
  WHERE u.status = ANY(%(statuses)s)
    AND (%(role)s IS NULL OR u.role = %(role)s)
-   AND (%(q)s IS NULL OR u.username ILIKE %(q)s)
+   AND (%(q)s IS NULL OR u.username ILIKE %(q)s OR u.email ILIKE %(q)s)
  ORDER BY {order}, u.id
  LIMIT %(limit)s
 """
@@ -118,6 +118,15 @@ def list_users():
     ) or []
     me = _uid()
     items = [{**r, "is_self": r["id"] == me} for r in rows_json(rows)]
+    # Billing is optional; the users list must render on an install that has none.
+    try:
+        import admin_billing
+        blocks = admin_billing.users_block([r["id"] for r in items])
+        for item in items:
+            item["billing"] = blocks.get(item["id"])
+    except Exception:
+        for item in items:
+            item["billing"] = None
     due = db.query(
         """SELECT COUNT(*) AS n FROM users
             WHERE status = 'deleted' AND %(retention)s > 0

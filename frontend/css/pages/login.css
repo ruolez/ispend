@@ -10,3 +10,5 @@
 .login-error { display: none; margin-bottom: var(--sp-4); }
 .login-error.show { display: flex; }
 .login-foot { margin-top: var(--sp-5); display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-sm); color: var(--text-4); }
+.login-links { display: flex; flex-direction: column; gap: 6px; align-items: center;
+  margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--text-3); }

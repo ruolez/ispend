@@ -5,8 +5,10 @@ import psycopg2.errors
 from flask import Flask, abort, jsonify, request
 from werkzeug.exceptions import HTTPException
 
+import billing_tick
 import config
 import db
+import entitlement
 from backup import restore as backup_restore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -28,6 +30,8 @@ def create_app():
     import accounts_api
     import admin_api
     import admin_backup
+    import admin_billing
+    import billing_api
     import ai_api
     import auth
     import categories_api
@@ -44,7 +48,7 @@ def create_app():
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
         transactions_api, review_api, rules_api, merchants_api, reports_api, ai_api, budgets_api, tags_api,
-        admin_api, admin_backup,
+        admin_api, admin_backup, admin_billing, billing_api,
     ):
         app.register_blueprint(module.bp)
 
@@ -66,7 +70,13 @@ def create_app():
                 and request.path != "/api/health"
                 and backup_restore.restore_in_progress()):
             return jsonify({"error": "A restore is in progress. Try again in a few minutes."}), 503
-        return None
+        # gunicorn --preload runs create_app() in the master, so a thread started there dies in
+        # the fork. Starting it from the first request puts it in the worker.
+        billing_tick.start(app)
+        # Blocks every non-GET outside an explicit allowlist. Deny-by-default, because a
+        # decorator is opt-in and "we forgot to decorate the new endpoint" is what leaks the
+        # product.
+        return entitlement.enforce_write_access()
 
     app.teardown_appcontext(db.close_db)
 

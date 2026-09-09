@@ -52,11 +52,46 @@ class FakeDB:
     def set_user_setting(self, user_id, key, value):
         self.settings[f"u{user_id}:{key}"] = value
 
+    def run_migrations(self):
+        """create_app() calls this; the stub schema is whatever the tests route."""
+
+    def connect(self):
+        return self
+
     def get_db(self):
         return self
 
     def close_db(self, _exc=None):
         pass
+
+
+class _FakeStripeError(Exception):
+    pass
+
+
+def install_stripe():
+    """Inject a controllable stripe module BEFORE billing/billing_api are imported."""
+    existing = sys.modules.get("stripe")
+    if existing is not None and getattr(existing, "_ispend_fake", False):
+        return existing
+    fake = types.SimpleNamespace(
+        _ispend_fake=True, api_key=None, api_version=None, max_network_retries=0,
+        VERSION="fake",
+        SignatureVerificationError=type("SignatureVerificationError", (Exception,), {}),
+        StripeError=_FakeStripeError,
+        Webhook=types.SimpleNamespace(construct_event=lambda payload, sig, secret: None),
+        Customer=types.SimpleNamespace(create=lambda **kw: {"id": "cus_fake"}),
+        Price=types.SimpleNamespace(retrieve=lambda pid: {"unit_amount": 500, "currency": "usd",
+                                                          "recurring": {"interval": "month"}}),
+        Subscription=types.SimpleNamespace(retrieve=lambda sid: {"id": sid, "status": "active",
+                                                                 "items": {"data": [{}]}}),
+        checkout=types.SimpleNamespace(
+            Session=types.SimpleNamespace(create=lambda **kw: {"url": "https://checkout.test/s"})),
+        billing_portal=types.SimpleNamespace(
+            Session=types.SimpleNamespace(create=lambda **kw: {"url": "https://portal.test/s"})),
+    )
+    sys.modules["stripe"] = fake
+    return fake
 
 
 def install(tmp_dir="/tmp"):
@@ -79,6 +114,10 @@ def install(tmp_dir="/tmp"):
         MAX_UPLOAD_BYTES=25 * 1024 * 1024, MAX_RESTORE_BYTES=4 * 1024 ** 3, USE_X_ACCEL=False,
         OCR_TIMEOUT_SECONDS=10, OCR_LANGS="eng",
         OPENROUTER_BASE_URL="http://localhost", OPENROUTER_TIMEOUT=5, AI_BATCH_SIZE=40, APP_TIMEZONE="UTC",
+        APP_BASE_URL="http://localhost:5559", STRIPE_SECRET_KEY="", STRIPE_WEBHOOK_SECRET="",
+        STRIPE_PRICE_MONTHLY="", STRIPE_PRICE_YEARLY="",
+        SMTP_HOST="", SMTP_PORT="", SMTP_SECURITY="", SMTP_USER="", SMTP_PASSWORD="",
+        SMTP_FROM_EMAIL="", SMTP_FROM_NAME="",
         SESSION_COOKIE_SECURE=False,
     )
     return fake

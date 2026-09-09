@@ -219,6 +219,30 @@ class BackupRoundTripTest(unittest.TestCase):
                    (json.dumps({"username": "gone"}),))
         db.execute("INSERT INTO audit_log (user_id, action) VALUES (%s, 'auth.login')", (admin_id,))
 
+        # Billing: a paying account, a lapsed one and a comp, so the NUMERIC/timestamp columns and
+        # the 'infinity' sentinel all get exercised.
+        db.execute("""INSERT INTO subscriptions (user_id, status, plan, price_id, stripe_customer_id,
+                                                 stripe_subscription_id, current_period_end,
+                                                 cancel_at_period_end, last_event_at, synced_at)
+                      VALUES (%s, 'active', 'monthly', 'price_x', 'cus_x', 'sub_x',
+                              now() + interval '20 days', TRUE, 1700000000, now())""", (uid,))
+        db.execute("""INSERT INTO subscriptions (user_id, status, comped_until)
+                      VALUES (%s, 'comped', 'infinity'::timestamptz)""", (admin_id,))
+        db.execute("""INSERT INTO subscriptions (user_id, status, trial_end, lapsed_at, grace_until)
+                      VALUES (%s, 'past_due', now() - interval '30 days', now() - interval '9 days',
+                              now() - interval '2 days')""", (locked,))
+        db.execute("""INSERT INTO stripe_events (id, type, stripe_created, user_id, status, error)
+                      VALUES ('evt_rt_1', 'invoice.paid', 1700000000, %s, 'processed', NULL)""", (uid,))
+        db.execute("""INSERT INTO stripe_events (id, type, stripe_created, user_id, status, error)
+                      VALUES ('evt_rt_2', 'checkout.session.completed', 1700000001, NULL, 'failed',
+                              'mismatch: "quoted" \\ and, commas')""")
+        db.execute("""INSERT INTO auth_tokens (user_id, kind, token_hash, expires_at, created_ip)
+                      VALUES (%s, 'reset', %s, now() + interval '1 hour', '203.0.113.7')""",
+                   (uid, "b" * 64))
+        db.execute("""INSERT INTO auth_tokens (user_id, kind, token_hash, expires_at, used_at)
+                      VALUES (%s, 'verify', %s, now() + interval '7 days', now())""",
+                   (admin_id, "c" * 64))
+
     # ---------- the round trip ----------
 
     def test_the_seed_covers_every_exported_table(self):

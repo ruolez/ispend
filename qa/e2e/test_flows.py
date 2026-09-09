@@ -295,11 +295,24 @@ def fixture_rows():
 def fresh_user():
     """Delete + re-create qa_flows through the admin API so the run starts from an empty account."""
     admin = Api(ADMIN)
-    users = admin.get("/api/admin/users?status=all")["items"]
-    for u in users:
-        if u["username"] == QA[0]:
-            admin.delete(f"/api/admin/users/{u['id']}")
-            admin.delete(f"/api/admin/users/{u['id']}?permanent=true&confirm={u['username']}")
+    existing = next((u for u in admin.get("/api/admin/users?status=all")["items"]
+                     if u["username"] == QA[0]), None)
+    if existing:
+        # Purging is two steps, and the server refuses while one of that user's imports is still
+        # parsing (a 10-minute window). Silently carrying on would reuse a stale account whose
+        # password an earlier F10 run had changed, and every later flow would fail to sign in.
+        admin.delete(f"/api/admin/users/{existing['id']}")
+        deadline = time.time() + 60
+        while True:
+            try:
+                admin.delete(f"/api/admin/users/{existing['id']}?permanent=true&confirm={QA[0]}")
+                break
+            except Exception:
+                if time.time() > deadline:
+                    raise AssertionError(
+                        f"could not purge {QA[0]}: an import is probably still running. "
+                        "Wait a few minutes (or restart the backend) and re-run.") from None
+                time.sleep(3)
     created = admin.post("/api/admin/users", {"username": QA[0], "password": QA[1], "role": "user"})
     S["qa_user_id"] = created["id"]
     S["api"] = Api(QA)
@@ -2256,7 +2269,17 @@ def test_f10_settings(page, qapi, browser):
     F.check(r.ok, "re-login with the new password works")
     r2 = login_with_retry(lambda: requests.post(f"{BASE}/api/auth/login", json={"username": QA[0], "password": QA[1]}))
     F.check(r2.status_code == 401, "old password rejected")
-    qapi.put("/api/auth/me/password", {"current_password": "newpass123", "password": QA[1]})
+    # Changing a password signs every OTHER session out (users.session_epoch), so the API session
+    # this module has been reusing since F1 is now dead -- which is the point of the mechanism.
+    stale = requests.get(f"{BASE}/api/auth/me", cookies=qapi.s.cookies)
+    F.check(stale.status_code == 401, f"a password change invalidates other sessions: {stale.status_code}")
+    # Restore over the API (deterministic), then rebuild both sessions: the restore itself bumps
+    # the epoch again, so the browser page this module shares is signed out too.
+    Api((QA[0], "newpass123")).put("/api/auth/me/password",
+                                   {"current_password": "newpass123", "password": QA[1]})
+    S["api"] = Api(QA)
+    ui_login(page, QA)
+    F.check(page.evaluate("!!window.currentUser"), "signed back in after the password round trip")
     F.finish()
 
 

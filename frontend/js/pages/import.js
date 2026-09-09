@@ -64,6 +64,17 @@ function catChip(id, source, rowId) {
 /* ---------- Step 1: upload ---------- */
 function renderUpload() {
   const host = $('#step-upload');
+  // Importing is the one thing a read-only account most obviously cannot do, so it gets an
+  // explanation rather than a dimmed dropzone.
+  const billing = (window.currentUser || {}).billing;
+  if (billing && billing.billing_enabled && !billing.can_write) {
+    host.innerHTML = ui.emptyState({
+      icon: 'lock', title: 'Importing is paused',
+      body: 'Your subscription has ended. Subscribe to import statements again — everything you '
+          + 'have already imported is untouched and still exportable.',
+      action: { label: 'Subscribe', href: '/billing.html' } });
+    return;
+  }
   host.innerHTML = `
     <label class="dropzone" id="dropzone" tabindex="0" aria-label="Choose statement files">
       <input type="file" id="file-input" multiple accept="${ACCEPT.join(',')}">

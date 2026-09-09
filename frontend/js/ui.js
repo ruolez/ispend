@@ -654,7 +654,7 @@ window.toast = toast;
    The browser keeps logging it (no preventDefault), so the QA recorders still see it. */
 (() => {
   const recent = new Map();
-  const IGNORE = new Set(['Not authenticated', 'Upload cancelled']);
+  const IGNORE = new Set(['Not authenticated', 'Upload cancelled', 'Subscription required']);
   function report(err) {
     const msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || 'Something went wrong';
     if (IGNORE.has(msg)) return;

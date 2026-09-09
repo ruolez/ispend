@@ -19,6 +19,7 @@ PAGES = {
     "insights": "/insights.html",
     "settings": "/settings.html",
     "admin": "/admin.html",
+    "billing": "/billing.html",
 }
 CHART_PAGES = {"index", "categories", "reports", "admin"}
 SLOW_MS = 1500

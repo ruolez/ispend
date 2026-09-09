@@ -70,3 +70,24 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
   with `proxy_pass` makes nginx 301 the slash-less URI, which broke `/api/admin/backup`.
 - `USE_X_ACCEL` defaults off (Flask streams the artifact, mode 0600). Turning it on lets nginx serve
   the download but requires mode 0644, because the nginx and backend images share no group.
+
+## Added 2026-09-08 (billing, signup, email)
+- Pages: `/billing.html` and the unauthenticated `/signup.html`, `/forgot.html`, `/reset.html`,
+  `/verify.html`. `billing` is in `helpers.PAGES`; the public ones are in `a11y_scan.PAGES`.
+- **Everything is inert unless Stripe is configured.** `billing.enabled()` is false without a
+  secret key + monthly price, and then `entitlement.evaluate()` returns `active` for everyone.
+  Sign-ups are off unless `settings.signup_enabled = '1'`. The dev stack and CI run this way.
+- Migration 012 marks every pre-existing account `comped_until = 'infinity'`, so turning billing
+  on never locks out the people already using the install.
+- **A password change bumps `users.session_epoch`, which signs every OTHER session out.** A test
+  that changes a password through the UI and then reuses a separate API session will get 401s —
+  see the end of `test_f10_settings` for the pattern (restore, then rebuild both sessions).
+- A restore rotates the *global* `settings.session_epoch`; a password change bumps the *per-user*
+  `users.session_epoch`. Both are checked in `auth.refresh_session_user`, and both only bite once
+  they have been set, so upgrading signs nobody out.
+- Writes are blocked by `entitlement.enforce_write_access`, a `before_request` that denies every
+  non-GET outside `WRITE_ALLOWLIST`. Adding a mutating endpoint needs no change; adding a
+  *read-only* POST does. `tests/test_entitlement.py` asserts every allowlisted path resolves to a
+  real route.
+- Stripe is stubbed in tests by `_stubs.install_stripe()`, which must be called before `billing`
+  or `billing_api` are imported.

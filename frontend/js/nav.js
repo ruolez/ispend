@@ -23,8 +23,9 @@ const NAV_GROUPS = [
     { page: 'admin', href: '/admin.html', label: 'Admin', icon: 'shield', key: 'a', adminOnly: true },
   ] },
 ];
+const NAV_BILLING = { page: 'billing', href: '/billing.html', label: 'Billing', icon: 'credit-card' };
 const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Settings', icon: 'settings', key: 's' };
-const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_SETTINGS];
+const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_BILLING, NAV_SETTINGS];
 const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'import'];
 const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
@@ -65,7 +66,7 @@ function paintPinnedViews(me) {
   });
 }
 function navItemHtml(i, activePage) {
-  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
+  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
@@ -93,6 +94,7 @@ async function initNav(activePage) {
       </nav>
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
+        ${navItemHtml({ ...NAV_BILLING, billingOnly: true }, activePage)}
         ${navItemHtml(NAV_SETTINGS, activePage)}
       </div>
     </aside>`;
@@ -191,11 +193,75 @@ async function initNav(activePage) {
   // slow connection; non-admins still get it removed outright.
   if (me.role === 'admin') $$('[data-admin-only]').forEach((el) => el.removeAttribute('hidden'));
   else $$('[data-admin-only]').forEach((el) => el.remove());
+  // Billing is hidden entirely on an install that runs without subscriptions.
+  if (me.billing && me.billing.billing_enabled) $$('[data-billing-only]').forEach((el) => el.removeAttribute('hidden'));
+  else $$('[data-billing-only]').forEach((el) => el.remove());
+  paintBillingBanner(me);
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);
   paintPinnedViews(me);
   window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
   return me;
+}
+
+/* Trial / grace / read-only notices, built from the existing .notice vocabulary rather than a
+   new component. A read-only account also flags the body so pages can dim their primary
+   create actions; anything they miss still degrades to the 402 toast from api.js. */
+const BANNER_DISMISS_KEY = 'ispend.bannerDismissed';
+
+function paintBillingBanner(me) {
+  const b = me.billing;
+  if (!b || !b.billing_enabled) return;
+  if (!b.can_write) document.body.dataset.readonly = '1';
+
+  const banners = [];
+  if (b.state === 'trialing') {
+    const soon = (b.days_left ?? 99) <= 3;
+    banners.push({ id: 'trial', type: soon ? 'warning' : 'info', dismissible: !soon,
+      html: `${plural(b.days_left || 0, 'day')} left in your trial.`, cta: 'See plans' });
+  } else if (b.state === 'grace') {
+    banners.push({ id: 'grace', type: 'warning',
+      html: `We couldn't renew your subscription. You have ${esc(plural(b.days_left || 0, 'day'))} to fix it before iSpend becomes read-only.`,
+      cta: 'Update payment' });
+  } else if (b.state === 'read_only') {
+    banners.push({ id: 'ro', type: 'warning',
+      html: 'Your subscription has ended. iSpend is read-only — you can still view and export everything.',
+      cta: 'Subscribe' });
+  } else if (b.state === 'active' && b.cancel_at_period_end && b.current_period_end) {
+    banners.push({ id: 'cancelling', type: 'info', dismissible: true,
+      html: `Your plan ends on ${esc(fmtDateLong(b.current_period_end))}.`, cta: 'Resubscribe' });
+  }
+  if (me.email && !me.email_verified) {
+    banners.push({ id: 'verify', type: 'info', dismissible: true,
+      html: 'Confirm your email address so you can subscribe.', cta: 'Resend', act: 'resend-verify' });
+  }
+  let dismissed = [];
+  try { dismissed = JSON.parse(sessionStorage.getItem(BANNER_DISMISS_KEY) || '[]'); } catch { /* ignore */ }
+  const shell = document.querySelector('.shell') || document.body;
+  const main = document.getElementById('main');
+  banners.filter((x) => !(x.dismissible && dismissed.includes(x.id))).reverse().forEach((x) => {
+    const el = document.createElement('div');
+    el.className = `notice notice-${x.type} app-banner`;
+    el.setAttribute('role', 'status');
+    el.innerHTML = `${icon(x.type === 'warning' ? 'alert-triangle' : 'info')}<div class="grow">${x.html}</div>
+      ${x.act ? `<button type="button" class="btn btn-secondary btn-sm" data-act="${x.act}">${esc(x.cta)}</button>`
+              : `<a class="btn btn-secondary btn-sm" href="/billing.html">${esc(x.cta)}</a>`}
+      ${x.dismissible ? `<button type="button" class="btn btn-icon btn-ghost btn-sm" data-dismiss="${x.id}" aria-label="Dismiss">${icon('x')}</button>` : ''}`;
+    shell.insertBefore(el, main);
+  });
+  document.addEventListener('click', async (e) => {
+    const d = e.target.closest('[data-dismiss]');
+    if (d) {
+      dismissed.push(d.dataset.dismiss);
+      try { sessionStorage.setItem(BANNER_DISMISS_KEY, JSON.stringify(dismissed)); } catch { /* ignore */ }
+      d.closest('.app-banner').remove();
+      return;
+    }
+    if (e.target.closest('[data-act="resend-verify"]')) {
+      await api('/api/auth/email/resend', { method: 'POST', body: {} });
+      toast('Confirmation email sent', { type: 'success' });
+    }
+  });
 }
 
 async function refreshReviewPill() {
@@ -218,6 +284,7 @@ function openUserMenu(anchor) {
     { divider: true },
     { label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) },
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
+    ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
     ...(me.role === 'admin' ? [{ label: 'Admin', icon: 'shield', href: '/admin.html' }] : []),
     { label: 'Settings', icon: 'settings', href: '/settings.html' },
     { divider: true },
@@ -287,7 +354,10 @@ function openPalette() {
     { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
     { group: 'Actions', label: 'Show split transactions', icon: 'split', run: () => { location.href = '/transactions.html?split=1&range=all'; } },
   ];
-  const pages = NAV_ITEMS.filter((i) => !i.adminOnly || (window.currentUser || {}).role === 'admin')
+  const me = window.currentUser || {};
+  const pages = NAV_ITEMS
+    .filter((i) => !i.adminOnly || me.role === 'admin')
+    .filter((i) => i.page !== 'billing' || (me.billing && me.billing.billing_enabled))
     .map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 
   async function search(q) {

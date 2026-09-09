@@ -30,3 +30,21 @@ AI_BATCH_SIZE = int(os.environ.get("AI_BATCH_SIZE", "40"))
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
 
 APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/Chicago")
+
+# ---- Billing (SaaS mode). All empty => billing is off and every account has full access. ----
+# Stripe redirects back here. request.url_root reports http:// behind the TLS terminator because
+# there is no ProxyFix, so this is required once the app is served over HTTPS.
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_MONTHLY = os.environ.get("STRIPE_PRICE_MONTHLY", "")
+STRIPE_PRICE_YEARLY = os.environ.get("STRIPE_PRICE_YEARLY", "")
+
+# ---- Outbound email. Unset => every send is a logged no-op. ----
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = os.environ.get("SMTP_PORT", "")
+SMTP_SECURITY = os.environ.get("SMTP_SECURITY", "")
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "")
+SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "")

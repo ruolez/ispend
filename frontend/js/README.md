@@ -173,7 +173,7 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 ## Admin
 `/admin.html` (nav group "Admin", `g a`) is admin-only and mounts the same tabbed layout as Settings
 (`.settings-layout` / `.settings-nav` / `.settings-section` / `.setting-row`, now in **app.css** so both
-pages share them). Tabs are hash-routed: Overview, Users, Activity, Backup.
+pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Backup.
 
 - **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
   the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
@@ -203,3 +203,27 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Backup.
 - Storage is reported twice on purpose: `disk_bytes` (a volume scan — exact, includes OCR output and
   orphans) and `source_bytes` (the DB's view, de-duplicated by `file_sha256`). AI usage is reported in
   tokens, never dollars.
+
+## Billing & entitlements
+`me.billing` (from `/api/auth/me`) carries `{state, can_write, billing_enabled, status, plan,
+trial_end, current_period_end, grace_until, cancel_at_period_end, has_subscription, comped,
+days_left}`. `state` is one of `admin_exempt | trialing | active | grace | read_only`, and is
+`active` for everyone when `billing_enabled` is false — an install without Stripe behaves exactly
+as it did before billing existed.
+
+- **The 402 contract.** A blocked write returns `402 {error, code:"subscription_required",
+  state, billing_url}`. `api()` and `apiUpload()` catch it centrally, raise an error toast with a
+  Subscribe action, and throw `Error('Subscription required')` — which is in `ui.js`'s global-error
+  `IGNORE` set so it never double-toasts. **No page needs to know the rule.**
+- **Read-only affordances.** `nav.js` sets `body[data-readonly]` and `app.css` dims
+  `[data-needs-write]`. Only ~a dozen primary create buttons carry that attribute; everything else
+  degrades to the 402 toast, which is deliberate — a per-page list would drift out of sync with the
+  server allowlist, and the server is the source of truth.
+- **Banners** are built from `.notice` + `.app-banner` in `nav.js paintBillingBanner()`, not a new
+  component. Trial/grace/read-only/cancelling plus an unverified-email notice; the low-urgency ones
+  are dismissible for the session.
+- **Pages**: `/billing.html` (plan, Checkout, Portal) and the unauthenticated `/signup.html`,
+  `/forgot.html`, `/reset.html`, `/verify.html`, which share `js/pages/_authpage.js` and
+  `css/pages/login.css` and load no `nav.js`.
+- `?checkout=success` is never treated as proof of payment: the page calls
+  `POST /api/billing/refresh`, which re-reads the subscription from Stripe.

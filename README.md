@@ -149,9 +149,41 @@ If an instance ever loses its last administrator (manual SQL, a restore), promot
 docker compose exec backend python -c "import db; db.promote_admin('admin')"
 ```
 
+## Running iSpend as a service
+
+iSpend runs happily with no billing at all: leave the Stripe settings empty and every account has
+full access, which is what a self-hosted install wants. To sell it instead:
+
+1. In Stripe, create a product with a monthly price (and optionally a yearly one).
+2. Add a webhook endpoint pointing at `https://<your host>/api/billing/webhook`, subscribing to
+   `checkout.session.completed`, `customer.subscription.created|updated|deleted`,
+   `invoice.paid`, `invoice.payment_failed` and `customer.subscription.trial_will_end`.
+   Copy its signing secret.
+3. Put the keys in `.env` (see `.env.example`) or in **Admin → Billing**, set `APP_BASE_URL`, and
+   turn on **Accept new sign-ups**.
+4. Optionally configure SMTP so iSpend can send its welcome, trial-ending, payment-failed and
+   password-reset messages. Stripe emails receipts itself.
+
+How it behaves:
+
+- A new sign-up gets a **local** trial (14 days by default). No Stripe object exists until someone
+  subscribes, so sign-up works even if Stripe is down and spam accounts never reach your dashboard.
+- Payment uses hosted **Stripe Checkout** and the **Billing Portal** — card details never touch
+  this server.
+- When a trial ends or a payment fails, the account gets a **grace period** (7 days by default)
+  with in-app warnings, then becomes **read-only**: the user can still sign in, read everything and
+  export their data, but cannot import or edit until they subscribe. Nothing is ever deleted.
+- **Administrators are never billed.** That keeps a self-hosted operator from being locked out of
+  their own admin console, but it means an `admin` account is a free licence — never grant one to
+  a customer.
+- Existing accounts on an install that upgrades into billing are marked complimentary forever, so
+  turning billing on never locks out the people already using it.
+
 ## Security notes
 
 - Session cookies (HttpOnly, SameSite=Lax, Secure when installed with HTTPS); use the installer's Let's Encrypt option when the app is reachable from the internet.
 - Uploaded statements are stored in a private Docker volume and are only downloadable by their owner.
 - Locked and deleted accounts return the same message at sign-in, so a password holder cannot tell which happened; a wrong password is always the generic "Invalid username or password".
+- Changing a password signs every other session out; password-reset links are single-use, expire in an hour, and are stored only as a hash.
+- Sign-up and password-reset endpoints are rate-limited in nginx and again in the application, because nginx can be bypassed by anything that reaches the backend directly.
 - Every mutating action is written to `audit_log`.

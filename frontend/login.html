@@ -21,7 +21,7 @@
       <div class="error-box login-error" id="login-error" role="alert"></div>
       <form id="login-form" novalidate>
         <div class="field">
-          <label for="username">Username</label>
+          <label for="username">Email or username</label>
           <input class="input" type="text" id="username" autocomplete="username" required autofocus spellcheck="false">
         </div>
         <div class="field">
@@ -31,6 +31,10 @@
         </div>
         <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
       </form>
+      <div class="login-links">
+        <a href="/forgot.html">Forgot your password?</a>
+        <span id="signup-link" hidden>Don't have an account? <a href="/signup.html">Create one</a></span>
+      </div>
       <div class="login-foot"><span>iSpend</span><button type="button" class="btn btn-ghost btn-xs" id="login-theme">Theme</button></div>
     </div>
   </main>

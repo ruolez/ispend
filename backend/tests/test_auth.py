@@ -111,7 +111,8 @@ class LoginTest(unittest.TestCase):
             s["stale"] = "x"
         c, res = self._login({"username": "amy", "password": "correct-horse-battery"}, c)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.get_json(), {"id": 3, "username": "amy", "role": "user", "preferences": {}})
+        self.assertEqual(res.get_json(), {"id": 3, "username": "amy", "role": "user", "preferences": {},
+                                          "email": None, "email_verified": False, "billing": None})
         with c.session_transaction() as s:
             self.assertEqual((s["user_id"], s.get("stale")), (3, None))
 

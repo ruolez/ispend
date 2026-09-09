@@ -47,6 +47,10 @@ NO_FIXUP_NEEDED = {
     "008_tags.sql",
     "009_transaction_splits.sql",
     "010_user_status.sql",
+    "011_billing_identity.sql",
+    "012_subscriptions.sql",
+    "013_stripe_events.sql",
+    "014_auth_tokens.sql",
     "015_backup_jobs.sql",
 }
 

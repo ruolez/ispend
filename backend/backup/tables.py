@@ -16,6 +16,9 @@ TABLE_ORDER = [
     "users",
     "settings",
     # level 1 - depend on users only
+    "subscriptions",
+    "stripe_events",
+    "auth_tokens",
     "accounts",
     "categories",            # self-FK parent_id -> two-pass
     "tags",
@@ -44,6 +47,8 @@ SELF_FK = {"categories": "parent_id", "transactions": "transfer_pair_id"}
 # Ordering key for the COPY, so an archive of unchanged data is byte-identical run to run.
 PK = {
     "settings": "key",
+    "subscriptions": "user_id",
+    "stripe_events": "id",
     "recurring_dismissals": "user_id, merchant_key",
     "anomaly_dismissals": "user_id, transaction_id",
     "transaction_tags": "transaction_id, tag_id",
@@ -51,7 +56,8 @@ PK = {
 DEFAULT_PK = "id"
 
 # Tables with a SERIAL id whose sequence must be advanced after an id-preserving restore.
-NO_SEQUENCE = {"settings", "recurring_dismissals", "anomaly_dismissals", "transaction_tags"}
+NO_SEQUENCE = {"settings", "subscriptions", "stripe_events",
+               "recurring_dismissals", "anomaly_dismissals", "transaction_tags"}
 
 # The one trigger that rewrites values on insert. Disabled during a restore (table ownership is
 # enough; no superuser needed) so is_transfer/is_excluded come back exactly as they were saved

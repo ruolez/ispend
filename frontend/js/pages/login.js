@@ -14,6 +14,11 @@ paint();
 themeBtn.addEventListener('click', () => Theme.toggle());
 window.addEventListener('ispend:theme', paint);
 
+/* Only offered when the server accepts new accounts. */
+api('/api/auth/public-config')
+  .then((cfg) => { if (cfg.signup_enabled) document.getElementById('signup-link').hidden = false; })
+  .catch(() => { /* leave it hidden */ });
+
 /* Sent back here by api.js after a 401 in a browser that had signed in before. */
 if (new URLSearchParams(location.search).get('reason') === 'expired') {
   const note = document.getElementById('login-notice');
