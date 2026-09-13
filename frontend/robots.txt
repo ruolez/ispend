@@ -1,0 +1,24 @@
+# The marketing page is the only thing worth indexing; everything else needs a session anyway.
+User-agent: *
+Allow: /$
+Allow: /landing.html
+Allow: /privacy.html
+Allow: /terms.html
+Allow: /og.svg
+Allow: /favicon.svg
+Disallow: /api/
+Disallow: /index.html
+Disallow: /admin.html
+Disallow: /billing.html
+Disallow: /settings.html
+Disallow: /transactions.html
+Disallow: /statements.html
+Disallow: /import.html
+Disallow: /review.html
+Disallow: /reports.html
+Disallow: /insights.html
+Disallow: /budgets.html
+Disallow: /categories.html
+Disallow: /rules.html
+Disallow: /reset.html
+Disallow: /verify.html
