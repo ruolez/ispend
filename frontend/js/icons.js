@@ -142,6 +142,13 @@ function icon(name, cls = '') {
   return cls ? svg.replace('class="ico"', `class="ico ${cls}"`) : svg;
 }
 
+/* The brand mark, flat build (the enamel build lives inline on the landing page and in og.svg).
+   'theme' follows --brand-dark/--brand-blue; 'navy' is fixed paper-on-periwinkle for permanently dark surfaces. */
+function brandMark(variant = 'theme') {
+  const [dark, blue] = variant === 'navy' ? ['#f3f5fb', '#7c94ff'] : ['var(--brand-dark)', 'var(--brand-blue)'];
+  return `<svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="30" fill="${blue}"/><path d="M32 2A11 15 0 0 1 32 32A11 15 0 0 0 32 62A30 30 0 0 1 32 2Z" fill="${dark}"/></svg>`;
+}
+
 /* Ordered list for the category icon picker. */
 const CATEGORY_ICONS = [
   'tag', 'banknote', 'coins', 'wallet', 'credit-card', 'receipt', 'landmark', 'percent', 'briefcase', 'rotate-ccw', 'arrow-left-right', 'repeat',

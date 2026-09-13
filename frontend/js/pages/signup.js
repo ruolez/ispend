@@ -26,7 +26,7 @@ api('/api/auth/public-config').then((cfg) => {
   if (!cfg.signup_enabled) {
     $('#page-body').innerHTML = ui.emptyState({
       icon: 'lock', title: 'Sign-ups are closed',
-      body: 'This iSpend server does not accept new accounts. Ask an administrator for one.',
+      body: 'This site is not taking new accounts. Ask an administrator to set one up for you.',
       action: { label: 'Back to sign in', href: '/login.html' } });
   }
 }).catch(() => { /* the form still posts; the server decides */ });

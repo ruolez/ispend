@@ -92,7 +92,7 @@ function render() {
   const keep = host.contains(document.activeElement) ? ui.focusKey(document.activeElement, host) : null;
   if (keep) requestAnimationFrame(() => ui.refocus(host, keep));
   if (!state.rules.length) {
-    host.innerHTML = `<li class="rules-empty">${ui.emptyState({ icon: 'sliders', title: 'No rules yet', body: 'Create a rule here, or from any transaction with “Create rule from this”. Rules categorize charges automatically on every import.', action: { label: 'New rule', act: 'new-rule' } })}</li>`;
+    host.innerHTML = `<li class="rules-empty">${ui.emptyState({ icon: 'sliders', title: 'No rules yet', body: 'Make a rule here, or from any charge with “Create rule from this”. Rules sort charges for you on every statement.', action: { label: 'New rule', act: 'new-rule' } })}</li>`;
     return;
   }
   const q = state.q;
@@ -156,7 +156,7 @@ async function onAction(e) {
     return categoryPicker({ anchor: btn, value: r.category_id, allowCreate: true, onPick: async (c) => { if (!c) return; if (await saveRule(id, { category_id: c.id })) render(); } });
   }
   if (act === 'run-all') {
-    if (!(await ui.confirm({ title: 'Run all rules?', body: 'Applies every enabled rule to transactions that have no category yet. Existing categories are not changed.', confirmText: 'Run rules' }))) return;
+    if (!(await ui.confirm({ title: 'Run all rules?', body: 'Runs every rule that is switched on over anything without a category yet. Nothing already sorted is changed.', confirmText: 'Run rules' }))) return;
     await ui.busy(btn, async () => { const r = await api('/api/rules/run', { method: 'POST', body: { only_uncategorized: true } }); toast(`${plural(r.updated, 'transaction')} categorized`, { type: 'success' }); window.dispatchEvent(new Event('ispend:transactions-changed')); await load(); });
   }
 }
@@ -221,7 +221,7 @@ function ruleFormHtml(r) {
       <div class="field"><label for="rf-field">Field</label><select id="rf-field" class="select">${MATCH_FIELDS.map(([v, l]) => `<option value="${v}" ${(r.match_field || 'description_clean') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label for="rf-type">Match</label><select id="rf-type" class="select">${MATCH_TYPES.map(([v, l]) => `<option value="${v}" ${(r.match_type || 'contains') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
-    <div class="field"><label for="rf-pattern" data-required>Pattern</label><input id="rf-pattern" class="input mono" value="${esc(r.pattern || '')}" placeholder="e.g. STARBUCKS" autofocus spellcheck="false" autocomplete="off"><div class="hint" id="rf-pattern-hint">Matching ignores case unless you enable it below.</div></div>
+    <div class="field"><label for="rf-pattern" data-required>Pattern</label><input id="rf-pattern" class="input mono" value="${esc(r.pattern || '')}" placeholder="e.g. STARBUCKS" autofocus spellcheck="false" autocomplete="off"><div class="hint" id="rf-pattern-hint">Upper and lower case do not matter unless you say they do below.</div></div>
     <div class="field"><label>Then set category</label><button type="button" class="btn btn-secondary btn-block" id="rf-cat" style="justify-content:space-between"><span id="rf-cat-label" class="row gap-2 text-3">Choose a category…</span>${icon('chevron-down')}</button></div>
     <div class="rule-preview is-empty" id="rf-preview">${icon('search')}<span>Type a pattern to see how many existing transactions match.</span></div>
     <div id="rf-sample" class="rule-sample"></div>
@@ -298,7 +298,7 @@ function openRuleModal(r) {
   ['#rf-field', '#rf-type', '#rf-pattern', '#rf-min', '#rf-max', '#rf-acct', '#rf-case'].forEach((id) => el.querySelector(id).addEventListener('input', preview));
   el.querySelector('#rf-apply').addEventListener('change', (e) => { el.querySelector('#rf-only').disabled = !e.target.checked; });
   el.querySelector('#rule-form').addEventListener('submit', (e) => { e.preventDefault(); el.querySelector('.modal-foot .btn-primary').click(); });
-  el.querySelector('#rf-type').addEventListener('change', (e) => { el.querySelector('#rf-pattern-hint').textContent = e.target.value === 'regex' ? 'Python regular expression, searched anywhere in the text.' : 'Matching ignores case unless you enable it below.'; });
+  el.querySelector('#rf-type').addEventListener('change', (e) => { el.querySelector('#rf-pattern-hint').textContent = e.target.value === 'regex' ? 'A regular expression, searched anywhere in the text.' : 'Matching ignores case unless you enable it below.'; });
   if (r.pattern) preview();
 }
 
@@ -314,13 +314,13 @@ async function openTestDrawer(r) {
     return `<div class="list-item"><span class="tl-date">${fmtDate(t.txn_date)}</span><div class="tl-desc"><div class="truncate fw-500">${esc(t.merchant_name || t.description_raw)}</div><div class="tl-raw">${esc(t.description_raw)}${tc ? ` · <span>${esc(tc.path)}</span>` : ' · <span class="text-warning">uncategorized</span>'}</div></div><span class="amt ${t.amount > 0 ? 'amt--income' : ''}">${fmtMoney(t.amount, state.currency)}</span></div>`;
   }).join('');
   d.setBody(`<div class="notice mb-3">${icon('info')}<div><b>${fmtNumber(res.count)}</b> ${word(res.count, 'transaction')} match this rule${c ? ` → <b>${esc(c.path)}</b>` : ''}.${res.count > res.sample.length ? ` Showing the latest ${res.sample.length}.` : ''}</div></div>
-    ${res.count ? `<div class="list test-list">${list}</div>` : ui.emptyState({ icon: 'search', title: 'No matches', body: 'No existing transaction matches this pattern. New imports will still be checked.' })}`);
+    ${res.count ? `<div class="list test-list">${list}</div>` : ui.emptyState({ icon: 'search', title: 'No matches', body: 'Nothing you already have matches this. New statements will still be checked.' })}`);
   if (res.count) {
     d.setFoot(`<button type="button" class="btn btn-ghost" data-drawer-act="apply-unc">Apply to uncategorized</button><button type="button" class="btn btn-primary" data-drawer-act="apply-all">Apply to all ${fmtNumber(res.count)}</button>`);
     d.el.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-drawer-act]'); if (!b) return;
       const all = b.dataset.drawerAct === 'apply-all';
-      if (all && !(await ui.confirm({ title: `Apply to ${fmtNumber(res.count)} transactions?`, body: 'Transactions that already have a category will be re-categorized by this rule.', confirmText: 'Apply' }))) return;
+      if (all && !(await ui.confirm({ title: `Apply to ${fmtNumber(res.count)} transactions?`, body: 'Charges that already have a category will be moved by this rule.', confirmText: 'Apply' }))) return;
       const n = await ui.busy(b, () => applyRule(r, !all), { silent: true });
       if (n != null) d.close();
     });
@@ -338,7 +338,7 @@ function paintView() {
   const search = $('#rule-search');
   search.placeholder = m ? 'Search merchants…' : 'Filter rules…';
   search.value = m ? state.mq : state.q;
-  $('#page-sub').textContent = m ? 'What iSpend learned from your choices. Each merchant gets its remembered category on every future import.' : 'Rules run top to bottom on every import; the first match wins.';
+  $('#page-sub').textContent = m ? 'What iSpend learned from your choices. Each merchant gets its remembered category on every future import.' : 'Rules are checked top to bottom on every statement, and the first one that matches wins.';
 }
 async function loadMerchants() {
   $('#rules-error').innerHTML = '';
@@ -363,7 +363,7 @@ function merchantRow(m) {
 function renderMerchants() {
   const tb = $('#merch-body');
   if (!state.merchants.length) {
-    tb.innerHTML = `<tr><td colspan="7">${state.mq ? `<div class="hint" style="padding:16px">No remembered merchants match “${esc(state.mq)}”.</div>` : ui.emptyState({ icon: 'repeat', title: 'Nothing remembered yet', body: 'Categorize a charge in Transactions or Review and iSpend will remember that merchant for the next import.', action: { label: 'Go to Review', href: '/review.html' } })}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="7">${state.mq ? `<div class="hint" style="padding:16px">No remembered merchants match “${esc(state.mq)}”.</div>` : ui.emptyState({ icon: 'repeat', title: 'Nothing remembered yet', body: 'Give a charge a category in Transactions or Review, and iSpend will remember that merchant next time.', action: { label: 'Go to Review', href: '/review.html' } })}</td></tr>`;
     return;
   }
   tb.innerHTML = state.merchants.map(merchantRow).join('');
@@ -413,7 +413,7 @@ async function saveMerchant(m, body, label, showApplied) {
   } catch (err) { toast(err.message, { type: 'error' }); renderMerchants(); }
 }
 async function forgetMerchant(m) {
-  if (!(await ui.confirm({ title: `Forget ${m.display_name || m.merchant_key}?`, body: 'iSpend will stop applying this category automatically. Transactions already categorized keep their category.', confirmText: 'Forget', danger: true }))) return;
+  if (!(await ui.confirm({ title: `Forget ${m.display_name || m.merchant_key}?`, body: 'iSpend will stop doing this on its own. Anything already sorted keeps its category.', confirmText: 'Forget', danger: true }))) return;
   try { await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'DELETE' }); toast('Merchant forgotten', { type: 'success' }); await loadMerchants(); }
   catch (err) { toast(err.message, { type: 'error' }); }
 }

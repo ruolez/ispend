@@ -1,6 +1,6 @@
 /* Shared chrome for the unauthenticated pages (signup, forgot, reset, verify). */
 function initAuthPage() {
-  document.getElementById('login-mark').innerHTML = icon('activity');
+  document.getElementById('login-mark').innerHTML = brandMark();
   const themeBtn = document.getElementById('login-theme');
   const paint = () => {
     const dark = Theme.effective() === 'dark';

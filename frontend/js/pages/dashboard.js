@@ -104,8 +104,8 @@ async function load() {
   if (!hasAny) {
     $('#dash-empty').className = 'card mt-4 dash-empty';
     $('#dash-empty').innerHTML = ui.emptyState({
-      icon: 'upload', title: 'Import your first statement',
-      body: 'Upload a CSV, Excel or PDF statement and iSpend will organize your spending by category.',
+      icon: 'upload', title: 'Add your first statement',
+      body: 'Upload a statement — spreadsheet, CSV or PDF — and iSpend will sort your spending into categories.',
       action: { label: 'Import statement', href: '/import.html' },
     });
     renderKpis(data);
@@ -152,9 +152,9 @@ function renderSetup(data) {
   const ob = ((state.me && state.me.preferences) || {}).onboarding || {};
   if (!s || ob.dismissed || s.statements >= 3) { host.hidden = true; return; }
   const steps = [
-    { done: s.statements > 0, label: 'Import a statement', sub: 'CSV, Excel or PDF from your bank', href: '/import.html' },
+    { done: s.statements > 0, label: 'Import a statement', sub: 'A spreadsheet, CSV or PDF from your bank', href: '/import.html' },
     { done: s.transactions > 0 && s.needs_review === 0, label: 'Review categories', sub: s.needs_review ? `${plural(s.needs_review, 'charge')} waiting for a decision` : 'Confirm what iSpend guessed', href: '/review.html' },
-    { done: s.rules > 0, label: 'Create a rule', sub: 'Categorize future imports automatically', href: '/rules.html?new=1' },
+    { done: s.rules > 0, label: 'Create a rule', sub: 'Let future statements sort themselves', href: '/rules.html?new=1' },
     { done: !!ob.reports_opened, label: 'Open Reports', sub: 'See where the money goes, month by month', href: '/reports.html' },
     { done: !!s.ai_configured, label: 'Turn on AI suggestions', sub: 'Optional · needs an OpenRouter key', href: '/settings.html#ai', optional: true },
   ];
@@ -237,7 +237,7 @@ function ratePoints(diff) {
 function renderIncome(data) {
   const inc = data.income; const cur = state.currency; const host = $('#income-body'); if (!host || !inc) return;
   $('#inc-label').textContent = `${fmtMoney(inc.total, cur)} · ${data.range.label}`;
-  if (!inc.categories.length) { host.innerHTML = ui.emptyState({ icon: 'trending-up', title: 'No income in this period', body: 'Deposits filed under Income (Salary, Interest, Refunds…) show up here.' }); return; }
+  if (!inc.categories.length) { host.innerHTML = ui.emptyState({ icon: 'trending-up', title: 'No income in this period', body: 'Money coming in — pay, interest, refunds — shows up here.' }); return; }
   const { start, end } = data.range;
   const max = Math.max(...inc.categories.map((c) => c.total));
   const cats = inc.categories.map((c) => { const color = catColor(c.color || 'muted'); return `<a class="inc-row" href="/transactions.html${toQuery({ cat: c.id == null ? 'none' : c.id, from: start, to: end })}">
@@ -355,7 +355,7 @@ function goCategory(c) {
 /* ---------- Recent ---------- */
 function renderRecent(data) {
   const host = $('#recent-list');
-  if (!data.recent.length) { host.innerHTML = ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Imported charges will show up here.' }); return; }
+  if (!data.recent.length) { host.innerHTML = ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Charges show up here once you add a statement.' }); return; }
   host.innerHTML = `<div class="list recent">${data.recent.map((t) => {
     const color = t.is_transfer ? 'muted' : (t.category_color || 'muted');
     const cls = t.is_transfer ? 'amt--transfer' : (t.amount > 0 ? 'amt--income' : 'amt--expense');

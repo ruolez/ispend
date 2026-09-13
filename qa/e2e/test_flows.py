@@ -391,7 +391,7 @@ def test_f1_first_run(page, qapi):
     # dashboard empty state + CTA
     goto(page, "/index.html", wait_sel="#dash-empty:not([hidden]) .empty", soft=F, label="dashboard load (empty)")
     empty = page.locator("#dash-empty")
-    F.check("Import your first statement" in empty.inner_text(), "dashboard empty-state title")
+    F.check("Add your first statement" in empty.inner_text(), "dashboard empty-state title")
     F.check(page.locator("#dash-body").is_hidden(), "charts hidden on empty dashboard")
     setup = page.locator("#dash-setup")
     F.check(setup.is_visible() and "0 of 4 done" in setup.inner_text(), f"first-run checklist shows 0 of 4: {setup.inner_text()[:80]!r}")
@@ -2106,7 +2106,7 @@ def test_f8_reports(page, qapi):
     if autopay:
         a0 = autopay[0]
         F.note(f"AUTOPAY row: status={a0['category_status']} source={a0['category_source']} is_transfer={a0['is_transfer']} is_excluded={a0['is_excluded']}")
-        F.check(not (a0["category_status"] == "suggested" and a0["is_excluded"]), "a built-in *suggested* transfer is already excluded from spending/income before anyone confirms it (Settings copy: 'Suggestions are never applied without your confirmation')")
+        F.check(not (a0["category_status"] == "suggested" and a0["is_excluded"]), "a built-in *suggested* transfer is already excluded from spending/income before anyone confirms it (Settings copy: 'Suggestions are never applied without your say-so')")
     F.finish()
 
 

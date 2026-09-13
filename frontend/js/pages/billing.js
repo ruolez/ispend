@@ -43,8 +43,8 @@ function render() {
   const host = $('#bill-body');
   if (!d.billing_enabled) {
     $('#bill-sub').textContent = '';
-    host.innerHTML = ui.emptyState({ icon: 'credit-card', title: 'Billing is not configured',
-      body: 'This iSpend server runs without subscriptions — every account has full access.' });
+    host.innerHTML = ui.emptyState({ icon: 'credit-card', title: 'No subscriptions here',
+      body: 'There are no subscriptions on this site — every account gets everything.' });
     return;
   }
   const [cls, label] = STATE_BADGE[d.state] || ['badge-neutral', d.state];
@@ -84,7 +84,7 @@ function render() {
 }
 
 function summaryLine(d) {
-  if (d.state === 'admin_exempt') return 'Administrator accounts are not billed.';
+  if (d.state === 'admin_exempt') return 'Admin accounts are never billed.';
   if (d.state === 'trialing') return `${plural(d.days_left || 0, 'day')} left in your trial.`;
   if (d.state === 'grace') return `Payment needed — ${plural(d.days_left || 0, 'day')} before iSpend becomes read-only.`;
   if (d.state === 'read_only') return 'Read-only until you subscribe.';

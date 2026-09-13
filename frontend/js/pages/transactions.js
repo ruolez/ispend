@@ -122,9 +122,9 @@ function hasFilters() {
   return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || f.tag.length || f.split || (f.range && !['this-month', 'all'].includes(f.range.preset));
 }
 function emptyListHtml() {
-  if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try widening the date range or clearing filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
-  if (tx.filters.range && tx.filters.range.preset === 'this-month') return ui.emptyState({ icon: 'calendar', title: 'No transactions this month', body: 'Import a statement, or show all time to see older transactions.', action: { label: 'Show all time', act: 'show-all' } });
-  return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Import a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
+  if (hasFilters()) return ui.emptyState({ icon: 'filter', title: 'No transactions match', body: 'Try a wider date range, or clear the filters.', action: { label: 'Clear filters', act: 'clear-filters' } });
+  if (tx.filters.range && tx.filters.range.preset === 'this-month') return ui.emptyState({ icon: 'calendar', title: 'No transactions this month', body: 'Add a statement, or switch to all time to see older charges.', action: { label: 'Show all time', act: 'show-all' } });
+  return ui.emptyState({ icon: 'list', title: 'No transactions yet', body: 'Add a statement to get started.', action: { label: 'Import a statement', href: '/import.html' } });
 }
 function clearFilters() {
   tx.filters = { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [], split: false }; // clearing shows everything, not just this month
@@ -739,7 +739,7 @@ async function refreshItems(ids) {
   }));
 }
 async function deleteItems(ids) {
-  const ok = await ui.confirm({ title: ids.length === 1 ? 'Delete this transaction?' : `Delete ${fmtNumber(ids.length)} transactions?`, body: 'They will be removed from every report. Re-importing the statement brings them back.', confirmText: 'Delete', danger: true });
+  const ok = await ui.confirm({ title: ids.length === 1 ? 'Delete this transaction?' : `Delete ${fmtNumber(ids.length)} transactions?`, body: 'They will disappear from every report. Adding the statement again brings them back.', confirmText: 'Delete', danger: true });
   if (!ok) return;
   await bulk(ids, 'delete');
 }
@@ -1006,7 +1006,7 @@ function openAddModal() {
       await reload();
       const row = $(`tr[data-id="${created.id}"]`);
       if (row) { const idx = tx.items.findIndex((i) => i.id === created.id); if (idx >= 0) setFocus(idx); }
-      else toast('Added outside the current filter · switch the range to see it', { type: 'info' });
+      else toast('Saved, but outside what you are looking at · change the range to see it', { type: 'info' });
     } }],
   });
   const el = m.el;

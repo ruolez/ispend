@@ -9,6 +9,7 @@ Self-hosted personal finance analyzer. Upload bank and credit-card statements (C
 - **Duplicate safe**: overlapping statements and re-uploads are detected before anything is written.
 - **Multi-user**: admin-managed accounts, every user sees only their own data.
 - **Light and dark themes**, keyboard driven, no build step.
+- **A front door**: `/` is a public landing page whose pricing block is driven by the admin console; the app itself lives at `/index.html`.
 
 ## Stack
 
@@ -93,7 +94,7 @@ Everything else (API keys, AI switches) lives in the database and is edited in S
 backend/            Flask app: auth, accounts, categories, statements (import), transactions,
                     review, rules, merchants, reports, ai, admin; importer/ and bank_profiles/
                     packages; migrations/*.sql applied at startup; tests/
-frontend/           static pages + css/ js/ vendor/ fonts/
+frontend/           static pages + css/ js/ vendor/ fonts/; landing.html is the public front page
 nginx/nginx.conf    static files + /api proxy
 docker-compose.yml  production; docker-compose.dev.yml overlay for live reload
 install.sh          Ubuntu installer / updater
@@ -104,6 +105,37 @@ install.sh          Ubuntu installer / updater
 - **Budgets** live in `budgets` (one row per category and month). `/api/budgets/progress` composes the spending breakdown with pace maths (`backend/budgets.py`); the Budgets page and the dashboard card read it. Parent and child categories cannot both carry a budget for the same month.
 - **Tags** (`tags`, `transaction_tags`) are free labels across categories. Rows carry `tag_ids`; filter with `?tag=1,2` (`&tag_mode=all`) or `?tag=none`; the CSV export has a `Tags` column.
 - **Splits** (`transaction_splits`) divide one row over several categories. The parent keeps its amount and a primary category (the first line); the category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line while totals, trends and merchants keep the parent amount. Lines must be at least two, share the transaction's sign and add up to its amount — the API validates and a deferred trigger enforces it. Recategorising, rejecting a suggestion or marking a transfer removes the split.
+
+## The landing page
+
+`/` serves `frontend/landing.html` — a public marketing page — while the app stays at
+`/index.html`, which is what every link, redirect and test already points at. nginx does this with
+one exact-match location, so nothing inside the app had to move.
+
+- It is **dark-locked** (`<html data-theme="dark">`, no `theme.js`) and loads nothing from anywhere
+  else: no fonts, no scripts, no analytics. The product shot in the hero is markup built from the
+  same design tokens as the app, not a screenshot that goes stale.
+- Everything it needs comes from one anonymous endpoint, `GET /api/public/landing`: whether
+  sign-ups are open, the trial length, the live Stripe prices (amount, currency, interval — never a
+  `price_id`) and the editable copy below. A Stripe outage degrades it to "no plans" rather than an
+  error, and a signed-in visitor gets an **Open iSpend** button instead of a redirect.
+- The wording of the pricing block — heading, sub-heading, plan name, tagline, ribbon, bullet
+  points, button label and the small print — is edited in **Admin → Billing → Landing page** and
+  stored as one JSON row in `settings` (`landing_pricing`). Prices themselves are never stored
+  there; they are always read from Stripe. Everything typed is normalised server-side
+  (`backend/landing.py`): markup stripped, lengths clamped, at most 12 bullets, blank lines dropped.
+- There is one plan card, because there is one product with two prices; Monthly/Yearly is a toggle
+  above it and the saving is worked out from the two Stripe amounts. With no Stripe configured the
+  card becomes a plain "Full access — free" card pointing at sign-up, and with sign-ups closed every
+  call to action becomes **Sign in**. So the same page ships correctly to a private single-user
+  install and to a paid service.
+- The copy is deliberately consumer-facing: the page sells privacy and control, and says nothing
+  about the project being open source or self-hostable — true, but not a reason anyone pays for a
+  money app. That framing stays here in the README, where developers read it.
+
+The sign-in, sign-up, forgot, reset and verify screens share the same art direction: a dark panel
+beside the form on a desktop, the familiar centred card below 960px. The form half stays
+theme-aware, so the theme toggle still means something.
 
 ## Administration
 
@@ -163,6 +195,8 @@ full access, which is what a self-hosted install wants. To sell it instead:
    turn on **Accept new sign-ups**.
 4. Optionally configure SMTP so iSpend can send its welcome, trial-ending, payment-failed and
    password-reset messages. Stripe emails receipts itself.
+5. Edit the pricing wording in **Admin → Billing → Landing page**; the amounts come from Stripe
+   on their own.
 
 How it behaves:
 

@@ -87,7 +87,7 @@ async function initNav(activePage) {
   sb.innerHTML = `
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
-      <div class="sb-brand"><span class="sb-mark">${icon('activity')}</span><span class="sb-name">iSpend</span>
+      <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
         ${NAV_GROUPS.map((g) => `<div class="sb-group" ${g.adminOnly ? 'data-admin-only hidden' : ''}><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
@@ -225,7 +225,7 @@ function paintBillingBanner(me) {
       cta: 'Update payment' });
   } else if (b.state === 'read_only') {
     banners.push({ id: 'ro', type: 'warning',
-      html: 'Your subscription has ended. iSpend is read-only — you can still view and export everything.',
+      html: 'Your subscription has ended, so iSpend is read-only for now. You can still look at everything and download it.',
       cta: 'Subscribe' });
   } else if (b.state === 'active' && b.cancel_at_period_end && b.current_period_end) {
     banners.push({ id: 'cancelling', type: 'info', dismissible: true,

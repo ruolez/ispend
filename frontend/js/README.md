@@ -57,7 +57,7 @@ Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to th
 `fmtMoney(n, currency='USD', {compact, sign:'auto'|'always', abs, decimals})` (real minus U+2212, `+` for income with `sign:'always'`) · `fmtNumber(n, {decimals, compact})` · `fmtPct(0.12, {decimals, sign})` · `fmtDate('2026-09-02', {year})` → `Sep 2` · `fmtDateLong` · `fmtDateTime` · `fmtMonth('2026-09', {long})` → `Sep ’26` · `fmtRelative(iso)` → `2 days ago` · `toISODate(d)` · `fmtDelta(cur, prev)` → `{pct, dir:'up'|'down'|'flat', text}` · `fmtBytes(n)` · `initials(name)` · `plural(n, 'charge')`.
 
 ## icons.js
-`ICONS[name]` raw svg string, `icon(name, extraClass)` (unknown names fall back to `tag`), `CATEGORY_ICONS` ordered names for the icon picker. Size via `.ico` (18px), `.ico-sm` (14), `.ico-lg` (24). Nav/UI names: layout-dashboard list inbox upload file-text tags sliders bar-chart lightbulb settings search sun moon monitor log-out chevron-(up|down|left|right) chevrons-(left|right) x check check-circle plus minus trash pencil more-horizontal more-vertical alert-triangle alert-circle info sparkles repeat arrow-(up|down|left|right|up-right|down-right|left-right) filter download eye eye-off grip-vertical menu user users lock unlock shield calendar clock refresh external-link copy undo play zap-off help keyboard split circle tag star trending-up trending-down pie-chart activity database file file-spreadsheet inbox-check, plus every category icon in `backend/seed_categories.py`.
+`ICONS[name]` raw svg string, `icon(name, extraClass)` (unknown names fall back to `tag`), `CATEGORY_ICONS` ordered names for the icon picker. `brandMark(variant)` the flat logo disc: `'theme'` (default) follows `--brand-dark`/`--brand-blue` from tokens.css, `'navy'` is fixed paper-on-periwinkle for permanently dark surfaces; size it through `.brand-mark` on the container. The enamel build is inlined only on the landing page and in `og.svg`; the sources are in `frontend/img/`. Size via `.ico` (18px), `.ico-sm` (14), `.ico-lg` (24). Nav/UI names: layout-dashboard list inbox upload file-text tags sliders bar-chart lightbulb settings search sun moon monitor log-out chevron-(up|down|left|right) chevrons-(left|right) x check check-circle plus minus trash pencil more-horizontal more-vertical alert-triangle alert-circle info sparkles repeat arrow-(up|down|left|right|up-right|down-right|left-right) filter download eye eye-off grip-vertical menu user users lock unlock shield calendar clock refresh external-link copy undo play zap-off help keyboard split circle tag star trending-up trending-down pie-chart activity database file file-spreadsheet inbox-check, plus every category icon in `backend/seed_categories.py`.
 
 ## store.js — `store`
 | Call | Notes |
@@ -217,6 +217,31 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Bac
 - Storage is reported twice on purpose: `disk_bytes` (a volume scan — exact, includes OCR output and
   orphans) and `source_bytes` (the DB's view, de-duplicated by `file_sha256`). AI usage is reported in
   tokens, never dollars.
+
+## Landing page
+
+`/` is served from `landing.html` by an exact-match nginx location; the dashboard stays at
+`/index.html` and nothing else moved. The page opts out of the shared shell entirely: no `nav.js`
+(it would gate an anonymous visitor), no `theme.js` (`<html data-theme="dark">` is static, so there
+is no flash and no inline script — the CSP forbids one). It loads `api.js` for `esc`/`$`/`$$`,
+`format.js`, `icons.js` and `js/pages/landing.js`.
+
+- `landing.js` uses **`fetch`, never `api()`** — `api()`'s 401 handler would bounce a reader to
+  `/login.html`. Two calls: `GET /api/public/landing` (rendered by `renderPricing`) and a quiet
+  `GET /api/auth/me` that swaps the header CTAs for "Open iSpend" when there is a session.
+- Icons are `<span data-icon="name">` filled by `paintIcons()`; call it again after any innerHTML.
+- Motion: one `IntersectionObserver` adds `.is-in` to `.lp-reveal`, which is what starts the bar,
+  donut and line animations and the `.lp-num` count-ups. All of it is disabled under
+  `prefers-reduced-motion`.
+- `css/pages/landing.css` may not contain a hex colour, a px font-size or a px radius
+  (`qa/e2e/css_audit.py --check`), so every colour is `var(--…)`, a `color-mix()` of tokens or an
+  `rgba()`. Display sizes `--fs-4xl|5xl|6xl` and rhythm `--sp-16|20|24|32` live in `tokens.css` and
+  are for marketing surfaces only.
+- Admin copy: **Admin → Billing → Landing page** (`lpText`/`lpList`/`collectLanding` in
+  `js/pages/admin-billing.js`) rides the tab's existing dirty-floatbar save, posting a nested
+  `landing` object to `PUT /api/admin/billing/config`.
+- Auth pages: `js/pages/_authaside.js` injects the marketing panel into `.login-wrap` on all five
+  unauthenticated pages (it wraps `.login-card` in `.auth-form`); it is hidden below 960px.
 
 ## Billing & entitlements
 `me.billing` (from `/api/auth/me`) carries `{state, can_write, billing_enabled, status, plan,

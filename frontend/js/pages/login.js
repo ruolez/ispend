@@ -1,4 +1,4 @@
-document.getElementById('login-mark').innerHTML = icon('activity');
+document.getElementById('login-mark').innerHTML = brandMark();
 const pwToggle = document.getElementById('login-pw-toggle');
 pwToggle.innerHTML = icon('eye');
 pwToggle.addEventListener('click', () => {

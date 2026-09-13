@@ -73,7 +73,7 @@ function renderJobs() {
   const host = $('#bk-jobs');
   if (!BK.jobs.length) {
     host.innerHTML = ui.emptyState({ icon: 'database', title: 'No backups yet',
-      body: 'Create one before migrating this server or making a large change.',
+      body: 'Make one before moving to a new server, or before any big change.',
       action: { label: 'Create a backup', act: 'start-backup' } });
     return;
   }

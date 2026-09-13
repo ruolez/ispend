@@ -8,6 +8,7 @@ import billing
 import db
 import entitlement
 import jobs
+import landing
 import mailer
 from auth import admin_required
 from settings_api import MASK
@@ -238,6 +239,7 @@ def get_config():
         out[key] = {"value": MASK if (value and key in SECRET_KEYS) else ("" if key in SECRET_KEYS else value),
                     "set": bool(locked or value), "locked": bool(locked)}
     out["signup_enabled"] = {"value": db.get_setting("signup_enabled") == "1", "locked": False}
+    out["landing"] = landing.load()
     out["billing_trial_days"] = {"value": entitlement.trial_days(), "locked": False}
     out["billing_grace_days"] = {"value": entitlement.grace_days(), "locked": False}
     return jsonify(out)
@@ -248,6 +250,9 @@ def get_config():
 def put_config():
     data = json_body()
     changed = []
+    if isinstance(data.get("landing"), dict):
+        landing.save(data["landing"])   # normalised on the way in; the loop below skips it
+        changed.append("landing")
     for key, value in data.items():
         if key == "signup_enabled":
             db.set_setting(key, "1" if value else "0")

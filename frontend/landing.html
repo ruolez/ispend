@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>iSpend · Find out where the money went</title>
+  <meta name="description" content="Upload the statement you already download. iSpend sorts every charge, finds forgotten subscriptions and shows the month in one picture. No bank login. Free for 14 days.">
+  <link rel="canonical" href="/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="/">
+  <meta property="og:site_name" content="iSpend">
+  <meta property="og:title" content="iSpend · Find out where the money went">
+  <meta property="og:description" content="Upload the statement you already download. iSpend reads it, sorts it and shows you where the money went — no bank login, no spreadsheet, no lecture.">
+  <meta property="og:image" content="/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="/fonts/InterVariable-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/Newsreader-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/Newsreader-Italic-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/IBMPlexMono.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/landing.css">
+  <script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "SoftwareApplication",
+   "name": "iSpend",
+   "applicationCategory": "FinanceApplication",
+   "operatingSystem": "Web browser",
+   "image": "/og.png",
+   "description": "Upload the bank statement you already download. iSpend sorts every charge, finds forgotten subscriptions and shows the month in one picture, without a bank login."
+  },
+  {
+   "@type": "FAQPage",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "Do I need to be good with money for this?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. You need to be able to download a statement from your bank’s website, which you have almost certainly done before. iSpend does the reading, the sorting and the adding up. You do the looking."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Do I have to connect my bank?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No, and you couldn’t even if you wanted to. There is nowhere to type a bank password. You download a statement the way you already do, and upload the file."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "What if my bank isn’t on the list?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "It still works. iSpend works out which part is the date, the description and the amount. If it gets one wrong you put it right once, and it remembers that layout from then on. Credit unions and small banks are fine."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How long does the first statement take?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "A minute or two to upload and preview. iSpend then sorts most charges itself and asks about the rest, grouped by merchant, so a first statement means a dozen or so answers. The second asks far fewer."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Does an AI read my statements?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Only if you turn it on and add your own key. Leave it alone and nothing of yours goes near an AI. Even switched on, it only suggests. You decide."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "What happens when the trial ends?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Nothing is deleted. After a few days’ grace the account goes read-only: you can still sign in, look at everything and download all of it. Subscribing switches it all back on. Canceling takes two clicks, and payments go through Stripe, so your card never touches iSpend."
+     }
+    }
+   ]
+  }
+ ]
+}
+  </script>
+</head>
+<body class="lp">
+<a class="skip" href="#main">Skip to content</a>
+<svg class="lp-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><symbol id="ispend-mark" viewBox="0 0 64 64"><defs><linearGradient id="ispmb" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#6d88f6"/><stop offset="1" stop-color="#2f4ccc"/></linearGradient><linearGradient id="ispmd" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#16224d"/><stop offset="1" stop-color="#0a1130"/></linearGradient><clipPath id="ispmc"><circle cx="32" cy="32" r="30" fill="#000"/></clipPath><filter id="ispms" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.35"/></filter><radialGradient id="ispmh" cx="0.3" cy="0.22" r="0.75"><stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/><stop offset="0.55" stop-color="#ffffff" stop-opacity="0.02"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#ispmb)"/><path d="M32 2A11 15 0 0 1 32 32A11 15 0 0 0 32 62A30 30 0 0 1 32 2Z" fill="#1e35a6" fill-opacity="1" filter="url(#ispms)" clip-path="url(#ispmc)" transform="translate(2.4 1.4)"/><path d="M32 2A11 15 0 0 1 32 32A11 15 0 0 0 32 62A30 30 0 0 1 32 2Z" fill="url(#ispmd)"/><circle cx="32" cy="32" r="30" fill="url(#ispmh)"/><path d="M32 2A11 15 0 0 1 32 32A11 15 0 0 0 32 62" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.2" clip-path="url(#ispmc)" transform="translate(0.9 0)"/><path d="M26.98 3.54A28.9 28.9 0 0 0 4.84 41.88" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.5" stroke-linecap="round"/><path d="M37.02 60.46A28.9 28.9 0 0 0 59.16 22.12" fill="none" stroke="#070c22" stroke-opacity="0.49500000000000005" stroke-width="1.5" stroke-linecap="round"/><circle cx="32" cy="32" r="29.1" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.2"/></symbol></svg>
+
+<header class="lp-head" id="lp-head">
+  <div class="lp-wrap"><div class="lp-head-in">
+    <a class="lp-brand" href="/" aria-label="iSpend home">
+      <svg class="lp-brand-mark" width="30" height="30" aria-hidden="true" focusable="false"><use href="#ispend-mark"></use></svg>
+      <span class="lp-brand-name">iSpend</span>
+    </a>
+    <nav class="lp-nav" id="lp-nav" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="/login.html" class="lp-nav-signin" data-signin-alt>Sign in</a>
+    </nav>
+    <div class="lp-head-cta" id="lp-head-cta">
+      <a class="btn btn-ghost btn-sm lp-signin" href="/login.html" data-signin-alt>Sign in</a>
+      <a class="btn btn-primary lp-head-go" href="/signup.html" data-cta>Start free trial <span class="lp-ic" data-icon="arrow-right"></span></a>
+    </div>
+    <button type="button" class="btn btn-icon btn-ghost lp-burger" id="lp-burger" aria-label="Menu" aria-expanded="false" aria-controls="lp-nav"><span class="lp-ic" data-icon="menu"></span></button>
+  </div></div>
+</header>
+
+<main id="main">
+
+  <!-- ── 1. Hero: the promise, and the product doing it ───────────────── -->
+  <section class="lp-hero" id="lp-hero">
+    <div class="lp-wrap lp-hero-in">
+      <div class="lp-hero-copy">
+        <h1 class="lp-display">Where did the money go? <em>Now you’ll know.</em></h1>
+        <p class="lp-lede">Drop in the statement your bank already gives you. iSpend sorts every charge, finds the subscriptions you forgot about, and shows you the month in one honest picture. No bank login. No spreadsheet.</p>
+        <div class="lp-cta-row" id="lp-hero-cta">
+          <a class="btn btn-primary btn-xl" href="/signup.html" data-cta>Start free trial<span class="lp-ic" data-icon="arrow-right"></span></a>
+          <a class="lp-cta-quiet" href="#how">See how it works</a>
+        </div>
+        <p class="lp-trust" id="lp-trust"><span><span class="lp-ic" data-icon="check"></span><span data-trial-line>14-day free trial</span></span><span><span class="lp-ic" data-icon="check"></span>No card required</span><span><span class="lp-ic" data-icon="check"></span>Never asks for your bank login</span></p>
+      </div>
+
+      <!-- The product's one idea, drawn as a ledger: raw lines on the left, the same lines named,
+           sorted and totalled on the right. Static markup, so it can never drift from the app. -->
+      <figure class="lp-ledger" id="lp-ledger" aria-label="A bank statement being translated: raw statement lines on the left, and on the right the same charges named, categorized and totaled by iSpend.">
+        <div class="lp-ledger-bar" aria-hidden="true">
+          <span class="lp-ledger-src"><span class="lp-ic" data-icon="file-text"></span>chase-2026-09.pdf</span>
+          <span class="lp-ledger-meta">Chase · credit card · 148 lines</span>
+        </div>
+        <div class="lp-ledger-cols" aria-hidden="true">
+          <div class="lp-ledger-raw">
+            <div class="lp-ledger-h">As the bank prints it</div>
+            <ol class="lp-raw">
+              <li style="--i:0"><span>09/02</span><span>SQ *BLUE BOTTLE COFFEE</span><span>-6.75</span></li>
+              <li style="--i:1"><span>09/02</span><span>SHELL OIL 57445216</span><span>-52.40</span></li>
+              <li style="--i:2"><span>09/03</span><span>TRADER JOES #452 Q</span><span>-86.14</span></li>
+              <li style="--i:3"><span>09/04</span><span>SQ *BLUE BOTTLE COFFEE</span><span>-6.75</span></li>
+              <li style="--i:4"><span>09/05</span><span>NETFLIX.COM</span><span>-15.49</span></li>
+              <li style="--i:5"><span>09/05</span><span>CITY OF AUSTIN UT</span><span>-94.70</span></li>
+              <li style="--i:6"><span>09/06</span><span>SQ *BLUE BOTTLE COFFEE</span><span>-6.75</span></li>
+              <li style="--i:7"><span>09/08</span><span>AMZN Mktp US*2K4L9</span><span>-38.12</span></li>
+            </ol>
+            <div class="lp-raw-more">…and 140 more lines</div>
+          </div>
+          <div class="lp-ledger-out">
+            <div class="lp-ledger-h"><span class="lp-ic ok" data-icon="check-circle"></span>As iSpend reads it</div>
+            <div class="lp-rows">
+              <div class="lp-row" style="--i:0"><span class="lp-mch">Blue Bottle<em>3 visits this week</em></span><span class="lp-chip" style="--c:var(--c4)"><i></i>Coffee</span><span class="lp-amt">−$20.25</span></div>
+              <div class="lp-row" style="--i:1"><span class="lp-mch">Shell</span><span class="lp-chip" style="--c:var(--c7)"><i></i>Fuel</span><span class="lp-amt">−$52.40</span></div>
+              <div class="lp-row" style="--i:2"><span class="lp-mch">Trader Joe’s</span><span class="lp-chip" style="--c:var(--c1)"><i></i>Groceries</span><span class="lp-amt">−$86.14</span></div>
+              <div class="lp-row" style="--i:3"><span class="lp-mch">Netflix<em>monthly · $185.88 a year</em></span><span class="lp-chip" style="--c:var(--c5)"><i></i>Subscription</span><span class="lp-amt">−$15.49</span></div>
+              <div class="lp-row" style="--i:4"><span class="lp-mch">City of Austin</span><span class="lp-chip" style="--c:var(--c9)"><i></i>Utilities</span><span class="lp-amt">−$94.70</span></div>
+              <div class="lp-row" style="--i:5"><span class="lp-mch">Amazon</span><span class="lp-chip" style="--c:var(--c2)"><i></i>Shopping</span><span class="lp-amt">−$38.12</span></div>
+            </div>
+            <div class="lp-total"><span>Spent so far, September</span><b class="lp-num" data-to="307.1" data-money="1">$307.10</b></div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ── 2. Proof strip: the banks it already reads ───────────────────── -->
+  <section class="lp-banks" aria-label="Supported banks">
+    <div class="lp-wrap lp-banks-in">
+      <span class="lp-banks-label">Reads statements from</span>
+      <ul class="lp-banks-list">
+        <li>Chase</li><li>American Express</li><li>Capital One</li><li>Bank of America</li><li>Citi</li><li>Discover</li><li>PNC</li><li>Wells Fargo</li><li>RBC</li><li>TD</li><li>BMO</li><li>Scotiabank</li>
+      </ul>
+      <span class="lp-banks-foot">and any other bank that lets you download one.</span>
+    </div>
+  </section>
+
+  <!-- ── 3. Four chapters: one point, one visual, same layout ─────────── -->
+  <section class="lp-chapters" id="how">
+
+    <article class="lp-chapter lp-reveal">
+      <div class="lp-wrap lp-chapter-in">
+        <div class="lp-chapter-copy">
+          <p class="lp-kicker">1 · Import</p>
+          <h2 class="lp-h2">Drop in the statement you already have.</h2>
+          <p class="lp-sub">Spreadsheets, CSVs and PDFs all work, and if the PDF is only a scan, iSpend reads the words off it for you. It tells you which bank it recognized, lists everything it found, and flags anything you already have, so nothing is ever counted twice.</p>
+          <ul class="lp-points">
+            <li><span class="lp-ic" data-icon="check"></span>One statement or a year’s worth at once</li>
+            <li><span class="lp-ic" data-icon="check"></span>Different bank? Point at the date, description and amount once</li>
+          </ul>
+        </div>
+        <div class="lp-stage">
+          <div class="lp-panel">
+            <div class="lp-panel-top"><span class="lp-file"><span class="lp-ic" data-icon="file-text"></span>chase-2026-09.pdf</span><span class="lp-pillx accent">Chase · credit card</span></div>
+            <div class="lp-panel-sub">148 charges found · 6 you already have</div>
+            <div class="lp-prow"><span>09/04</span><span>WHOLE FOODS MKT</span><span class="lp-amt">−$63.02</span></div>
+            <div class="lp-prow"><span>09/05</span><span>UNITED AIRLINES</span><span class="lp-amt">−$412.80</span></div>
+            <div class="lp-prow is-dupe"><span>09/06</span><span>NETFLIX.COM</span><span class="lp-tagx">already here</span></div>
+            <div class="lp-prow"><span>09/08</span><span>SQ *BLUE BOTTLE COFFEE</span><span class="lp-amt">−$6.75</span></div>
+            <div class="lp-tallies">
+              <div class="lp-tally"><b class="lp-num" data-to="142">142</b><span>added</span></div>
+              <div class="lp-tally"><b class="lp-num good" data-to="119">119</b><span>sorted for you</span></div>
+              <div class="lp-tally"><b class="lp-num" data-to="6">6</b><span>skipped as duplicates</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="lp-chapter lp-reveal">
+      <div class="lp-wrap lp-chapter-in">
+        <div class="lp-chapter-copy">
+          <p class="lp-kicker">2 · Sort</p>
+          <h2 class="lp-h2">It sorts itself, and learns from you.</h2>
+          <p class="lp-sub">Your own rules go first, then what iSpend remembers about the places you shop, then the thousands of merchant names it already knows. Whatever is left arrives grouped by merchant, so one answer sorts every charge from that place at once. Every answer is remembered.</p>
+          <ul class="lp-points">
+            <li><span class="lp-ic" data-icon="check"></span>Most of the month is sorted before you scroll</li>
+            <li><span class="lp-ic" data-icon="check"></span>By the sixth statement there is almost nothing left to ask</li>
+          </ul>
+        </div>
+        <div class="lp-stage">
+          <div class="lp-panel">
+            <div class="lp-panel-top"><b>3 merchants to sort</b><span class="lp-panel-sub">one answer each</span></div>
+            <div class="lp-rev"><span class="lp-mch">SQ *BLUE BOTTLE<em>7 charges · $61.40</em></span><span class="lp-chip" style="--c:var(--c4)"><i></i>Coffee</span></div>
+            <div class="lp-rev"><span class="lp-mch">CITY OF AUSTIN UT<em>3 charges · $284.11</em></span><span class="lp-chip" style="--c:var(--c9)"><i></i>Utilities</span></div>
+            <div class="lp-rev"><span class="lp-mch">AMZN Mktp US<em>5 charges · $212.60</em></span><span class="lp-chip" style="--c:var(--c2)"><i></i>Shopping</span></div>
+            <div class="lp-rev-foot"><span class="lp-ic ok" data-icon="check"></span>Got it. Next month these sort themselves.</div>
+            <div class="lp-decay-wrap">
+              <div class="lp-panel-sub">Questions asked, per statement</div>
+              <svg class="lp-decay" viewBox="0 0 260 80" aria-hidden="true">
+                <path class="lp-decay-fill" d="M8 12 L60 34 L112 50 L164 60 L216 66 L252 69 L252 74 L8 74 Z"></path>
+                <path class="lp-decay-line" d="M8 12 L60 34 L112 50 L164 60 L216 66 L252 69" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle class="lp-decay-dot" cx="252" cy="69" r="3.5"></circle>
+              </svg>
+              <div class="lp-decay-x"><span>1st</span><span>6th</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="lp-chapter lp-reveal">
+      <div class="lp-wrap lp-chapter-in">
+        <div class="lp-chapter-copy">
+          <p class="lp-kicker">3 · See</p>
+          <h2 class="lp-h2">See the month in one honest picture.</h2>
+          <p class="lp-sub">Spent, earned, and what was left. This month against last, by category, with the exact difference. Your top merchants, ranked, because it is rarely the big purchases. It is the place you stop at four times a week without thinking.</p>
+          <ul class="lp-points">
+            <li><span class="lp-ic" data-icon="check"></span>Budgets that warn you mid-month, while there is still time</li>
+            <li><span class="lp-ic" data-icon="check"></span>Split one Costco receipt across groceries and the kids</li>
+          </ul>
+        </div>
+        <div class="lp-stage">
+          <div class="lp-frame lp-dark" role="img" aria-label="The iSpend dashboard showing September spending of $4,218.60 across categories, a twelve-month trend and recent transactions.">
+            <div class="lp-app" aria-hidden="true">
+              <div class="lp-app-top"><span class="lp-app-title">September 2026</span><span class="lp-pillx">vs August</span></div>
+              <div class="lp-stats">
+                <div class="lp-stat"><span class="lp-stat-l">Spent</span><span class="lp-stat-v lp-num" data-to="4218.6" data-money="1">$4,218.60</span><span class="lp-stat-d bad">▲ 6.2%</span></div>
+                <div class="lp-stat"><span class="lp-stat-l">Income</span><span class="lp-stat-v lp-num" data-to="7400" data-money="1">$7,400.00</span><span class="lp-stat-d good">▲ 1.4%</span></div>
+                <div class="lp-stat"><span class="lp-stat-l">Left over</span><span class="lp-stat-v good lp-num" data-to="3181.4" data-money="1" data-plus="1">+$3,181.40</span><span class="lp-stat-d">saved</span></div>
+              </div>
+              <div class="lp-panels">
+                <div class="lp-mockpanel">
+                  <div class="lp-mockpanel-h">Monthly spending<span>Last 12 months</span></div>
+                  <svg class="lp-bars" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
+                    <g class="lp-barset">
+                      <rect x="6"   y="63" width="14" height="37" rx="3" style="--i:0"></rect>
+                      <rect x="30"  y="52" width="14" height="48" rx="3" style="--i:1"></rect>
+                      <rect x="54"  y="67" width="14" height="33" rx="3" style="--i:2"></rect>
+                      <rect x="78"  y="46" width="14" height="54" rx="3" style="--i:3"></rect>
+                      <rect x="102" y="57" width="14" height="43" rx="3" style="--i:4"></rect>
+                      <rect x="126" y="37" width="14" height="63" rx="3" style="--i:5"></rect>
+                      <rect x="150" y="49" width="14" height="51" rx="3" style="--i:6"></rect>
+                      <rect x="174" y="42" width="14" height="58" rx="3" style="--i:7"></rect>
+                      <rect x="198" y="29" width="14" height="71" rx="3" style="--i:8"></rect>
+                      <rect x="222" y="53" width="14" height="47" rx="3" style="--i:9"></rect>
+                      <rect x="246" y="39" width="14" height="61" rx="3" style="--i:10"></rect>
+                      <rect x="270" y="16" width="14" height="84" rx="3" class="is-now" style="--i:11"></rect>
+                    </g>
+                  </svg>
+                </div>
+                <div class="lp-mockpanel">
+                  <div class="lp-mockpanel-h">By category<span>vs August</span></div>
+                  <ul class="lp-cats">
+                    <li><span class="lp-cdot" style="--c:var(--c1)"></span>Groceries<b>$1,349</b><i class="bad">+$92</i></li>
+                    <li><span class="lp-cdot" style="--c:var(--c3)"></span>Housing<b>$1,012</b><i>same</i></li>
+                    <li><span class="lp-cdot" style="--c:var(--c4)"></span>Dining<b>$759</b><i class="bad">+$118</i></li>
+                    <li><span class="lp-cdot" style="--c:var(--c7)"></span>Transport<b>$590</b><i class="good">−$41</i></li>
+                    <li><span class="lp-cdot" style="--c:var(--c9)"></span>Utilities<b>$508</b><i class="good">−$12</i></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="lp-chapter lp-reveal">
+      <div class="lp-wrap lp-chapter-in">
+        <div class="lp-chapter-copy">
+          <p class="lp-kicker">4 · Find</p>
+          <h2 class="lp-h2">Find the subscriptions you forgot about.</h2>
+          <p class="lp-sub">The trial you meant to cancel. The app you last opened in March. Small, automatic, and still going out every month while nobody is looking. iSpend lists every recurring charge, what it costs over a year, and when it last renewed.</p>
+          <figure class="lp-gap">
+            <div class="lp-gap-row"><span>What people <em>guess</em> they spend on subscriptions a month</span><b class="lp-num" data-to="86" data-money="1" data-whole="1">$86</b></div>
+            <div class="lp-gap-row lp-gap-diff"><span>What the statement <em>actually</em> said</span><b class="lp-num hot" data-to="219" data-money="1" data-whole="1">$219</b></div>
+            <figcaption>Consumer survey by West Monroe. 89% underestimated.</figcaption>
+          </figure>
+        </div>
+        <div class="lp-stage">
+          <div class="lp-panel">
+            <div class="lp-panel-top"><b>Recurring charges</b><span class="lp-panel-sub">6 found · $2,318 a year</span></div>
+            <div class="lp-sub-row"><span class="lp-mch">Netflix<em>renewed 9 times since you last watched</em></span><span class="lp-amt">$15.49<i>/mo</i></span></div>
+            <div class="lp-sub-row"><span class="lp-mch">Spotify<em>monthly</em></span><span class="lp-amt">$11.99<i>/mo</i></span></div>
+            <div class="lp-sub-row"><span class="lp-mch">Peak Fitness<em>last visit in March</em></span><span class="lp-amt">$49.00<i>/mo</i></span></div>
+            <div class="lp-sub-row"><span class="lp-mch">iCloud+<em>monthly</em></span><span class="lp-amt">$2.99<i>/mo</i></span></div>
+            <div class="lp-sub-row"><span class="lp-mch">Adobe Creative Cloud<em>trial ended in May</em></span><span class="lp-amt">$59.99<i>/mo</i></span></div>
+            <div class="lp-sub-row"><span class="lp-mch">The Athletic<em>yearly</em></span><span class="lp-amt">$5.99<i>/mo</i></span></div>
+            <div class="lp-total"><span>Every month, whether you notice or not</span><b class="lp-num" data-to="145.45" data-money="1">$145.45</b></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ── 4. The objection, answered: privacy ──────────────────────────── -->
+  <section class="lp-band lp-navy lp-reveal" id="privacy">
+    <div class="lp-wrap">
+      <div class="lp-band-head">
+        <p class="lp-kicker">Privacy</p>
+        <h2 class="lp-h2">You shouldn’t have to hand over your bank password to see a pie chart.</h2>
+        <p class="lp-sub">That is the deal most budgeting apps quietly ask you to make. iSpend reads the statement you can already download yourself, and nothing else. There is no tracking anywhere in the product, not even on this page.</p>
+      </div>
+      <ul class="lp-band-grid">
+        <li><span class="lp-ic" data-icon="lock"></span><h3>No bank login, ever</h3><p>There is nowhere to type it, so there is nothing to leak or to stay logged in. iSpend only sees the file you hand it.</p></li>
+        <li><span class="lp-ic" data-icon="shield"></span><h3>Never sold, never shared</h3><p>What you spend does not go to advertisers, data brokers or anyone else. Nothing you upload is pooled with anyone.</p></li>
+        <li><span class="lp-ic" data-icon="download"></span><h3>Yours to take with you</h3><p>Download everything as a spreadsheet whenever you like. That stays true after the trial, and if you stop paying.</p></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── 5. Pricing (rendered from /api/public/landing) ───────────────── -->
+  <section class="lp-sec lp-reveal" id="pricing">
+    <div id="lp-pricing" class="lp-wrap lp-pricing">
+      <div class="lp-pricing-head">
+        <p class="lp-kicker">Pricing</p>
+        <h2 class="lp-h2">One plan, everything in it</h2>
+        <p class="lp-sub">Try the whole thing free first. No card up front, and canceling takes two clicks.</p>
+      </div>
+      <div class="lp-pricing-body">
+        <div class="lp-cta-row"><a class="btn btn-primary btn-lg" href="/signup.html" data-cta>Start free trial</a></div>
+        <p class="lp-foot-note" data-trial-line>14-day free trial. Nothing is charged until you decide to stay.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 6. FAQ ───────────────────────────────────────────────────────── -->
+  <section class="lp-sec lp-alt lp-reveal" id="faq">
+    <div class="lp-wrap lp-faq-in">
+      <div class="lp-faq-head">
+        <p class="lp-kicker">Questions</p>
+        <h2 class="lp-h2">Before you start</h2>
+      </div>
+      <div class="lp-faq">
+        <details name="lp-faq"><summary>Do I need to be good with money for this?</summary><p>No. You need to be able to download a statement from your bank’s website, which you have almost certainly done before. iSpend does the reading, the sorting and the adding up. You do the looking.</p></details>
+        <details name="lp-faq"><summary>Do I have to connect my bank?</summary><p>No, and you couldn’t even if you wanted to. There is nowhere to type a bank password. You download a statement the way you already do, and upload the file.</p></details>
+        <details name="lp-faq"><summary>What if my bank isn’t on the list?</summary><p>It still works. iSpend works out which part is the date, the description and the amount. If it gets one wrong you put it right once, and it remembers that layout from then on. Credit unions and small banks are fine.</p></details>
+        <details name="lp-faq"><summary>How long does the first statement take?</summary><p>A minute or two to upload and preview. iSpend then sorts most charges itself and asks about the rest, grouped by merchant, so a first statement means a dozen or so answers. The second asks far fewer.</p></details>
+        <details name="lp-faq"><summary>Does an AI read my statements?</summary><p>Only if you turn it on and add your own key. Leave it alone and nothing of yours goes near an AI. Even switched on, it only suggests. You decide.</p></details>
+        <details name="lp-faq"><summary>What happens when the trial ends?</summary><p>Nothing is deleted. After a few days’ grace the account goes read-only: you can still sign in, look at everything and download all of it. Subscribing switches it all back on. Canceling takes two clicks, and payments go through Stripe, so your card never touches iSpend.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 7. Close ─────────────────────────────────────────────────────── -->
+  <section class="lp-band lp-navy lp-close lp-reveal">
+    <div class="lp-wrap lp-close-in">
+      <h2 class="lp-h2">Last month’s statement is already in your downloads folder.</h2>
+      <p class="lp-sub">Drop it in and find out what’s in it. It takes about as long as reading this page did.</p>
+      <div class="lp-cta-row center">
+        <a class="btn btn-primary btn-xl" href="/signup.html" data-cta>Start free trial<span class="lp-ic" data-icon="arrow-right"></span></a>
+        <a class="lp-cta-quiet" href="/login.html" data-signin-alt>Already have an account? Sign in</a>
+      </div>
+      <p class="lp-trust center" data-trial-line>14-day free trial · no card required · cancel any time</p>
+    </div>
+  </section>
+
+</main>
+
+<div class="lp-sticky" id="lp-sticky" aria-hidden="true" inert>
+  <span class="lp-sticky-t"><b>iSpend</b><span data-trial-line>14-day free trial · no card</span></span>
+  <a class="btn btn-primary" href="/signup.html" data-cta>Start free trial</a>
+</div>
+
+<footer class="lp-foot">
+  <div class="lp-wrap lp-foot-in">
+    <a class="lp-brand" href="/" aria-label="iSpend home">
+      <svg class="lp-brand-mark" width="30" height="30" aria-hidden="true" focusable="false"><use href="#ispend-mark"></use></svg>
+      <span class="lp-brand-name">iSpend</span>
+    </a>
+    <nav class="lp-foot-links" aria-label="Footer">
+      <a href="#how">How it works</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="/privacy.html">Privacy policy</a><a href="/terms.html">Terms</a><a href="/login.html" data-signin-alt>Sign in</a><a href="/forgot.html">Reset password</a>
+    </nav>
+    <span class="lp-foot-note">© <span id="lp-year">2026</span> iSpend · No analytics on this page.</span>
+  </div>
+</footer>
+
+<script src="/js/api.js"></script>
+<script src="/js/format.js"></script>
+<script src="/js/icons.js"></script>
+<script src="/js/pages/landing.js"></script>
+</body>
+</html>

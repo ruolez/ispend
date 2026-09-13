@@ -50,14 +50,14 @@ function setStep(step) {
   window.scrollTo({ top: 0 });
 }
 function accountName(id) { const a = imp.accounts.find((x) => x.id === Number(id)); return a ? a.name : ''; }
-const SOURCE_LABEL = { rule: 'from one of your rules', merchant: 'remembered from an earlier import', builtin: 'built-in suggestion' };
+const SOURCE_LABEL = { rule: 'from one of your rules', merchant: 'remembered from a previous statement', builtin: 'built-in suggestion' };
 function catChip(id, source, rowId) {
   const c = imp.cats.get(Number(id));
   const act = rowId != null ? ` data-act="pick-cat" data-row="${rowId}" title="Click to change the category"` : '';
   const tag = rowId != null ? 'button type="button"' : 'span';
   const close = rowId != null ? 'button' : 'span';
   if (!c) return `<${tag} class="catchip catchip--empty"${act}><i class="dot"></i><span class="catchip-label">Uncategorized</span></${close}>`;
-  const why = source === 'builtin' ? ' · suggested — will need confirming in Review unless you confirm it here' : SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
+  const why = source === 'builtin' ? ' · a suggestion — confirm it here, or later in Review' : SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
   return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} title="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}${source === 'builtin' ? '<span class="chip-q">?</span>' : ''}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
 }
 
@@ -70,8 +70,8 @@ function renderUpload() {
   if (billing && billing.billing_enabled && !billing.can_write) {
     host.innerHTML = ui.emptyState({
       icon: 'lock', title: 'Importing is paused',
-      body: 'Your subscription has ended. Subscribe to import statements again — everything you '
-          + 'have already imported is untouched and still exportable.',
+      body: 'Your subscription has ended. Subscribe to add statements again — everything you '
+          + 'have already added is untouched and still downloadable.',
       action: { label: 'Subscribe', href: '/billing.html' } });
     return;
   }
@@ -176,7 +176,7 @@ async function reopenStatement(id) {
   try {
     const s = await api(`/api/statements/${id}?limit=2000`);
     entry.statement = s; entry.name = s.original_filename; entry.size = s.file_size; entry.kind = s.file_kind;
-    if (s.status === 'committed') { toast('This statement was already imported', { type: 'info' }); location.replace(`/transactions.html?statement=${id}&range=all`); return; }
+    if (s.status === 'committed') { toast('You have already added this statement', { type: 'info' }); location.replace(`/transactions.html?statement=${id}&range=all`); return; }
     if (['previewed', 'error', 'discarded'].includes(s.status)) { imp.active = entry.lid; setStep('review'); renderReview(); }
     else { renderFileList(); schedulePoll(); }
   } catch (err) { entry.error = err.message; renderFileList(); }
@@ -206,7 +206,7 @@ function renderReview() {
     querySelector: (q) => real.querySelector(q),
     querySelectorAll: (q) => real.querySelectorAll(q),
   };
-  if (!files.length) { host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox', title: 'Nothing to review', body: 'All uploaded statements were imported.', action: { label: 'Import another', act: 'restart' } })}</div>`; return; }
+  if (!files.length) { host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox', title: 'Nothing to review', body: 'Every statement you uploaded has been added.', action: { label: 'Import another', act: 'restart' } })}</div>`; return; }
   if (!imp.active || !files.some((f) => f.lid === imp.active)) imp.active = files[0].lid;
   const f = activeFile();
   const s = f.statement;
@@ -214,17 +214,17 @@ function renderReview() {
     tabs = `<div class="file-tabs" role="tablist" aria-label="Uploaded files">${files.map((x) => `<button type="button" role="tab" id="file-tab-${esc(x.lid)}" aria-controls="file-panel-${esc(x.lid)}" class="file-tab ${x.lid === imp.active ? 'active' : ''}" data-lid="${x.lid}" aria-selected="${x.lid === imp.active}">${icon(KIND_ICON[x.kind] || 'file', 'ico-sm')}<span class="truncate" style="max-width:180px">${esc(x.name)}</span>${x.statement && x.statement.status === 'previewed' ? '' : x.statement && x.statement.status === 'error' ? '<span class="badge badge-danger" aria-label="Failed to parse">Failed</span>' : '<span class="spinner" role="img" aria-label="Parsing"></span>'}</button>`).join('')}</div>`;
   }
   if (!s || ['parsing', 'uploaded', 'committing'].includes(s.status)) {
-    host.innerHTML = `<div class="card parsing-card"><span class="spinner spinner-lg"></span><div><div class="fw-600">${s && s.status === 'committing' ? 'Importing' : 'Parsing'} ${esc(f.name)}…</div><div class="text-3 fs-base">${f.kind === 'pdf' ? 'Extracting text; scanned pages go through OCR, which can take a minute.' : 'Detecting the bank format and checking for duplicates.'}</div></div></div>`;
+    host.innerHTML = `<div class="card parsing-card"><span class="spinner spinner-lg"></span><div><div class="fw-600">${s && s.status === 'committing' ? 'Importing' : 'Parsing'} ${esc(f.name)}…</div><div class="text-3 fs-base">${f.kind === 'pdf' ? 'Reading the file. If it is a scan, working out the words can take a minute.' : 'Working out which bank it is from, and checking for anything you already have.'}</div></div></div>`;
     schedulePoll();
     return;
   }
   if (s.status === 'discarded') {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'trash', title: 'This import was discarded', body: `“${f.name}” was discarded before anything was imported. Upload it again if you still need it.`, action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'trash', title: 'This one was thrown away', body: `“${f.name}” was discarded before anything was imported. Upload it again if you still need it.`, action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
   if (s.status === 'error') {
     host.innerHTML = `<div class="card"><div class="card-body">
-      ${ui.errorBox(s.error_message || 'This file could not be parsed.')}
+      ${ui.errorBox(s.error_message || 'iSpend could not read this file.')}
       <div class="row mt-3" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-primary" data-act="reparse">${icon('refresh', 'ico-sm')}Try again</button><button type="button" class="btn btn-secondary" data-act="discard">Discard file</button></div>
     </div></div>`;
     return;
@@ -235,7 +235,7 @@ function renderReview() {
         <div class="section-label mb-2">Import into</div>
         <div class="acct-field"><select class="select" id="rv-account" aria-label="Account">${!s.account_id ? '<option value="">Choose an account…</option>' : ''}${imp.accounts.map((a) => `<option value="${a.id}" ${a.id === s.account_id ? 'selected' : ''}>${esc(a.name)} · ${esc(a.currency)}</option>`).join('')}</select>
           <button type="button" class="btn btn-secondary" data-act="new-account" data-tip="Create account">${icon('plus', 'ico-sm')}<span class="label">New</span></button></div>
-        <div class="hint mt-1">${s.account_id ? 'Duplicates are checked against this account.' : 'Pick the account this statement belongs to; duplicates are checked per account.'}${s.period_start ? ` Statement period ${fmtDate(s.period_start, { year: true })} – ${fmtDate(s.period_end || s.period_start, { year: true })}.` : ''}</div>
+        <div class="hint mt-1">${s.account_id ? 'Anything you already have is checked against this account.' : 'Pick the account this statement belongs to. iSpend checks that account for anything you already have.'}${s.period_start ? ` Statement period ${fmtDate(s.period_start, { year: true })} – ${fmtDate(s.period_end || s.period_start, { year: true })}.` : ''}</div>
       </div></div>
       <div class="card"><div class="card-body">${signCheck(s)}</div></div>
     </div>
@@ -256,7 +256,7 @@ function detectionBanner(f) {
   return `<div class="detect-banner ${low || warns.length ? 'is-warning' : ''}">
     <span class="detect-icon">${icon(low ? 'alert-triangle' : 'check-circle')}</span>
     <div class="detect-text"><div class="detect-title">${low && !s.bank_profile ? `No known bank matched — using generic ${kind} detection` : `Detected: ${esc(label)} ${kind}${s.ocr_applied ? ' (OCR)' : ''}`}${confText ? ` <span class="text-3 fw-500">· ${confText}</span>` : ''}</div>
-      <div class="detect-sub">${warns.length ? esc(warns[0]) + (warns.length > 1 ? ` (+${warns.length - 1} more)` : '') : low ? 'Check the column mapping and the sign of the amounts below before importing.' : `${fmtNumber(s.summary.rows_total)} rows found · ${esc(f.name)}`}</div></div>
+      <div class="detect-sub">${warns.length ? esc(warns[0]) + (warns.length > 1 ? ` (+${warns.length - 1} more)` : '') : low ? 'Check below that the columns line up and the pluses and minuses look right.' : `${fmtNumber(s.summary.rows_total)} rows found · ${esc(f.name)}`}</div></div>
     <div class="detect-actions"><label class="text-3 fs-sm" for="rv-profile">Bank</label><select class="select input-sm" id="rv-profile"><option value="">Generic / auto</option>${profiles.map((p) => `<option value="${esc(p.key)}" ${p.key === s.bank_profile ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></div>
   </div>`;
 }
@@ -338,10 +338,10 @@ function previewTable(s) {
   }).join('');
   return `<div class="preview-head">
       <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span title="Rows already imported into this account are skipped automatically"><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'} skipped</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
-      <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" data-tip="Ask the AI model to read the statement pages and add any transactions the parser missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
+      <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" data-tip="Ask the AI to read the pages and pick up anything that was missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-preview"><thead><tr><th class="col-check"></th><th>Date</th><th>Description</th><th>Category</th><th class="right">Amount</th></tr></thead>
-      <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'The PDF text did not contain recognizable transaction lines. If it is a scan, the OCR quality may be too low; try a clearer export or a CSV.' + (imp.aiReady ? ' You can also let the AI model read the pages with “Read with AI” above.' : '') : 'Check the column mapping above.' })}</td></tr>`}</tbody></table>
+      <tbody>${body || `<tr><td colspan="5">${ui.emptyState({ icon: 'file-text', title: 'No transactions found', body: s.file_kind === 'pdf' ? 'iSpend could not find any charges in this PDF. If it is a scan it may be too blurry to read — try a clearer download, or a spreadsheet instead.' + (imp.aiReady ? ' You can also let the AI have a go with “Read with AI” above.' : '') : 'Check that the columns line up above.' })}</td></tr>`}</tbody></table>
       ${rows.length >= 2000 ? '<div class="preview-more text-3 fs-sm">Showing the first 2,000 rows.</div>' : ''}</div>`;
 }
 
@@ -350,7 +350,7 @@ function commitFooter(s) {
   const n = sm.included || 0;
   const acct = accountName(s.account_id);
   return `<div class="commit-foot">
-    <div class="summary">${n ? `Import <b>${fmtNumber(n)}</b> transaction${n === 1 ? '' : 's'}${acct ? ` into <b>${esc(acct)}</b>` : ' — choose an account first'}` : 'Nothing selected to import'}</div>
+    <div class="summary">${n ? `Import <b>${fmtNumber(n)}</b> transaction${n === 1 ? '' : 's'}${acct ? ` into <b>${esc(acct)}</b>` : ' — choose an account first'}` : 'Nothing ticked to add'}</div>
     <div class="row" style="gap:8px"><button type="button" class="btn btn-ghost" data-act="discard">Discard</button><button type="button" class="btn btn-primary" data-act="commit" ${n && s.account_id ? '' : 'disabled'}>${icon('check', 'ico-sm')}Import</button></div>
   </div>`;
 }
@@ -484,7 +484,7 @@ async function aiExtract(f, button) {
     f.statement = { ...f.statement, status: 'parsing', rows: undefined };
     renderReview();
     schedulePoll();
-    toast('Reading the statement with AI · this can take a few minutes; rows it finds appear in the preview with a note', { type: 'info', duration: 7000 });
+    toast('The AI is reading the statement · this can take a few minutes, and anything it finds appears below with a note', { type: 'info', duration: 7000 });
   });
 }
 async function confirmSuggestions(f, button) {

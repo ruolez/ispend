@@ -52,7 +52,7 @@ function setFlow(flow) { state.flow = flow; isolated = null; state.iso = null; s
 /* Stable key for a report series: its category id, else its position (used by ?trend= and ?iso=). */
 function seriesKey(s, i) { return s.category_id != null ? `c${s.category_id}` : `i${i}`; }
 function paintFlow() { if (state.flowSeg) state.flowSeg.select(state.flow === 'income' ? 1 : 0, { focus: false, silent: true }); }
-function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Transfers and excluded transactions are left out.'; }
+function paintTransfersHint() { $('#filter-hint').textContent = state.transfers ? 'Transfers and excluded transactions are counted.' : 'Money you moved between your own accounts, and anything you have hidden, is left out.'; }
 function shiftMonth(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function prevMonthOf(ym) { return shiftMonth(ym, -1); }
 function paintMonths() { if (state.monthsSeg) state.monthsSeg.select([6, 12, 24].indexOf(state.months), { focus: false, silent: true }); }
@@ -125,7 +125,7 @@ function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme(
 async function loadCategory(force) {
   const host = $('#panel-category');
   if (!host.querySelector('#ch-stack')) {
-    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Drill into a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg" id="pct-seg" aria-label="Amounts or percentages"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-mode="pct">%</button></div></div></header>
+    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Look inside a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg" id="pct-seg" aria-label="Amounts or percentages"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-mode="pct">%</button></div></div></header>
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
       <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
@@ -159,7 +159,7 @@ function renderStack(data) {
   const title = $('#stack-title'); if (title) title.textContent = data.parent_id ? `${isInc() ? 'Income s' : 'S'}ubcategories by month` : `${isInc() ? 'Income' : 'Spending'} by month`;
   const body = $('#ch-stack').closest('.chart-body'); body.classList.remove('is-loading');
   const legend = $('#ch-stack-legend');
-  if (!data.series.length) { charts.destroyChart($('#ch-stack')); body.innerHTML = ui.emptyState({ icon: 'bar-chart', title: `No ${flowWord()} yet`, body: isInc() ? 'Deposits filed under Income categories show up here.' : 'Import a statement to see monthly spending here.', action: isInc() ? null : { label: 'Import statement', href: '/import.html' } }); legend.innerHTML = ''; return; }
+  if (!data.series.length) { charts.destroyChart($('#ch-stack')); body.innerHTML = ui.emptyState({ icon: 'bar-chart', title: `No ${flowWord()} yet`, body: isInc() ? 'Deposits filed under Income categories show up here.' : 'Add a statement to see spending by month here.', action: isInc() ? null : { label: 'Import statement', href: '/import.html' } }); legend.innerHTML = ''; return; }
   if (!body.querySelector('canvas')) body.innerHTML = '<canvas id="ch-stack"></canvas>';
   const cur = state.currency;
   const values = (s) => state.pct ? s.values.map((v, j) => (data.totals[j] ? v / data.totals[j] * 100 : 0)) : s.values;
@@ -327,7 +327,7 @@ function renderCashflow(rows) {
     ['Savings rate', income > 0 ? fmtPct(net / income) : '—', income > 0 ? 'of income kept' : 'no income recorded'],
   ];
   $('#cash-kpis').innerHTML = kpis.map(([l, v, s]) => `<div class="stat"><div class="stat-label">${l}</div><div class="stat-value">${v}</div><div class="stat-delta"><span class="stat-delta-vs">${esc(s)}</span></div></div>`).join('');
-  if (!active.length) { charts.destroyChart($('#ch-cash')); body.innerHTML = ui.emptyState({ icon: 'bar-chart', title: 'No activity yet', body: 'Import a statement to see income against spending here.', action: { label: 'Import statement', href: '/import.html' } }); $('#cash-table').innerHTML = ''; $('#ch-cash-legend').innerHTML = ''; return; }
+  if (!active.length) { charts.destroyChart($('#ch-cash')); body.innerHTML = ui.emptyState({ icon: 'bar-chart', title: 'No activity yet', body: 'Add a statement to compare what came in with what went out.', action: { label: 'Import statement', href: '/import.html' } }); $('#cash-table').innerHTML = ''; $('#ch-cash-legend').innerHTML = ''; return; }
   if (!body.querySelector('canvas')) body.innerHTML = '<canvas id="ch-cash"></canvas>';
   const chart = charts.makeChart($('#ch-cash'), (t) => ({
     type: 'bar',

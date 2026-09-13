@@ -14,7 +14,7 @@
 <body>
   <main id="main" class="main--wide main">
     <div class="page-head">
-      <div><h1>Rules</h1><div class="page-sub" id="page-sub">Rules run top to bottom on every import; the first match wins.</div></div>
+      <div><h1>Rules</h1><div class="page-sub" id="page-sub">Rules are checked top to bottom on every statement, and the first one that matches wins.</div></div>
       <div class="page-actions">
         <div class="seg" id="view-seg" aria-label="View"><button type="button" class="seg-btn active" data-view="rules">Rules</button><button type="button" class="seg-btn" data-view="merchants">Remembered merchants</button></div>
         <div class="input-group rules-search"><span class="ico-wrap"></span><input id="rule-search" class="input" placeholder="Filter rules…" aria-label="Filter"></div>
@@ -25,7 +25,7 @@
     <div id="rules-error"></div>
     <div id="merchants-view" hidden>
       <div class="card"><div class="tbl-wrap merch-wrap"><table class="tbl merch-tbl"><thead><tr><th>Merchant</th><th>Category</th><th class="right col-used">Used</th><th class="right">Transactions</th><th class="right">Total</th><th class="col-last">Last used</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody id="merch-body"></tbody></table></div></div>
-      <p class="hint mt-3">Merchants are remembered whenever you categorize a charge; the next import applies the same category automatically. Click a name to rename it everywhere.</p>
+      <p class="hint mt-3">Whenever you sort a charge, iSpend remembers the shop and sorts it the same way next time. Click a name to rename it everywhere.</p>
     </div>
     <div id="rules-view">
     <div class="card rules-card">

@@ -10,9 +10,9 @@ const AD = {
 };
 
 const TAB_META = {
-  overview: { label: 'Overview', icon: 'activity', sub: 'Instance statistics for the selected range', load: loadOverview },
-  users: { label: 'Users', icon: 'users', sub: 'Every account on this server, their data and their lifecycle', load: loadUsers },
-  activity: { label: 'Activity', icon: 'clock', sub: 'What has been done on this server, newest first', load: loadActivity },
+  overview: { label: 'Overview', icon: 'activity', sub: 'How this site has been used over the selected range', load: loadOverview },
+  users: { label: 'Users', icon: 'users', sub: 'Everyone with an account here, their data and what state it is in', load: loadUsers },
+  activity: { label: 'Activity', icon: 'clock', sub: 'Everything that has happened here, newest first', load: loadActivity },
 };
 
 /* Composition hook: a sibling feature adds a tab without editing this file.
@@ -86,7 +86,7 @@ initNav('admin').then(async (me) => {
 function renderGate() {
   $('#admin-gate').innerHTML = ui.emptyState({
     icon: 'lock', title: 'Admins only',
-    body: 'This page manages every account on this server. Ask an administrator if you need access.',
+    body: 'This page manages everyone’s accounts. Ask an administrator if you need access.',
     action: { label: 'Back to dashboard', href: '/index.html' },
   });
 }
@@ -230,7 +230,7 @@ function bar(label, value, max, hint) {
 function renderAI(ai) {
   if (!ai.calls) {
     $('#ov-ai').innerHTML = ui.emptyState({ icon: 'sparkles', title: 'No AI calls in this range',
-      body: 'Categorization and insight suggestions are logged here once someone uses them.' });
+      body: 'Category suggestions and written insights show up here once someone uses them.' });
     return;
   }
   const models = ai.by_model || [];
@@ -277,7 +277,7 @@ function renderProfiles(imports) {
   const rows = imports.by_profile || [];
   if (!rows.length) {
     $('#ov-profiles').innerHTML = ui.emptyState({ icon: 'file-text', title: 'No statements imported yet',
-      body: 'Each bank profile shows up here with how many statements it parsed.' });
+      body: 'Each bank shows up here with the number of statements it has read.' });
     return;
   }
   const max = Math.max(...rows.map((r) => r.n), 1);
@@ -294,7 +294,7 @@ function renderHousekeeping(h, generatedAt) {
     <div class="setting-row">
       <div><div class="title">Activity log retention</div>
         <div class="desc">${fmtNumber(h.audit_rows || 0)} entries${h.oldest_audit_at ? `, oldest ${fmtRelative(h.oldest_audit_at)}` : ''}. Older entries are pruned as new ones are written.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" min="7" max="3650" aria-label="Activity log retention in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
+      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" min="7" max="3650" aria-label="How long to keep the activity log, in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
     </div>
     <div class="setting-row">
       <div><div class="title">Trash retention</div>
@@ -452,8 +452,8 @@ async function changeRole(u) {
   const ok = await ui.confirm({
     title: promote ? `Make ${u.username} an admin?` : `Remove admin from ${u.username}?`,
     body: promote
-      ? 'Admins manage every account on this server, see all usage statistics and can publish the shared AI key. The change applies on their next request.'
-      : 'They keep their data but lose user management and the shared AI key on their next request.',
+      ? 'Admins manage everyone’s accounts, see all the usage figures, and can share the AI key. This takes effect the next time they do anything.'
+      : 'They keep their own data, but lose account management and the shared AI key the next time they do anything.',
     confirmText: promote ? 'Make admin' : 'Remove admin',
   });
   if (!ok) return;
@@ -759,7 +759,7 @@ async function loadActivity({ more = false } = {}) {
   host.innerHTML = n
     ? `<div class="adm-audit">${auditList(AD.audit.items)}</div>`
     : ui.emptyState({ icon: 'clock', title: 'No activity recorded',
-      body: AD.audit.action || AD.audit.q || AD.audit.userId ? 'Nothing matches these filters.' : 'Actions show up here as people use this server.' });
+      body: AD.audit.action || AD.audit.q || AD.audit.userId ? 'Nothing matches these filters.' : 'Actions show up here as people use iSpend.' });
 }
 
 async function openActionFilter(anchor) {

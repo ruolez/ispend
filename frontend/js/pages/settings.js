@@ -47,7 +47,7 @@ async function loadAccounts() {
     [state.accounts, state.institutions] = await Promise.all([api('/api/accounts?all=1'), api('/api/accounts/institutions').catch(() => [])]);
   } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-accounts' }); return; }
   if (!state.accounts.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'landmark', title: 'No accounts yet', body: 'Create an account for each bank or card you import statements from. You can also create one during import.', action: { label: 'Add account', act: 'add-account' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'landmark', title: 'No accounts yet', body: 'Add one for each bank or card you upload statements from. You can also add one while importing.', action: { label: 'Add account', act: 'add-account' } })}</div>`;
     return;
   }
   const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k || '—';
@@ -229,7 +229,7 @@ async function openModelList() {
   const exact = rows.findIndex((m) => m.id.toLowerCase() === q);
   state.modelIdx = exact >= 0 ? exact : (rows.length ? 0 : -1);
   const html = `<div class="menu model-list" role="listbox" id="or-model-list">${rows.length ? rows.map((m, i) => `<div class="model-item ${i === state.modelIdx ? 'is-active' : ''}" role="option" id="mi-${i}" aria-selected="${i === state.modelIdx}" data-id="${esc(m.id)}">
-      <div class="name">${esc(m.name)}${m.structured ? '<span class="badge badge-info" title="Supports structured JSON output">JSON</span>' : ''}</div>
+      <div class="name">${esc(m.name)}${m.structured ? '<span class="badge badge-info" title="Can return structured answers">JSON</span>' : ''}</div>
       <div class="meta"><span>${esc(m.id)}</span><span>${m.context_length ? fmtNumber(m.context_length, { compact: true }) + ' ctx' : ''}</span><span>${m.prompt_price != null ? `$${m.prompt_price.toFixed(2)} / $${(m.completion_price || 0).toFixed(2)} per 1M` : ''}</span></div>
     </div>`).join('') : '<div class="palette-empty">No models match</div>'}
     <div class="menu-divider"></div><div class="row" style="padding:2px 4px 4px"><span class="hint">${fmtNumber(state.models.length)} models</span><button type="button" class="btn btn-ghost btn-xs ml-auto" data-act="refresh-models">${icon('refresh', 'ico-sm')}Refresh</button></div></div>`;
@@ -333,7 +333,7 @@ function renderAccount() {
   $('#me-pw-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type=submit]');
-    if (!ui.validate(e.target, [{ sel: '#me-conf', test: (v) => v === $('#me-new').value || 'New passwords do not match' }])) return;
+    if (!ui.validate(e.target, [{ sel: '#me-conf', test: (v) => v === $('#me-new').value || 'Those two passwords do not match' }])) return;
     await ui.busy(btn, async () => { await api('/api/auth/me/password', { method: 'PUT', body: { current_password: $('#me-cur').value, password: $('#me-new').value } }); toast('Password updated', { type: 'success' }); e.target.reset(); });
   });
 }
@@ -367,7 +367,7 @@ async function onAction(e) {
       return;
     }
     case 'renormalize': {
-      if (!(await ui.confirm({ title: 'Re-detect merchant names?', body: 'Merchant names on all your transactions will be recomputed. Rules and remembered merchants are updated to match, so nothing stops working. This may take a few seconds.', confirmText: 'Re-detect' }))) return;
+      if (!(await ui.confirm({ title: 'Re-detect merchant names?', body: 'iSpend will tidy up the merchant name on every charge. Your rules and remembered merchants are updated to match, so nothing stops working. Give it a few seconds.', confirmText: 'Re-detect' }))) return;
       await ui.busy(el, async () => {
         const r = await api('/api/merchants/renormalize', { method: 'POST', body: {} });
         toast(`${fmtNumber(r.transactions_updated)} transactions renamed, ${fmtNumber(r.rules_updated)} rules updated${r.stripped_phrases && r.stripped_phrases.length ? ` · stripped “${r.stripped_phrases.join('”, “')}”` : ''}`, { type: 'success', duration: 8000 });

@@ -51,7 +51,7 @@ function renderStats() {
 function daysLabel(n) { if (n == null) return ''; if (n < 0) return `${Math.abs(n)}d overdue`; if (n === 0) return 'Today'; if (n === 1) return 'Tomorrow'; return `in ${n} days`; }
 function renderRecurring() {
   const host = $('#recurring'); const rows = state.data.recurring; const cur = state.currency;
-  if (!rows.length) { host.innerHTML = `<div class="card-body">${ui.emptyState({ icon: 'repeat', title: 'No recurring charges yet', body: 'Subscriptions and bills show up here once the same merchant repeats on a regular cadence across a few statements.' })}</div>`; return; }
+  if (!rows.length) { host.innerHTML = `<div class="card-body">${ui.emptyState({ icon: 'repeat', title: 'No recurring charges yet', body: 'Subscriptions and bills show up here once the same merchant charges you regularly across a few statements.' })}</div>`; return; }
   host.innerHTML = `<div class="tbl-wrap tbl-wrap--flush"><table class="tbl rec-table tbl--cards"><thead><tr><th class="col-merchant">Merchant</th><th class="col-cat">Category</th><th class="col-cadence">Cadence</th><th class="right col-amt">Amount</th><th class="col-last">Last</th><th class="right col-next">Next</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${rows.map((r) => { const c = state.cats.get(r.category_id); const n = r.days_until_next; return `<tr data-key="${esc(r.merchant_key)}" class="${r.is_active ? '' : 'text-3'}">
       <td class="col-merchant"><div class="rec-merchant"><a href="/transactions.html${toQuery({ q: r.merchant_name, range: 'all' })}">${esc(r.merchant_name)}</a><span class="sub">${plural(r.occurrences, 'charge')}${r.is_active ? '' : ' · inactive'}</span></div></td>
@@ -73,9 +73,9 @@ function renderAnomalies() {
     <div class="anom-actions"><span class="anom-amt">${fmtMoney(Math.abs(a.amount), cur)}</span><div class="row"><a class="btn btn-ghost btn-xs" href="/transactions.html${toQuery({ open: a.transaction_id, range: 'all' })}">View</a><button type="button" class="btn btn-ghost btn-xs" data-act="dismiss-anom" data-id="${a.transaction_id}">Looks fine</button></div></div></div>`; }).join('')}</div>`;
 }
 function describe(a) {
-  if (a.kind === 'unusual_amount') return 'This charge is much larger than what this merchant usually costs you.';
-  if (a.kind === 'new_merchant') return 'First time you have paid this merchant, and it was a sizable amount.';
-  if (a.kind === 'duplicate_charge') return 'Same merchant, same amount, same day. Could be a double charge.';
+  if (a.kind === 'unusual_amount') return 'This is much bigger than what this merchant usually costs you.';
+  if (a.kind === 'new_merchant') return 'First time you have paid this merchant, and it was not a small amount.';
+  if (a.kind === 'duplicate_charge') return 'Same merchant, same amount, same day — this could be a double charge.';
   return '';
 }
 
@@ -86,7 +86,7 @@ function renderAI() {
   host.setAttribute('aria-busy', state.generating ? 'true' : 'false');
   if (ai.status === 'disabled') {
     const admin = state.me.role === 'admin';
-    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add an OpenRouter key and turn on Monthly insights to get a written read on your spending each month.' : 'Add your own OpenRouter key (or use one shared by your admin) and turn on Monthly insights in Settings › AI.', action: { label: 'Open AI settings', href: '/settings.html#ai' } });
+    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add a key and turn on Monthly insights, and iSpend will write up how each month went.' : 'Add your own key (or use one your admin has shared) and turn on Monthly insights in Settings › AI.', action: { label: 'Open AI settings', href: '/settings.html#ai' } });
     return;
   }
   if (state.generating) {
@@ -124,7 +124,7 @@ async function onAction(e) {
   if (act === 'reload') return load();
   if (act === 'prev-month' || act === 'next-month') { state.month = shiftMonth(state.month, act === 'next-month' ? 1 : -1); sync(); return load(); }
   if (act === 'generate') return generate(false);
-  if (act === 'regenerate') { if (await ui.confirm({ title: 'Regenerate insights?', body: 'This makes a new AI request and replaces the saved insights for this month.', confirmText: 'Regenerate' })) generate(true); return; }
+  if (act === 'regenerate') { if (await ui.confirm({ title: 'Regenerate insights?', body: 'This asks the AI again and replaces what is saved for this month.', confirmText: 'Regenerate' })) generate(true); return; }
   if (act === 'dismiss-rec') {
     const key = b.dataset.key; const name = b.dataset.name;
     try {

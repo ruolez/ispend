@@ -1,14 +1,68 @@
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); background:
-  radial-gradient(900px 500px at 10% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
-  radial-gradient(700px 400px at 100% 110%, color-mix(in srgb, var(--c3) 10%, transparent), transparent 60%), var(--bg); }
+/* Sign-in, sign-up, forgot, reset and verify.
+
+   Two columns on a desktop: a marketing panel that is dark in both themes (it is painted from the
+   accent mixed toward black, so it needs no theme-specific tokens) and a theme-aware form column,
+   so the theme toggle in .login-foot keeps meaning something. Below 960px the panel is dropped and
+   what is left is the centred card these pages have always been. */
+
+.login-wrap { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 1fr; }
+
+.auth-form {
+  display: flex; align-items: center; justify-content: center; padding: var(--sp-6);
+  background:
+    radial-gradient(900px 500px at 10% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    radial-gradient(700px 400px at 100% 110%, color-mix(in srgb, var(--c3) 10%, transparent), transparent 60%), var(--bg);
+}
+
+/* ---------- Marketing panel ---------- */
+.auth-aside {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-10);
+  padding: var(--sp-10) var(--sp-12);
+  color: #fff;
+  background:
+    radial-gradient(120% 80% at 15% 0%, color-mix(in srgb, var(--accent) 55%, black), transparent 70%),
+    radial-gradient(90% 70% at 100% 100%, color-mix(in srgb, var(--ai-accent) 38%, black), transparent 65%),
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 24%, black), black 78%);
+}
+.auth-aside::after {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(90% 70% at 20% 10%, rgba(0, 0, 0, 0.9), transparent 70%);
+}
+
+.auth-brand { display: inline-flex; align-items: center; gap: 10px; color: #fff; font-weight: 650; font-size: var(--fs-lg); letter-spacing: -0.02em; align-self: flex-start; }
+.auth-brand:hover { text-decoration: none; opacity: 0.86; }
+.auth-brand-mark { width: 32px; height: 32px; display: grid; place-items: center; }
+.auth-brand-mark .brand-mark { width: 28px; height: 28px; display: block; }
+
+.auth-aside-in { max-width: 30rem; }
+.auth-aside-in h2 { font-size: clamp(var(--fs-2xl), 3.2vw, var(--fs-4xl)); font-weight: 640; line-height: 1.1; letter-spacing: -0.035em; }
+.auth-aside-in p { margin-top: var(--sp-4); color: rgba(255, 255, 255, 0.74); font-size: var(--fs-lg); line-height: 1.6; }
+.auth-aside-in ul { list-style: none; margin-top: var(--sp-8); display: flex; flex-direction: column; gap: var(--sp-3); }
+.auth-aside-in li { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-md); color: rgba(255, 255, 255, 0.9); }
+.auth-aside-in li .ico { width: 17px; height: 17px; color: #fff; opacity: 0.7; }
+.auth-aside-foot { color: rgba(255, 255, 255, 0.55); font-size: var(--fs-sm); letter-spacing: 0.02em; }
+
+/* ---------- Form card ---------- */
 .login-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); box-shadow: var(--sh-2); padding: var(--sp-8) var(--sp-8) var(--sp-6); animation: modal-in var(--dur-3) var(--ease-out); }
-.login-mark { width: 44px; height: 44px; border-radius: var(--r-lg); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; margin-bottom: var(--sp-4); }
-.login-mark .ico { width: 22px; height: 22px; }
-.login-card h1 { font-size: 1.375rem; letter-spacing: -0.02em; }
+.login-mark { width: 44px; height: 44px; display: grid; place-items: center; margin-bottom: var(--sp-4); }
+.login-mark .brand-mark { width: 40px; height: 40px; display: block; }
+.login-card h1 { font-size: var(--fs-xl); letter-spacing: -0.02em; }
 .login-sub { color: var(--text-3); margin: 4px 0 var(--sp-6); font-size: var(--fs-base); }
 .login-notice { margin-bottom: var(--sp-4); }
 .login-error { display: none; margin-bottom: var(--sp-4); }
 .login-error.show { display: flex; }
 .login-foot { margin-top: var(--sp-5); display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-sm); color: var(--text-4); }
+.login-legal { margin-top: var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-3); text-wrap: pretty; }
+.login-legal a { color: var(--text-2); text-decoration: underline; text-underline-offset: 0.2em; }
+.login-legal a:hover { color: var(--text-1); }
 .login-links { display: flex; flex-direction: column; gap: 6px; align-items: center;
   margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--text-3); }
+
+@media (max-width: 960px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .auth-aside { display: none; }
+}

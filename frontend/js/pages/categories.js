@@ -85,7 +85,7 @@ function render() {
   const keep = host.contains(document.activeElement) ? ui.focusKey(document.activeElement, host) : null;
   if (keep) requestAnimationFrame(() => ui.refocus(host, keep));
   if (!state.tree.length) {
-    host.innerHTML = `<div class="cat-empty">${ui.emptyState({ icon: 'tags', title: 'No categories', body: 'Add a category or restore the default set.', action: { label: 'Reset defaults', act: 'reset-defaults' } })}</div>`;
+    host.innerHTML = `<div class="cat-empty">${ui.emptyState({ icon: 'tags', title: 'No categories', body: 'Add a category, or bring back the starter set.', action: { label: 'Reset defaults', act: 'reset-defaults' } })}</div>`;
     return;
   }
   host.innerHTML = state.tree.map((p) => rowHtml(p, false) + ((p.children || []).length ? `<div role="group" id="cat-group-${p.id}" ${collapsed.has(p.id) ? 'hidden' : ''}>${p.children.map((c) => rowHtml(c, true)).join('')}</div>` : '')).join('');
@@ -157,7 +157,7 @@ async function onAction(e) {
   if (act === 'color') return openStylePopover(btn, findCat(id));
   if (act === 'menu') return openMenu(btn, findCat(id));
   if (act === 'reset-defaults') {
-    if (!(await ui.confirm({ title: 'Restore default categories?', body: 'Any default category you deleted will be re-created. Your own categories and transactions are not changed.', confirmText: 'Restore' }))) return;
+    if (!(await ui.confirm({ title: 'Restore default categories?', body: 'Any starter category you deleted comes back. Your own categories and charges are left alone.', confirmText: 'Restore' }))) return;
     try { await api('/api/categories/reset-defaults', { method: 'POST' }); store.invalidate('categories'); toast('Default categories restored', { type: 'success' }); await load(); } catch (err) { toast(err.message, { type: 'error' }); }
     return;
   }
@@ -193,7 +193,7 @@ async function renderSide() {
   const host = $('#cat-side');
   const cat = state.selected ? findCat(state.selected) : null;
   if (!cat) {
-    host.innerHTML = `<div class="card"><div class="card-body">${ui.emptyState({ icon: 'tags', title: 'Select a category', body: 'See its recent trend, counts and actions here.' })}</div></div>`;
+    host.innerHTML = `<div class="card"><div class="card-body">${ui.emptyState({ icon: 'tags', title: 'Select a category', body: 'See how it has been going lately, and what you can do with it.' })}</div></div>`;
     return;
   }
   host.innerHTML = `<div class="card"><div class="card-body">${sideHtml(cat)}</div></div>`;
@@ -232,7 +232,7 @@ async function loadSideBudget(cat, root = document) {
   let b = null;
   try { const r = await api(`/api/budgets${toQuery({ month: ym })}`); b = (r.budgets || []).find((x) => x.category_id === cat.id) || null; } catch { /* no budget info */ }
   if (state.selected !== cat.id || !$('#side-budget', root)) return;
-  host.innerHTML = `<div class="row gap-2 side-budget-row"><input class="input input-sm num" id="side-budget-amt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="No limit" value="${b ? Number(b.amount).toFixed(2) : ''}" aria-label="Monthly budget for ${esc(cat.name)}"><button type="button" class="btn btn-secondary btn-sm" data-act="budget-save" data-id="${cat.id}">Save</button>${b ? `<button type="button" class="btn btn-ghost btn-sm" data-act="budget-clear" data-bid="${b.id}">Clear</button>` : ''}</div><div class="hint mt-1">${b ? `<a href="/budgets.html">See how the month is going</a>` : 'Sets a limit for the current month.'}</div>`;
+  host.innerHTML = `<div class="row gap-2 side-budget-row"><input class="input input-sm num" id="side-budget-amt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="No limit" value="${b ? Number(b.amount).toFixed(2) : ''}" aria-label="Monthly budget for ${esc(cat.name)}"><button type="button" class="btn btn-secondary btn-sm" data-act="budget-save" data-id="${cat.id}">Save</button>${b ? `<button type="button" class="btn btn-ghost btn-sm" data-act="budget-clear" data-bid="${b.id}">Clear</button>` : ''}</div><div class="hint mt-1">${b ? `<a href="/budgets.html">See how the month is going</a>` : 'Sets what you mean to spend this month.'}</div>`;
 }
 async function onBudgetAction(e) {
   const b = e.target.closest('[data-act="budget-save"],[data-act="budget-clear"]'); if (!b) return;
@@ -257,7 +257,7 @@ async function loadTags() {
   let tags = [];
   try { tags = await store.tags({ force: true }); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-tags' }); return; }
   host.innerHTML = tags.length ? tags.map((t) => `<div class="tag-row" data-tag="${t.id}"><button type="button" class="swatch-btn" style="--c:var(--${esc(t.color)})" data-tact="color" aria-label="Change colour of ${esc(t.name)}"></button><button type="button" class="tag-name row-link" data-tact="rename">${esc(t.name)}</button><a class="tag-count" href="/transactions.html${toQuery({ tag: t.id, range: 'all' })}">${plural(t.txn_count, 'transaction')}</a><button type="button" class="btn btn-icon btn-ghost btn-xs" data-tact="delete" aria-label="Delete tag ${esc(t.name)}">${icon('trash')}</button></div>`).join('')
-    : ui.emptyState({ icon: 'tag', title: 'No tags yet', body: 'Tags label transactions across categories: a trip, a project, something to reimburse. Add them from a transaction or here.', action: { label: 'New tag', act: 'new-tag' } });
+    : ui.emptyState({ icon: 'tag', title: 'No tags yet', body: 'Labels sit on top of categories — a holiday, a project, something to claim back. Add them here, or from any charge.', action: { label: 'New tag', act: 'new-tag' } });
 }
 async function onTagAction(e) {
   const b = e.target.closest('[data-tact],[data-act="reload-tags"],[data-act="new-tag"]'); if (!b) return;

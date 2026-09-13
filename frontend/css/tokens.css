@@ -41,6 +41,8 @@
   --chart-axis: #cfd5df;
   --chart-muted: #667080;
   --ai-accent: #b07bff;
+  --brand-dark: #0f1a3f;
+  --brand-blue: #3f5fe0;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   --c1: #2a78d6;
@@ -60,8 +62,12 @@
   --sh-2: 0 4px 12px -2px rgba(17, 24, 39, 0.10), 0 0 0 1px rgba(17, 24, 39, 0.04);
   --sh-3: 0 16px 40px -8px rgba(17, 24, 39, 0.22);
 
-  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font: 'Inter', 'Inter Fallback', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  /* Marketing faces (the landing page only; app chrome stays on Inter). Self-hosted from /fonts,
+     because the CSP admits no font host but our own. */
+  --font-display: 'Newsreader', 'Newsreader Fallback', 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+  --mono-web: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
 
   /* Type scale in rem (16px root): 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34 px at default zoom, and it
      follows the browser's text-size setting. */
@@ -73,6 +79,10 @@
   --fs-xl: 1.25rem;
   --fs-2xl: 1.625rem;
   --fs-3xl: 2.125rem;
+  /* Display sizes: marketing surfaces only (the landing page), never app chrome. */
+  --fs-4xl: 2.75rem;
+  --fs-5xl: 3.5rem;
+  --fs-6xl: 4.5rem;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -83,6 +93,11 @@
   --sp-8: 32px;
   --sp-10: 40px;
   --sp-12: 48px;
+  /* Section rhythm for the landing page; app layouts stop at --sp-12. */
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+  --sp-32: 128px;
 
   --r-xs: 4px;
   --r-sm: 6px;
@@ -104,7 +119,8 @@
   --cell-py: 10px;
 }
 
-:root[data-theme="dark"] {
+/* .lp-dark: a dark island inside the light landing page (the product mock). */
+:root[data-theme="dark"], .lp-dark {
   color-scheme: dark;
   --bg: #0c0e13;
   --surface: #161a22;
@@ -118,6 +134,8 @@
   --text-3: #8a93a3;
   --text-4: #7f8898;
   --text-disabled: #5d6678;
+  --brand-dark: #f3f5fb;
+  --brand-blue: #7c94ff;
   --accent: #7c94ff;
   --accent-hover: #93a7ff;
   --accent-fg: #0c0e13;
@@ -152,6 +170,45 @@
   --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --sh-2: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --sh-3: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* .lp-navy: the landing page's dark bands. The dark app palette is near-black; marketing wants
+   the brand blue's own navy, so the ground and surfaces are re-pointed here and everything else
+   inherits from the dark set above. */
+.lp-navy {
+  color-scheme: dark;
+  --bg: #0f1a3f;
+  --surface: #172454;
+  --surface-2: #1c2b62;
+  --surface-3: #263775;
+  --surface-overlay: #172454;
+  --border: #29397a;
+  --border-strong: #3a4c94;
+  --text-1: #f3f5fb;
+  --text-2: #c2cbe6;
+  --text-3: #98a5cf;
+  --text-4: #8391bf;
+  --text-disabled: #5d6b9a;
+  --accent: #8fa6ff;
+  --accent-hover: #a7b8ff;
+  --accent-fg: #0b1330;
+  --accent-soft: #24357e;
+  --accent-ring: rgba(143, 166, 255, 0.35);
+  --success: #5ee09a;
+  --success-soft: #16303f;
+  --danger: #f87171;
+  --danger-text: #f87171;
+  --danger-soft: #3a1f2f;
+  --warning: #ffcf66;
+  --warning-soft: #33301f;
+  --info-soft: #1c2b62;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --chart-grid: #1c2b62;
+  --chart-axis: #3a4c94;
+  --chart-muted: #8391bf;
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --sh-2: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --sh-3: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,12 +3,35 @@
    Tokens live in tokens.css. Page-specific rules live in css/pages/.
    ============================================================ */
 
+/* Inter ships in two pieces: a Latin subset that every page needs (a third of the size), and the
+   full face for everything else, which a browser only fetches when a page actually shows a
+   character outside Latin — a merchant name in another script, say. The ranges do not overlap,
+   so a Latin-only page never touches the big file. */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/InterVariable-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2199, U+2212, U+2215, U+25B2-25BC, U+2713-2714, U+FEFF, U+FFFD;
+}
 @font-face {
   font-family: 'Inter';
   src: url('/fonts/InterVariable.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0100-0130, U+0132-0151, U+0154-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-0303, U+0305-0307, U+0309-0328, U+032A-1FFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+219A-2211, U+2213-2214, U+2216-25B1, U+25BD-2712, U+2715-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
+}
+/* The stand-in while Inter loads: Arial, scaled so its lines and widths match Inter's, so the
+   swap moves nothing (metrics computed from both fonts' tables). */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('ArialMT');
+  size-adjust: 107.47%;
+  ascent-override: 90.14%;
+  descent-override: 22.44%;
+  line-gap-override: 0%;
 }
 
 /* ---------- Reset & base ---------- */
@@ -110,8 +133,8 @@ html[data-sidebar="hidden"] body.sidebar-open .sidebar { transform: none; box-sh
 html[data-sidebar="hidden"] body.sidebar-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
 
 .sb-brand { display: flex; align-items: center; gap: 10px; height: var(--topbar-h); padding: 0 14px 0 16px; flex: 0 0 auto; }
-.sb-mark { width: 30px; height: 30px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; flex: 0 0 auto; }
-.sb-mark .ico { width: 17px; height: 17px; }
+.sb-mark { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; }
+.sb-mark .brand-mark { width: 26px; height: 26px; display: block; }
 .sb-name { font-weight: 650; font-size: 0.9375rem; letter-spacing: -0.01em; flex: 1; white-space: nowrap; }
 .sb-collapse { width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--text-3); display: grid; place-items: center; flex: 0 0 auto; }
 .sb-collapse:hover { background: var(--surface-2); color: var(--text-1); }

@@ -40,7 +40,7 @@ function bankLabel(key) {
 function renderStatements() {
   const host = $('#statements-host');
   if (!stState.rows.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'No statements yet', body: 'Upload a CSV, Excel or PDF statement from your bank or card. iSpend detects the format, checks for duplicates and categorizes what it can.', action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'No statements yet', body: 'Upload a statement from your bank or card — spreadsheet, CSV or PDF. iSpend works out the layout, checks for anything you already have, and sorts what it can.', action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements tbl--cards"><thead><tr>
@@ -120,7 +120,7 @@ async function deleteStatement(s) {
 
 async function rollbackStatement(s) {
   const n = s.txn_count || (s.stats || {}).imported || 0;
-  const ok = await ui.confirm({ title: 'Roll back this import?', html: `<p>This deletes the <b>${fmtNumber(n)}</b> transactions imported from “${esc(s.original_filename)}”, including any categories or notes you added to them. The file itself is removed too.</p>`, confirmText: `Delete ${fmtNumber(n)} transactions`, danger: true });
+  const ok = await ui.confirm({ title: 'Undo this import?', html: `<p>This deletes the <b>${fmtNumber(n)}</b> transactions imported from “${esc(s.original_filename)}”, including any categories or notes you added to them. The file itself is removed too.</p>`, confirmText: `Delete ${fmtNumber(n)} transactions`, danger: true });
   if (!ok) return;
   try {
     const r = await api(`/api/statements/${s.id}?with_transactions=true`, { method: 'DELETE' });

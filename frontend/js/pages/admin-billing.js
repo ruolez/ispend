@@ -4,7 +4,7 @@ const ABL = { summary: null, config: null, dirty: false, bar: null };
 
 AdminPanels.register('billing', {
   label: 'Billing', icon: 'credit-card',
-  sub: 'Subscriptions, Stripe keys and the lifecycle email',
+  sub: 'Subscriptions, Stripe keys and the emails iSpend sends',
   load: loadAdminBilling,
 });
 
@@ -47,6 +47,7 @@ function renderAdminBilling() {
   const email = s.email || {};
   const hook = s.webhook || {};
   const stripeSet = c.stripe_secret_key.set && c.stripe_price_monthly.set;
+  const L = c.landing;
   setBillingDirty(false);
   ABL.host.innerHTML = `
     <section class="settings-section">
@@ -72,7 +73,7 @@ function renderAdminBilling() {
       <div class="hint mt-3">${s.enabled
         ? `Last webhook ${hook.last_event_at ? esc(fmtRelative(hook.last_event_at)) : 'never received'}.`
         : 'Add a Stripe secret key and a monthly price below to start billing new accounts.'}
-        ${email.configured ? '' : 'SMTP is not configured, so no lifecycle emails are sent.'}</div>
+        ${email.configured ? '' : 'Email is not set up, so nothing is sent.'}</div>
       ${s.enabled ? `<button type="button" class="btn btn-secondary btn-sm mt-4" data-act="sync-stale">Sync stale subscriptions</button>` : ''}
     </section>
 
@@ -90,6 +91,24 @@ function renderAdminBilling() {
         <div class="desc">After a trial ends or a payment fails, before the account becomes read-only.</div></div>
         <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="ab-grace" class="input input-sm num-input" type="number" min="0" max="90"
           aria-label="Grace period in days" value="${c.billing_grace_days.value}"><span class="text-3">days</span></div></div>
+    </section>
+
+    <section class="settings-section">
+      ${secHead('Landing page')}
+      <div class="sub">The pricing block on <a href="/" target="_blank" rel="noopener">the public landing page</a>.
+        Amounts, currency and the billing period always come live from Stripe — this is the wording
+        around them. With no Stripe configured the section shows a free-access card instead.</div>
+      ${lpText('heading', 'Section heading', '', L.heading, 60)}
+      ${lpText('sub', 'Section sub-heading', 'Leave empty to hide it.', L.sub, 160)}
+      <div class="section-label mt-6 mb-2">The plan</div>
+      ${lpText('paid-name', 'Plan name', '', L.paid.name, 40)}
+      ${lpText('paid-tagline', 'Tagline', 'One line under the plan name.', L.paid.tagline, 120)}
+      ${lpText('paid-badge', 'Ribbon', 'Shown across the top of the card, e.g. “Best value”. Empty hides it.', L.paid.badge, 24)}
+      ${lpText('paid-cta', 'Button label', 'Replaced by “Sign in” when sign-ups are closed.', L.paid.cta_label, 32)}
+      ${lpList('paid-features', 'Bullet points', L.paid.features)}
+      <div class="section-label mt-6 mb-2">Small print</div>
+      ${lpText('yearly-note', 'Yearly note', 'Appended to the yearly price, e.g. “2 months free”.', L.yearly_note, 32)}
+      ${lpText('footnote', 'Footnote', 'Under the plans. Empty hides it.', L.footnote, 200)}
     </section>
 
     <section class="settings-section">
@@ -157,6 +176,40 @@ function field(key, meta) {
       : input}</div></div>`;
 }
 
+/* The landing-page copy is a nested JSON blob rather than flat settings keys, so it gets its own
+   two controls instead of going through field()/LABELS. */
+function lpText(key, label, desc, value, max) {
+  return `<div class="setting-row"><div class="min-w-0"><div class="title">${esc(label)}</div>
+    ${desc ? `<div class="desc">${esc(desc)}</div>` : ''}</div>
+    <div class="adm-ctl"><input class="input input-sm" id="ab-lp-${key}" type="text" maxlength="${max}"
+      autocomplete="off" aria-label="${esc(label)}" value="${esc(value || '')}"></div></div>`;
+}
+
+function lpList(key, label, lines) {
+  return `<div class="setting-row"><div class="min-w-0"><div class="title">${esc(label)}</div>
+    <div class="desc">One per line, up to 12. Blank lines are dropped.</div></div>
+    <div class="adm-ctl"><textarea class="textarea" id="ab-lp-${key}" rows="7" spellcheck="false"
+      aria-label="${esc(label)}">${esc((lines || []).join('\n'))}</textarea></div></div>`;
+}
+
+function lpValue(key) {
+  const el = document.getElementById(`ab-lp-${key}`);
+  return el ? el.value.trim() : '';
+}
+
+function lpLines(key) {
+  return lpValue(key).split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+function collectLanding() {
+  return {
+    heading: lpValue('heading'), sub: lpValue('sub'),
+    paid: { name: lpValue('paid-name'), tagline: lpValue('paid-tagline'), badge: lpValue('paid-badge'),
+            cta_label: lpValue('paid-cta'), features: lpLines('paid-features') },
+    yearly_note: lpValue('yearly-note'), footnote: lpValue('footnote'),
+  };
+}
+
 /* A save bar rather than a button at the bottom: the form is long enough that the button would be
    off screen while typing in the Stripe section. Same pattern as the AI settings page. */
 function onBillingEdit(e) {
@@ -197,7 +250,8 @@ document.addEventListener('click', async (e) => {
       return ui.busy(el, async () => {
         const body = { signup_enabled: $('#ab-signup').checked,
                        billing_trial_days: Number($('#ab-trial').value),
-                       billing_grace_days: Number($('#ab-grace').value) };
+                       billing_grace_days: Number($('#ab-grace').value),
+                       landing: collectLanding() };
         Object.keys(LABELS).forEach((k) => {
           const input = document.getElementById(`ab-${k}`);
           // A masked value means "unchanged": sending it would blank the stored secret.

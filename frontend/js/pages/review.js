@@ -81,7 +81,7 @@ function paintMode() {
   $('#btn-focus').setAttribute('aria-pressed', String(rv.focusMode));
   paintAcceptAll();
   if (rv.settings && rv.settings.ai_categorize_enabled) $('#btn-ai').hidden = transfers;
-  $('.page-sub').textContent = transfers ? 'Money moved between your own accounts. Pairing hides both sides from spending and income.' : 'Charges that still need a category. One decision covers every charge from the same merchant.';
+  $('.page-sub').textContent = transfers ? 'Money moved between your own accounts. Pairing hides both sides from spending and income.' : 'Charges that still need a home. One answer covers everything from the same merchant.';
 }
 function paintPairCount() {
   const el = $('#rv-pair-count');
@@ -149,7 +149,7 @@ function renderTransfers() {
   $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(pairs.length)}</b> possible transfer${pairs.length === 1 ? '' : 's'} to confirm</span><div class="progress" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${rv.pairs.length + rv.paired ? Math.round((rv.paired / (rv.pairs.length + rv.paired)) * 100) : 0}"><span style="width:${rv.pairs.length + rv.paired ? Math.round((rv.paired / (rv.pairs.length + rv.paired)) * 100) : 0}%"></span></div><span class="rp-text text-3">${fmtNumber(rv.paired)} paired this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip">${fmtNumber(skippedN)} dismissed</button>` : ''}</span>`;
   const host = $('#rv-list');
   if (!pairs.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'arrow-left-right', title: skippedN ? 'Every candidate is dismissed' : 'No unmatched transfers', body: skippedN ? 'You dismissed the remaining candidates for this session.' : 'iSpend looks for equal and opposite amounts in two different accounts within a few days. Pairs you confirm are excluded from spending and income.', action: skippedN ? { label: 'Show dismissed', act: 'unskip' } : { label: 'Back to categories', href: '/review.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'arrow-left-right', title: skippedN ? 'Every candidate is dismissed' : 'No unmatched transfers', body: skippedN ? 'You have hidden the rest for now.' : 'iSpend looks for the same amount leaving one account and arriving in another within a few days. Pairs you confirm are left out of your spending and income.', action: skippedN ? { label: 'Show dismissed', act: 'unskip' } : { label: 'Back to categories', href: '/review.html' } })}</div>`;
     host.classList.remove('has-focus');
     return;
   }
@@ -172,7 +172,7 @@ function pairHtml(p, idx) {
   return `<article class="rv-card rv-pair ${idx === rv.focus ? 'is-focused' : ''}" data-idx="${idx}" data-key="${esc(pairKey(p))}" tabindex="0" aria-label="Transfer of ${esc(fmtMoney(Math.abs(p.a.amount), cur))}">
     <div class="rv-head">
       <div><div class="rv-name">${fmtMoney(Math.abs(p.a.amount), cur)} transfer</div><div class="rv-meta"><span>${days === 0 ? 'Same day' : `${days} day${days === 1 ? '' : 's'} apart`}</span></div></div>
-      <span class="badge ${p.confidence >= 0.9 ? 'badge-success' : 'badge-warning'}" title="How likely these two rows are the same transfer">${pct}% likely</span>
+      <span class="badge ${p.confidence >= 0.9 ? 'badge-success' : 'badge-warning'}" title="How sure iSpend is that these two are the same transfer">${pct}% likely</span>
     </div>
     <div class="rv-pair-rows">${pairSideHtml(p.a)}<span class="rv-pair-arrow">${icon('arrow-left-right')}</span>${pairSideHtml(p.b)}</div>
     <div class="rv-actions">
@@ -210,8 +210,8 @@ function skipPair(p) {
 }
 async function pairAllConfident() {
   const n = visiblePairs().filter((p) => p.confidence >= 0.9).length;
-  if (!n) { toast('No confident candidates to pair', { type: 'info' }); return; }
-  if (!(await ui.confirm({ title: `Pair ${n} confident transfer${n === 1 ? '' : 's'}?`, body: 'Candidates rated 90% or higher will be marked as transfers between your accounts and excluded from spending and income.', confirmText: 'Pair all' }))) return;
+  if (!n) { toast('Nothing obvious to pair up', { type: 'info' }); return; }
+  if (!(await ui.confirm({ title: `Pair ${n} confident transfer${n === 1 ? '' : 's'}?`, body: 'Anything iSpend is at least 90% sure about will be marked as a transfer between your accounts, and left out of spending and income.', confirmText: 'Pair all' }))) return;
   await ui.busy($('#btn-pair-all'), async () => {
     const r = await api('/api/transactions/auto-pair', { method: 'POST', body: { min_confidence: 0.9 } });
     rv.paired += r.paired || 0;
@@ -230,12 +230,12 @@ function render() {
   const skippedN = rv.groups.length - groups.length;
   const total = rv.done + rv.remainingItems;
   const hc = acceptable().reduce((a, g) => a + includedIds(g).length, 0);
-  $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(rv.remainingItems)}</b> charge${rv.remainingItems === 1 ? '' : 's'} left${rv.mode === 'merchant' ? ` in <b>${fmtNumber(rv.remaining)}</b> merchant${rv.remaining === 1 ? '' : 's'}` : ''}${hc ? ` · <b>${fmtNumber(hc)}</b> high-confidence` : ''}</span><div class="progress" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${total ? Math.round((rv.done / total) * 100) : 0}"><span style="width:${total ? Math.round((rv.done / total) * 100) : 0}%"></span></div><span class="rp-text text-3">${rv.focusMode ? '<span id="rv-pos"></span> · ' : ''}${fmtNumber(rv.done)} done this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip" data-tip="Hidden until you show them again; remembered across sessions">${fmtNumber(skippedN)} hidden</button>` : ''}</span>`;
+  $('#rv-progress').innerHTML = `<span class="rp-text"><b>${fmtNumber(rv.remainingItems)}</b> charge${rv.remainingItems === 1 ? '' : 's'} left${rv.mode === 'merchant' ? ` in <b>${fmtNumber(rv.remaining)}</b> merchant${rv.remaining === 1 ? '' : 's'}` : ''}${hc ? ` · <b>${fmtNumber(hc)}</b> high-confidence` : ''}</span><div class="progress" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${total ? Math.round((rv.done / total) * 100) : 0}"><span style="width:${total ? Math.round((rv.done / total) * 100) : 0}%"></span></div><span class="rp-text text-3">${rv.focusMode ? '<span id="rv-pos"></span> · ' : ''}${fmtNumber(rv.done)} done this session${skippedN ? ` · <button type="button" class="btn btn-ghost btn-xs" data-act="unskip" data-tip="Hidden until you bring them back — iSpend remembers">${fmtNumber(skippedN)} hidden</button>` : ''}</span>`;
   paintAcceptAll();
   const host = $('#rv-list');
   host.classList.toggle('rv-list--focus', rv.focusMode);
   if (!groups.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox-check', title: rv.remainingItems ? 'Everything visible is skipped' : 'All caught up', body: rv.remainingItems ? 'You hid the remaining merchants; show them to continue.' : 'Every charge has a category. New imports will show up here when they need a decision.', action: rv.remainingItems ? { label: 'Show skipped', act: 'unskip' } : { label: 'Import a statement', href: '/import.html' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'inbox-check', title: rv.remainingItems ? 'Everything visible is skipped' : 'All caught up', body: rv.remainingItems ? 'You hid the remaining merchants; show them to continue.' : 'Everything has a category. New statements turn up here when something needs a decision.', action: rv.remainingItems ? { label: 'Show skipped', act: 'unskip' } : { label: 'Import a statement', href: '/import.html' } })}</div>`;
     host.classList.remove('has-focus');
     return;
   }
@@ -298,7 +298,7 @@ function cardHtml(g, idx) {
       <button type="button" class="btn btn-ghost" data-cact="transfer" data-tip="Transfer between your own accounts">Transfer<kbd>T</kbd></button>
       <button type="button" class="btn btn-ghost" data-cact="skip">Skip<kbd>S</kbd></button>
       <span class="grow-sep"></span>
-      <span class="rv-always"><label class="switch switch-sm" data-tip="Create a rule so future charges from this merchant are categorized automatically"><input type="checkbox" data-cfield="always" ${g.always ? 'checked' : ''}><span class="switch-track"></span>Always do this</label><button type="button" class="btn btn-icon btn-ghost btn-xs" data-cact="pattern" data-tip="Edit the rule pattern" aria-label="Edit rule pattern">${icon('pencil', 'ico-sm')}</button></span>
+      <span class="rv-always"><label class="switch switch-sm" data-tip="Make a rule so charges from this merchant sort themselves next time"><input type="checkbox" data-cfield="always" ${g.always ? 'checked' : ''}><span class="switch-track"></span>Always do this</label><button type="button" class="btn btn-icon btn-ghost btn-xs" data-cact="pattern" data-tip="Edit the rule pattern" aria-label="Edit rule pattern">${icon('pencil', 'ico-sm')}</button></span>
     </div>
     <div class="rv-pattern ${g.patternOpen ? 'is-open' : ''}"><span>Rule: merchant</span><select class="select input-sm" data-cfield="ptype"><option value="equals" ${g.ptype !== 'contains' ? 'selected' : ''}>equals</option><option value="contains" ${g.ptype === 'contains' ? 'selected' : ''}>description contains</option></select><input class="input input-sm" data-cfield="pattern" value="${esc(g.pattern)}" aria-label="Rule pattern"></div>
     ${g.expanded && g.rows ? `<div class="rv-rows">${g.rows.map((r) => `<div class="rv-row ${g.excluded.has(r.id) ? 'is-excluded' : ''}"><input type="checkbox" class="check" data-crow="${r.id}" ${g.excluded.has(r.id) ? '' : 'checked'} aria-label="Include"><span class="text-3 num">${fmtDate(r.txn_date)}</span><span class="desc">${esc(r.description_raw)}<small>${esc(r.merchant_name !== g.display ? r.merchant_name : '')}</small></span><span class="amt ${r.amount > 0 ? 'amt--income' : ''}">${fmtMoney(r.amount, r.currency || cur)}</span></div>`).join('')}${n < g.count ? `<div class="text-3 fs-sm mt-1">${g.count - n} unchecked charge${g.count - n === 1 ? '' : 's'} will stay in the queue.</div>` : ''}</div>` : g.expanded ? `<div class="rv-rows">${ui.skeletonList(Math.min(g.count, 4))}</div>` : ''}

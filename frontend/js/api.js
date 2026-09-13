@@ -9,7 +9,7 @@ async function api(path, options = {}) {
   try {
     res = await fetch(path, opts);
   } catch (err) {
-    throw new Error('Network error — is the server reachable?');
+    throw new Error('Couldn’t reach the server — check your connection and try again.');
   }
   if (res.status === 401 && !location.pathname.endsWith('/login.html')) {
     loginRedirect();
@@ -45,14 +45,14 @@ function loginRedirect() {
 const HTTP_FALLBACK = {
   403: "You don't have permission to do that",
   404: 'Not found',
-  409: 'That conflicts with something that already exists',
+  409: 'That clashes with something already there',
   413: 'That file is too large',
   402: 'Your subscription has ended',
-  429: 'Too many requests — wait a minute and try again',
+  429: 'That’s a lot at once — wait a minute and try again',
 };
 function httpFallback(status, verb = 'Request failed') {
   if (HTTP_FALLBACK[status]) return HTTP_FALLBACK[status];
-  return status >= 500 ? 'Server error — try again in a moment' : `${verb} (${status})`;
+  return status >= 500 ? 'Something went wrong at our end — try again in a moment' : `${verb} (${status})`;
 }
 
 /* Upload with progress (XHR, because fetch has no upload progress). */
