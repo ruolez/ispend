@@ -1025,7 +1025,8 @@ class TestTransactions:
         assert (r.status_code, r.json()) == (400, {"error": "Unknown action"})
         r = u1.post("/api/transactions/bulk", json={"ids": [], "action": "delete"})
         assert (r.status_code, r.json()) == (400, {"error": "ids are required"})
-        r = u1.post("/api/transactions/bulk", json={"ids": "1,abc,,2", "action": "delete"})
+        # Ids no fixture can own: on a fresh database the seeded statement's rows ARE 1 and 2.
+        r = u1.post("/api/transactions/bulk", json={"ids": "999999998,abc,,999999999", "action": "delete"})
         assert r.status_code == 404  # junk dropped, nothing owned
 
     def test_bulk_before_and_restore_roundtrip(self, u1, manual):
