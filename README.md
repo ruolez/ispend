@@ -34,6 +34,12 @@ Non-interactive: `install.sh install|update|ssl|remove`.
 
 Certificates are issued with certbot in webroot mode (nginx serves `/.well-known/acme-challenge/` from `certbot-www/`) and renewed automatically by `certbot.timer`; a deploy hook reloads nginx inside the container after each renewal. HTTPS installs set `SESSION_COOKIE_SECURE=1`.
 
+### Sharing the server with other apps
+
+On a machine whose ports 80/443 already belong to another app, **Install** offers to put iSpend behind the [shared proxy](https://github.com/ruolez/shared-proxy) instead — a host-level nginx that terminates TLS for every app and forwards `https://<domain>` to this stack on `127.0.0.1:5559`. The check runs before anything is cloned: while another app's *container* still holds the ports the installer stops with instructions (move that app behind the proxy first) and changes nothing.
+
+In this mode `.env` holds `PROXY_MODE=1` and `COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml`. The certificate is issued through the proxy's webroot (`/var/www/certbot`), the vhost is rendered from `nginx/host-vhost.conf.template` to `/etc/nginx/sites-available/ispend.conf` and validated by nginx before it goes live, and `APP_BASE_URL` is set for Stripe. The container's nginx keeps its whole job (rate limits, security headers, X-Accel downloads) and gets `nginx/realip.conf` so per-IP limits still see real visitors. Memory limits are sized from `HOST_MEM_BUDGET_MB` — what was free at install time — rather than the whole machine; edit it in `.env` and run Update to re-tune. Update, SSL and Remove all handle the mode on their own.
+
 ## Local development
 
 ```bash

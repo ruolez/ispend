@@ -1,0 +1,11 @@
+# Shared-proxy overlay, enabled by install.sh through COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml
+# A host-level nginx owns 80/443 and terminates TLS for every app on the server
+# (github.com/ruolez/shared-proxy). This stack only listens on loopback —
+# Docker-published ports bypass ufw, so the bind address is the firewall.
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:${APP_PORT:-5559}:80"
+    volumes:
+      - ./nginx/realip.conf:/etc/nginx/conf.d/00-realip.conf:ro

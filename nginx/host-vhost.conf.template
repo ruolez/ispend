@@ -1,0 +1,68 @@
+# Host-level vhost for the shared reverse proxy (github.com/ruolez/shared-proxy).
+# install.sh renders this to /etc/nginx/sites-available/ispend.conf, replacing
+# __DOMAIN__ and __PORT__ — do not edit the rendered file by hand. It only terminates
+# TLS: rate limits, security headers, static files and X-Accel downloads stay in the
+# container's own nginx (nginx/nginx.conf).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    include snippets/shared-proxy-acme.conf;
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    # "listen … http2" rather than "http2 on": Ubuntu 24.04 ships nginx 1.24.
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name __DOMAIN__;
+
+    ssl_certificate     /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    include snippets/shared-proxy-tls.conf;
+
+    # No location below sets add_header, so this reaches every response.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Limits here must not be tighter than the container's or requests fail here first.
+    client_max_body_size 26m;
+    proxy_read_timeout 300s;
+    proxy_connect_timeout 10s;
+
+    # Whole-application archives: multi-GB in both directions. Streamed straight
+    # through so neither upload nor download is spooled to this host's disk as well.
+    location ^~ /api/admin/backup {
+        client_max_body_size 4g;
+        client_body_timeout 600s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        proxy_pass http://127.0.0.1:__PORT__;
+        include snippets/shared-proxy-headers.conf;
+    }
+
+    # Link previews and search engines want absolute URLs; the static landing page
+    # carries root-relative ones so the same file serves any host. sub_filter cannot
+    # rewrite a compressed body, hence the blanked Accept-Encoding.
+    location = / {
+        proxy_pass http://127.0.0.1:__PORT__;
+        include snippets/shared-proxy-headers.conf;
+        proxy_set_header Accept-Encoding "";
+        sub_filter_once off;
+        sub_filter '"/og.png"' '"https://__DOMAIN__/og.png"';
+        sub_filter 'rel="canonical" href="/"' 'rel="canonical" href="https://__DOMAIN__/"';
+        sub_filter 'property="og:url" content="/"' 'property="og:url" content="https://__DOMAIN__/"';
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:__PORT__;
+        include snippets/shared-proxy-headers.conf;
+    }
+}

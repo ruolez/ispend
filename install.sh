@@ -8,6 +8,9 @@
 # every byte of data and the certificate) · SSL only (install or repair HTTPS) · Remove
 # Non-interactive: install.sh install|update|ssl|remove
 #
+# On a server whose ports 80/443 already belong to another app, Install offers to go
+# behind the shared host proxy instead (github.com/ruolez/shared-proxy).
+#
 set -euo pipefail
 
 REPO_URL="https://github.com/ruolez/ispend.git"
@@ -16,6 +19,15 @@ BACKUP_DIR="/opt/ispend-backups"
 DEFAULT_HTTP_PORT="80"
 DEFAULT_HTTPS_PORT="443"
 RENEW_HOOK="/etc/letsencrypt/renewal-hooks/deploy/ispend-reload.sh"
+
+# Shared host proxy: PROXY_MODE=1 in .env means a host-level nginx owns 80/443 and
+# this stack listens on 127.0.0.1:$APP_PORT only.
+SHARED_PROXY_URL="${SHARED_PROXY_URL:-https://raw.githubusercontent.com/ruolez/shared-proxy/main/install.sh}"
+PROXY_MARKER="/etc/nginx/snippets/shared-proxy-headers.conf"
+PROXY_WEBROOT="/var/www/certbot"
+HOST_VHOST="/etc/nginx/sites-available/ispend.conf"
+HOST_VHOST_LINK="/etc/nginx/sites-enabled/ispend.conf"
+DEFAULT_PROXY_PORT="5559"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
@@ -48,7 +60,10 @@ server_ip() { hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost"; }
 # docker-compose.yml). The backend gets the larger share: OCR runs there.
 configure_resources() {
     local total reserve budget nginx remaining postgres backend shared eff
-    total="$(awk '/^MemTotal:/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)"
+    # On a shared server the budget is what was free at install time (HOST_MEM_BUDGET_MB),
+    # not the whole machine: the other apps' containers need their memory too.
+    total="$(get_env HOST_MEM_BUDGET_MB)"
+    [ -n "$total" ] || total="$(awk '/^MemTotal:/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)"
     if [ -z "$total" ] || [ "$total" -le 0 ]; then
         warn "Could not detect host RAM — keeping default resource limits."
         return
@@ -68,7 +83,7 @@ configure_resources() {
     set_env POSTGRES_MEM_LIMIT "${postgres}M"
     set_env PG_SHARED_BUFFERS  "${shared}MB"
     set_env PG_EFFECTIVE_CACHE "${eff}MB"
-    ok "Resource limits for ${total} MB host: backend=${backend}M, postgres=${postgres}M, nginx=${nginx}M"
+    ok "Resource limits for a ${total} MB budget: backend=${backend}M, postgres=${postgres}M, nginx=${nginx}M"
 }
 
 # ---------------------------------------------------------------- docker / certbot
@@ -115,11 +130,19 @@ wait_for_health() {
 app_url() {
     local domain http https
     domain="$(get_env DOMAIN)"; http="$(get_env APP_PORT)"; https="$(get_env APP_HTTPS_PORT)"
-    if [ -n "$domain" ] && [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+    if proxy_mode; then
+        if [ -n "$domain" ] && [ -f "$HOST_VHOST_LINK" ]; then echo "https://${domain}"; else echo "http://127.0.0.1:${http}"; fi
+    elif [ -n "$domain" ] && [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
         [ "${https:-443}" = "443" ] && echo "https://${domain}" || echo "https://${domain}:${https}"
     else
         [ "${http:-80}" = "80" ] && echo "http://$(server_ip)" || echo "http://$(server_ip):${http}"
     fi
+}
+
+# Where to health-check the stack itself: behind the shared proxy that is its loopback
+# port, so a DNS or vhost problem is never mistaken for a broken application.
+health_url() {
+    if proxy_mode; then echo "http://127.0.0.1:$(get_env APP_PORT)"; else app_url; fi
 }
 
 backup_data() {
@@ -260,6 +283,135 @@ firewall_hint() {
     fi
 }
 
+# ---------------------------------------------------------------- shared proxy
+proxy_mode() { [ "$(get_env PROXY_MODE)" = "1" ]; }
+
+shared_proxy_present() { [ -f "$PROXY_MARKER" ]; }
+
+port_in_use() { ss -ltnH "sport = :$1" 2>/dev/null | grep -q .; }
+
+# Who holds a port, for messages: the container name when Docker published it.
+port_holder() {
+    local container=""
+    if command -v docker >/dev/null 2>&1; then
+        container="$(docker ps --filter "publish=$1" --format '{{.Names}}' 2>/dev/null | head -1 || true)"
+    fi
+    if [ -n "$container" ]; then
+        echo "container ${container}"
+    else
+        ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1
+    fi
+}
+
+free_proxy_port() {
+    local port="$DEFAULT_PROXY_PORT"
+    while port_in_use "$port"; do port=$((port + 1)); done
+    echo "$port"
+}
+
+ensure_shared_proxy() {
+    if shared_proxy_present; then return 0; fi
+    info "Installing the shared reverse proxy (host nginx)..."
+    local tmp; tmp="$(mktemp)"
+    curl -fsSL "$SHARED_PROXY_URL" -o "$tmp" \
+        || fail "Could not download $SHARED_PROXY_URL — install the shared proxy by hand, then run this again."
+    bash "$tmp" install || fail "Shared proxy installation failed."
+    rm -f "$tmp"
+    shared_proxy_present || fail "Shared proxy installation did not complete."
+}
+
+# Host nginx has to own 80/443 before anything can be served or certified through it.
+# While another app's container still publishes those ports it cannot start, and this
+# installer must not go anywhere near that app — so stop here, before touching the host.
+ports_still_held() {
+    fail "The shared proxy cannot take ports 80/443: 80 is held by $(port_holder 80), 443 by $(port_holder 443).
+       Move that app behind the shared proxy first (EdgeBourne: run its installer and choose
+       'Migrate to shared proxy'), then run this installer again. Nothing was changed."
+}
+
+require_host_nginx() {
+    if systemctl is-active --quiet nginx; then return 0; fi
+    if systemctl start nginx >/dev/null 2>&1; then
+        systemctl enable nginx >/dev/null 2>&1 || true
+        return 0
+    fi
+    ports_still_held
+}
+
+# Sets USE_PROXY. Asked before anything is cloned so a refusal leaves no trace.
+choose_proxy_mode() {
+    USE_PROXY="n"
+    local answer
+    if shared_proxy_present; then
+        read -r -p "A shared reverse proxy (host nginx) serves this machine's ports 80/443. Install iSpend behind it? [Y/n] " answer
+        case "${answer:-Y}" in [Yy]*) USE_PROXY="y" ;; esac
+    elif port_in_use 80 || port_in_use 443; then
+        warn "Ports 80/443 are already in use (80: $(port_holder 80), 443: $(port_holder 443))."
+        read -r -p "Install iSpend behind a shared reverse proxy so both apps can use them? [Y/n] " answer
+        case "${answer:-Y}" in [Yy]*) USE_PROXY="y" ;; esac
+    fi
+    [ "$USE_PROXY" = "y" ] || return 0
+    # Ports busy and no host nginx behind them: another app's container owns them.
+    if ! shared_proxy_present && ! systemctl is-active --quiet nginx; then ports_still_held; fi
+    ensure_shared_proxy
+    require_host_nginx
+}
+
+# Issue the certificate through host nginx: its catch-all server answers ACME
+# challenges for domains that have no vhost yet, so this stack never touches port 80.
+obtain_certificate_proxy() {
+    local domain="$1" email="$2"
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+        ok "A certificate for $domain already exists — reusing it"
+        return 0
+    fi
+    local email_args=(--register-unsafely-without-email)
+    [ -n "$email" ] && email_args=(--email "$email" --no-eff-email)
+    info "Requesting a Let's Encrypt certificate for $domain ..."
+    if ! certbot certonly --webroot -w "$PROXY_WEBROOT" -d "$domain" \
+            --agree-tos --non-interactive --keep-until-expiring "${email_args[@]}"; then
+        warn "Certificate request failed. Common causes: DNS not pointing here yet, port 80 blocked by a firewall."
+        return 1
+    fi
+    ok "Certificate issued for $domain"
+}
+
+enable_proxy_ssl_env() {
+    local domain="$1" previous base
+    previous="$(get_env DOMAIN)"; base="$(get_env APP_BASE_URL)"
+    set_env DOMAIN "$domain"
+    set_env SESSION_COOKIE_SECURE "1"
+    # No ProxyFix in the backend: Stripe redirects need the public address spelled out.
+    # A value the operator chose is left alone; one this script derived follows the domain.
+    if [ -z "$base" ] || [ "$base" = "https://${previous}" ]; then set_env APP_BASE_URL "https://${domain}"; fi
+}
+
+# Write, enable and test the host vhost, then reload. A config nginx rejects is never
+# left enabled: it would not just break this site, it would stop host nginx — and every
+# other app behind it — from restarting.
+publish_host_vhost() {
+    local domain="$1" port out
+    port="$(get_env APP_PORT)"
+    if [ -f "$HOST_VHOST" ]; then cp "$HOST_VHOST" "$HOST_VHOST.bak"; fi
+    sed -e "s/__DOMAIN__/${domain}/g" -e "s/__PORT__/${port}/g" \
+        "$INSTALL_DIR/nginx/host-vhost.conf.template" > "$HOST_VHOST"
+    if [ ! -f /proc/net/if_inet6 ]; then sed -i '/\[::\]/d' "$HOST_VHOST"; fi
+    ln -sf "$HOST_VHOST" "$HOST_VHOST_LINK"
+    if out="$(nginx -t 2>&1)"; then
+        rm -f "$HOST_VHOST.bak"
+        systemctl reload nginx
+        ok "https://${domain} is published through the shared proxy (upstream 127.0.0.1:${port})"
+        return 0
+    fi
+    warn "nginx rejected the new vhost: ${out}"
+    if [ -f "$HOST_VHOST.bak" ]; then
+        mv "$HOST_VHOST.bak" "$HOST_VHOST"
+    else
+        rm -f "$HOST_VHOST_LINK" "$HOST_VHOST"
+    fi
+    return 1
+}
+
 # ---------------------------------------------------------------- install
 do_install() {
     if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
@@ -272,15 +424,22 @@ do_install() {
     apt-get update -qq
     apt-get install -y -qq git curl openssl ca-certificates
     install_docker
+    choose_proxy_mode
 
     info "Cloning repository..."
     git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
 
     local use_ssl="n" http_port https_port admin_pass
-    read -r -p "Serve over HTTPS with a Let's Encrypt certificate? [Y/n] " answer
-    case "${answer:-Y}" in [Yy]*) use_ssl="y" ;; esac
+    if [ "$USE_PROXY" != "y" ]; then
+        read -r -p "Serve over HTTPS with a Let's Encrypt certificate? [Y/n] " answer
+        case "${answer:-Y}" in [Yy]*) use_ssl="y" ;; esac
+    fi
 
-    if [ "$use_ssl" = "y" ]; then
+    if [ "$USE_PROXY" = "y" ]; then
+        prompt_domain
+        prompt_email
+        http_port="$(free_proxy_port)"
+    elif [ "$use_ssl" = "y" ]; then
         prompt_domain
         prompt_email
         http_port="$DEFAULT_HTTP_PORT"; https_port="$DEFAULT_HTTPS_PORT"
@@ -299,6 +458,15 @@ APP_PORT=${http_port}
 EOF
     chmod 600 "$INSTALL_DIR/.env"
     [ "$use_ssl" = "y" ] && { set_env APP_HTTPS_PORT "$https_port"; set_env LETSENCRYPT_EMAIL "${LE_EMAIL:-}"; }
+    if [ "$USE_PROXY" = "y" ]; then
+        set_env PROXY_MODE "1"
+        set_env COMPOSE_FILE "docker-compose.yml:docker-compose.proxy.yml"
+        set_env DOMAIN "$DOMAIN"
+        set_env LETSENCRYPT_EMAIL "${LE_EMAIL:-}"
+        # Measured now, before this stack exists, and kept: re-measuring on update would
+        # count iSpend's own containers as someone else's memory and shrink every time.
+        set_env HOST_MEM_BUDGET_MB "$(awk '/^MemAvailable:/ {printf "%d", $2/1024}' /proc/meminfo)"
+    fi
 
     info "Tuning container resource limits to this host..."
     configure_resources
@@ -306,7 +474,14 @@ EOF
     info "Building images (first build takes a few minutes; it installs the OCR engine)..."
     compose build
 
-    if [ "$use_ssl" = "y" ]; then
+    if [ "$USE_PROXY" = "y" ]; then
+        install_certbot
+        if obtain_certificate_proxy "$DOMAIN" "${LE_EMAIL:-}"; then
+            enable_proxy_ssl_env "$DOMAIN"
+        else
+            warn "Continuing without HTTPS: the app will only answer on 127.0.0.1:${http_port} until the SSL option succeeds."
+        fi
+    elif [ "$use_ssl" = "y" ]; then
         install_certbot
         if obtain_certificate "$DOMAIN" "${LE_EMAIL:-}"; then
             enable_ssl "$DOMAIN"
@@ -319,8 +494,14 @@ EOF
 
     info "Starting containers (database migrations run automatically at startup)..."
     compose up -d --force-recreate
-    wait_for_health "$(app_url)" || true
-    firewall_hint "$http_port" "${https_port:-}"
+    wait_for_health "$(health_url)" || true
+    if [ "$USE_PROXY" = "y" ]; then
+        if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
+            publish_host_vhost "$DOMAIN" || warn "The app runs on 127.0.0.1:${http_port} but is not published — fix the vhost and run the SSL option."
+        fi
+    else
+        firewall_hint "$http_port" "${https_port:-}"
+    fi
 
     echo
     ok "iSpend installed."
@@ -343,7 +524,7 @@ do_update() {
 
     info "Re-tuning container resource limits to this host..."
     configure_resources
-    refresh_ssl_conf
+    if ! proxy_mode; then refresh_ssl_conf; fi
 
     # Build the new images while the current stack keeps serving, then swap.
     info "Building updated images..."
@@ -355,13 +536,33 @@ do_update() {
     docker image prune -f | tail -1
     docker builder prune -f --filter "until=24h" >/dev/null 2>&1 || true
 
-    wait_for_health "$(app_url)" || true
+    wait_for_health "$(health_url)" || true
+    if proxy_mode && [ -f "/etc/letsencrypt/live/$(get_env DOMAIN)/fullchain.pem" ]; then
+        publish_host_vhost "$(get_env DOMAIN)" || warn "Host vhost left as it was — the site keeps serving with the previous one."
+    fi
     echo
     ok "iSpend updated. All data was preserved."
     echo -e "  URL:       ${GREEN}$(app_url)${NC}"
 }
 
 # ---------------------------------------------------------------- ssl only
+# needs: DOMAIN, LE_EMAIL
+do_ssl_proxy() {
+    require_host_nginx
+    if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
+        read -r -p "A certificate for $DOMAIN exists. Force a renewal now? [y/N] " answer
+        case "${answer:-N}" in [Yy]*) certbot renew --cert-name "$DOMAIN" --force-renewal || warn "Renewal failed; the existing certificate stays in place." ;; esac
+    else
+        obtain_certificate_proxy "$DOMAIN" "${LE_EMAIL:-}" || fail "Could not obtain a certificate. Fix DNS/firewall and run the SSL option again."
+    fi
+    enable_proxy_ssl_env "$DOMAIN"
+    info "Applying HTTPS configuration..."
+    compose up -d --force-recreate
+    wait_for_health "$(health_url)" || true
+    publish_host_vhost "$DOMAIN" || fail "The host vhost could not be enabled."
+    ok "HTTPS is active at $(app_url) — renewal is automatic."
+}
+
 do_ssl() {
     [ -f "$INSTALL_DIR/docker-compose.yml" ] || fail "No installation found at $INSTALL_DIR — run Install first."
     cd "$INSTALL_DIR"
@@ -369,6 +570,7 @@ do_ssl() {
     prompt_domain
     prompt_email
     set_env LETSENCRYPT_EMAIL "${LE_EMAIL:-}"
+    if proxy_mode; then do_ssl_proxy; return; fi
     set_env APP_PORT "$DEFAULT_HTTP_PORT"
     grep -q '^APP_HTTPS_PORT=' "$INSTALL_DIR/.env" || set_env APP_HTTPS_PORT "$DEFAULT_HTTPS_PORT"
 
@@ -402,6 +604,10 @@ do_remove() {
         *)     compose down --rmi local 2>/dev/null || true; rm -rf "$INSTALL_DIR"; ok "iSpend removed. Data volumes kept — a reinstall will reuse them." ;;
     esac
     rm -f "$RENEW_HOOK"
+    if [ -e "$HOST_VHOST_LINK" ] || [ -e "$HOST_VHOST" ]; then
+        rm -f "$HOST_VHOST_LINK" "$HOST_VHOST"
+        systemctl reload nginx >/dev/null 2>&1 || true
+    fi
     if [ -n "$domain" ] && [ -d "/etc/letsencrypt/live/${domain}" ]; then
         read -r -p "Delete the Let's Encrypt certificate for ${domain} too? [y/N] " answer
         case "${answer:-N}" in [Yy]*) certbot delete --cert-name "$domain" --non-interactive || true ;; esac
