@@ -68,6 +68,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Before the stack step: creating the qa_tester persona below already needs requests.
+      - run: pip install pytest requests playwright && playwright install --with-deps chromium
       - name: start the stack
         run: |
           printf 'SECRET_KEY=ci-secret-key\nPOSTGRES_PASSWORD=ci-postgres\nADMIN_INITIAL_PASSWORD=admin\n' > .env
@@ -80,7 +82,6 @@ jobs:
           assert s.post("http://localhost:5559/api/auth/login", json={"username": "admin", "password": "admin"}).ok
           s.post("http://localhost:5559/api/users", json={"username": "qa_tester", "password": "qa-tester-pass1", "role": "user"})
           PY
-      - run: pip install pytest requests playwright && playwright install --with-deps chromium
       - name: flows
         run: pytest qa/e2e/test_flows.py -q -p no:cacheprovider
       - name: smoke
