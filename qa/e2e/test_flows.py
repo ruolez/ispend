@@ -24,6 +24,7 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeout
 from playwright.sync_api import sync_playwright
 
+from helpers import SW_BLOCKED_WARNING
 from ratelimit import login_with_retry, press_enter_login, submit_login
 
 BAD_TEXT = re.compile(r"(\bundefined\b|\bNaN\b|\bnull\b|\[object Object\]|\$NaN|−NaN|\bInvalid Date\b)")
@@ -50,7 +51,7 @@ class Recorder:
     def __init__(self, page):
         self.page = page
         self.console, self.pageerrors, self.http_errors = [], [], []
-        page.on("console", lambda m: self.console.append({"type": m.type, "text": m.text[:400], "url": page.url}) if m.type in ("error", "warning") else None)
+        page.on("console", lambda m: self.console.append({"type": m.type, "text": m.text[:400], "url": page.url}) if m.type in ("error", "warning") and m.text != SW_BLOCKED_WARNING else None)
         page.on("pageerror", lambda e: self.pageerrors.append({"text": str(e)[:600], "url": page.url}))
         page.on("response", lambda r: self.http_errors.append({"status": r.status, "method": r.request.method, "url": r.url}) if r.status >= 400 else None)
 
@@ -332,7 +333,7 @@ def browser():
 
 @pytest.fixture(scope="module")
 def ctx(browser):
-    c = browser.new_context(viewport={"width": 1366, "height": 900}, accept_downloads=True)
+    c = browser.new_context(viewport={"width": 1366, "height": 900}, accept_downloads=True, service_workers="block")
     yield c
     c.close()
 
@@ -2227,7 +2228,7 @@ def test_f10_settings(page, qapi, browser):
     prefs = qapi.get("/api/auth/me")["preferences"]
     F.check(prefs.get("theme") == "dark" and prefs.get("density") == "compact", f"preferences persisted server-side: {prefs}")
     # fresh context: server prefs applied after login
-    c2 = browser.new_context(viewport={"width": 1366, "height": 900})
+    c2 = browser.new_context(viewport={"width": 1366, "height": 900}, service_workers="block")
     p2 = c2.new_page()
     ui_login(p2, QA)
     p2.wait_for_timeout(500)
@@ -2460,7 +2461,7 @@ def test_f13_budgets(page, qapi, browser):
     page.wait_for_timeout(500)
     F.check(len(qapi.get(f"/api/budgets?month={nxt}")["budgets"]) == n_before, "undo re-created the budget")
     # phone layout
-    c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True)
+    c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, service_workers="block")
     p = c.new_page()
     ui_login(p, QA, expect_path="/index.html")
     p.goto(f"{BASE}/budgets.html")
@@ -2607,7 +2608,7 @@ def test_f15_splits(page, qapi, browser):
         page.keyboard.press("Escape")
         page.wait_for_selector(".drawer", state="detached", timeout=5000)
         # phone: the editor is a bottom sheet that fits the viewport
-        c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True)
+        c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, service_workers="block")
         p = c.new_page()
         try:
             ui_login(p, QA, expect_path="/index.html")
@@ -2639,7 +2640,7 @@ def no_hscroll(p, F, label):
 
 
 def test_f12_mobile(browser, qapi):
-    c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, device_scale_factor=2, accept_downloads=True)
+    c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, device_scale_factor=2, accept_downloads=True, service_workers="block")
     p = c.new_page()
     rec = Recorder(p)
     F = Soft("F12", p, rec)

@@ -175,7 +175,8 @@ async function initNav(activePage) {
     me = await api('/api/auth/me');
   } catch (err) {
     if (err.message !== 'Not authenticated') {
-      main.innerHTML = ui.errorBox(`Could not reach the server: ${err.message}`, { retry: 'reload' });
+      const msg = navigator.onLine === false ? 'You’re offline. iSpend needs a connection to show your accounts.' : `Could not reach the server: ${err.message}`;
+      main.innerHTML = ui.errorBox(msg, { retry: 'reload' });
       main.addEventListener('click', (e) => { if (e.target.closest('[data-act="reload"]')) location.reload(); });
     }
     return new Promise(() => {}); // never resolve: page must not proceed
@@ -197,6 +198,7 @@ async function initNav(activePage) {
   if (me.billing && me.billing.billing_enabled) $$('[data-billing-only]').forEach((el) => el.removeAttribute('hidden'));
   else $$('[data-billing-only]').forEach((el) => el.remove());
   paintBillingBanner(me);
+  watchConnectivity();
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);
   paintPinnedViews(me);
@@ -264,6 +266,27 @@ function paintBillingBanner(me) {
   });
 }
 
+/* "You're offline" rides the same .app-banner slot. The service worker caches no data, so this is
+   the only offline affordance beyond the api() error toast. */
+function watchConnectivity() {
+  const ID = 'offline-banner';
+  const paint = () => {
+    const existing = document.getElementById(ID);
+    if (navigator.onLine !== false) { if (existing) existing.remove(); return; }
+    if (existing) return;
+    const el = document.createElement('div');
+    el.className = 'notice notice-warning app-banner';
+    el.id = ID;
+    el.setAttribute('role', 'status');
+    el.innerHTML = `${icon('alert-triangle')}<div class="grow">You’re offline. Changes can’t be saved until the connection is back.</div>`;
+    const shell = document.querySelector('.shell') || document.body;
+    shell.insertBefore(el, document.getElementById('main'));
+  };
+  window.addEventListener('online', paint);
+  window.addEventListener('offline', paint);
+  paint();
+}
+
 async function refreshReviewPill() {
   try {
     const c = await api('/api/review/count');
@@ -284,6 +307,7 @@ function openUserMenu(anchor) {
     { divider: true },
     { label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) },
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
+    ...(window.PWA && PWA.canInstall() ? [{ label: 'Install app', icon: 'download', onClick: () => PWA.install() }] : []),
     ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
     ...(me.role === 'admin' ? [{ label: 'Admin', icon: 'shield', href: '/admin.html' }] : []),
     { label: 'Settings', icon: 'settings', href: '/settings.html' },

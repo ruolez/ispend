@@ -60,7 +60,7 @@
    scanning work and the raw action stays in the tooltip. */
 .adm-audit { display: flex; flex-direction: column; }
 #audit-list .adm-audit { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); padding: 0 var(--sp-5) var(--sp-2); }
-.adm-day { position: sticky; top: var(--topbar-h); z-index: 1; background: var(--surface); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); padding: var(--sp-4) 0 var(--sp-2); }
+.adm-day { position: sticky; top: calc(var(--topbar-h) + var(--safe-top)); z-index: 1; background: var(--surface); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); padding: var(--sp-4) 0 var(--sp-2); }
 .adm-audit-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) 150px 100px; align-items: center; gap: var(--sp-3);
   padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
 .adm-audit-item time { text-align: right; font-size: var(--fs-sm); }

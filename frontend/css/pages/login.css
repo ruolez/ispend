@@ -56,6 +56,11 @@
 .login-error { display: none; margin-bottom: var(--sp-4); }
 .login-error.show { display: flex; }
 .login-foot { margin-top: var(--sp-5); display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-sm); color: var(--text-4); }
+/* Installed app: the marketing page has no business opening inside the app window. */
+@media (display-mode: standalone) {
+  .login-foot a[href="/"] { visibility: hidden; }
+  .auth-brand { pointer-events: none; }
+}
 .login-legal { margin-top: var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-3); text-wrap: pretty; }
 .login-legal a { color: var(--text-2); text-decoration: underline; text-underline-offset: 0.2em; }
 .login-legal a:hover { color: var(--text-1); }

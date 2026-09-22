@@ -112,6 +112,12 @@ install.sh          Ubuntu installer / updater
 - **Tags** (`tags`, `transaction_tags`) are free labels across categories. Rows carry `tag_ids`; filter with `?tag=1,2` (`&tag_mode=all`) or `?tag=none`; the CSV export has a `Tags` column.
 - **Splits** (`transaction_splits`) divide one row over several categories. The parent keeps its amount and a primary category (the first line); the category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line while totals, trends and merchants keep the parent amount. Lines must be at least two, share the transaction's sign and add up to its amount — the API validates and a deferred trigger enforces it. Recategorising, rejecting a suggestion or marking a transfer removes the split.
 
+## Installing it as an app
+
+iSpend is a PWA: `frontend/manifest.json` plus a service worker (`frontend/sw.js`) that Chrome, Edge and Safari accept for "Install" / "Add to Home Screen". Browsers only allow that on `https://` (the SSL or proxy install) or on `localhost`, so a plain `http://host:5559` never offers it. The install button lives in the user menu and in Settings › Appearance › App; iOS shows the Share → Add to Home Screen recipe instead, because Safari has no prompt API.
+
+The worker stores exactly one file, `/offline.html`, and only answers page navigations that fail — it never caches app pages, scripts, styles or anything under `/api/`, so a deploy shows on the next load exactly as before and no financial data sits in a browser cache. Offline, a navigation lands on the branded offline page and an open page shows a "You're offline" banner. The icons under `frontend/img/icons/` are rendered from `frontend/img/mark-enamel.svg` by `tools/make_pwa_icons.py` (`.venv/bin/python tools/make_pwa_icons.py`, needs Playwright's chromium). Not done on purpose: iOS launch images, and the iOS status-bar text colour, which follows the phone's appearance rather than a theme forced in Settings.
+
 ## The landing page
 
 `/` serves `frontend/landing.html` — a public marketing page — while the app stays at

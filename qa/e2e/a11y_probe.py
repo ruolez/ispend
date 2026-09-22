@@ -10,7 +10,7 @@ def login(ctx, u, p):
 with sync_playwright() as pw:
     b = pw.chromium.launch()
     for theme in ('light', 'dark'):
-        ctx = b.new_context(viewport={'width': 1440, 'height': 900})
+        ctx = b.new_context(viewport={'width': 1440, 'height': 900}, service_workers="block")
         ctx.add_init_script(f"localStorage.setItem('ispend.theme','{theme}')")
         login(ctx, 'admin', 'admin')
         pg = ctx.new_page()
@@ -33,7 +33,7 @@ with sync_playwright() as pw:
         print(theme, 'rail nav-items:', rail)
         pg.evaluate("localStorage.removeItem('ispend.sidebar')")
         # mobile empty-state squeeze (qa_tester) + hidden labels
-        ctx2 = b.new_context(viewport={'width': 390, 'height': 844})
+        ctx2 = b.new_context(viewport={'width': 390, 'height': 844}, service_workers="block")
         ctx2.add_init_script(f"localStorage.setItem('ispend.theme','{theme}')")
         login(ctx2, 'qa_tester', 'qa-tester-pass1')
         m = ctx2.new_page(); m.goto(f'{BASE}/transactions.html'); m.wait_for_load_state('networkidle'); m.wait_for_timeout(800)

@@ -4,7 +4,16 @@ Vanilla JS, no build step, classic `<script>` globals. Every authenticated page 
 
 ```html
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">  <!-- cover: shell pages + offline.html only -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/img/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="iSpend">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">  <!-- shell pages only -->
   <script src="/js/theme.js"></script>            <!-- synchronous, before CSS: no theme flash -->
+  <script src="/js/pwa.js"></script>              <!-- every page but landing/privacy/terms/offline -->
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/app.css">
   <link rel="stylesheet" href="/css/pages/<page>.css">
@@ -43,6 +52,13 @@ Pages known to nav: dashboard (`/index.html`), transactions, review, import, sta
 | `Theme.density()`, `Theme.setDensity('compact'|'comfortable')` | `html[data-density]`, event `ispend:density` |
 
 Theme is `html[data-theme="light|dark"]` (absent = follow system). Persist to the server with `api('/api/auth/me/preferences', {method:'PUT', body:{theme}})` — `setThemePref(mode)` in nav.js does both.
+
+## pwa.js — `window.PWA`
+Registers `/sw.js` on `load` and holds Chrome's `beforeinstallprompt`; no DOM work. `PWA.canInstall()`, `await PWA.install()` → accepted?, `PWA.isStandalone()`, `PWA.isIOS()`; window events `ispend:pwa-installable`, `ispend:pwa-installed`. The UI lives where the shell is: `nav.js` (user-menu "Install app", the `watchConnectivity()` offline banner) and `settings.js paintInstallRow()`.
+
+The worker (`/sw.js`, root so its scope is `/`) precaches only `/offline.html` and intercepts nothing but failed page navigations — never `/api/` (checked before the navigation test, because CSV export, backup download and the Stripe hand-off are navigations to `/api/`), never scripts, styles or images. With nginx's `no-store` that means a deploy is live on the next load and there is no cache version to bump unless the strategy itself changes (`CACHE` in `sw.js`). `offline.html` must stay self-contained (inline style + SVG, no scripts, no fonts) — `qa/e2e/test_pwa.py` pins all of this. Every other Playwright suite creates contexts with `service_workers="block"`; keep doing that so cached fallbacks never mask a `requestfailed`.
+
+Safe areas: `--safe-top` / `--safe-bottom` in `tokens.css` wrap `env(safe-area-inset-*)`; `.topbar`, `.sb-brand`, `.drawer`, `.bottomnav`, `.floatbar` and `#toast-root` use them, and anything sticky under the topbar offsets by `calc(var(--topbar-h) + var(--safe-top))`.
 
 ## api.js
 | Helper | Purpose |

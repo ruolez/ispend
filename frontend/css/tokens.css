@@ -115,6 +115,9 @@
   --sidebar-w: 240px;
   --sidebar-rail-w: 64px;
   --topbar-h: 56px;
+  /* iOS standalone (viewport-fit=cover) paints under the status bar and home indicator. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   --row-h: 40px;
   --cell-py: 10px;
 }

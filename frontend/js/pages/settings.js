@@ -316,7 +316,10 @@ async function renderAppearance() {
     <div class="label mb-2">Default account</div>
     <div class="field" style="max-width:320px"><select id="pref-account" class="select" aria-label="Default account"><option value="">— None —</option>${accts.map((a) => `<option value="${a.id}" ${String(a.id) === String(prefAcct) ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select><div class="hint">Preselected when you add a transaction by hand, and used for imports that no statement matches.</div></div>
     <div class="label mb-2">Week starts on</div>
-    <div class="field" style="max-width:320px"><select id="pref-week" class="select" aria-label="Week starts on">${WEEKDAYS.map((d, i) => `<option value="${i}" ${i === prefWeek ? 'selected' : ''}>${d}</option>`).join('')}</select><div class="hint">Sets the “This week” and “Last week” ranges.</div></div>`;
+    <div class="field" style="max-width:320px"><select id="pref-week" class="select" aria-label="Week starts on">${WEEKDAYS.map((d, i) => `<option value="${i}" ${i === prefWeek ? 'selected' : ''}>${d}</option>`).join('')}</select><div class="hint">Sets the “This week” and “Last week” ranges.</div></div>
+    <div class="label mb-2">App</div>
+    <div id="pwa-row"></div>`;
+  paintInstallRow(host.querySelector('#pwa-row'));
   host.querySelector('#pref-account').addEventListener('change', async (e) => {
     try {
       const prefs = await api('/api/auth/me/preferences', { method: 'PUT', body: { default_account_id: e.target.value ? Number(e.target.value) : null } });
@@ -340,6 +343,28 @@ async function renderAppearance() {
       toast(e.target.value ? `Totals now shown in ${e.target.value}` : 'Display currency follows your accounts', { type: 'success' });
     } catch (err) { toast(err.message, { type: 'error' }); }
   });
+}
+/* Installed → badge; Chrome/Edge with a captured prompt → button; iOS Safari → the manual recipe;
+   anything else → what the browser needs. Re-painted when the prompt arrives after first render. */
+function paintInstallRow(row) {
+  const pwa = window.PWA;
+  const paint = () => {
+    let desc, control = '';
+    if (pwa && pwa.isStandalone()) { desc = 'iSpend is installed on this device.'; control = '<span class="badge badge-success">Installed</span>'; }
+    else if (pwa && pwa.canInstall()) { desc = 'Open iSpend from your home screen or dock, in its own window.'; control = '<button type="button" class="btn btn-secondary btn-sm" data-act="pwa-install">Install</button>'; }
+    else if (pwa && pwa.isIOS()) desc = 'In Safari, tap <strong>Share</strong> and then <strong>Add to Home Screen</strong>.';
+    else desc = 'Use the install option in your browser’s address bar or menu. Installing needs a secure (https) address.';
+    row.innerHTML = `<div class="setting-row"><div><div class="title">Install iSpend</div><div class="desc">${desc}</div></div>${control}</div>`;
+  };
+  row.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-act="pwa-install"]')) return;
+    const ok = await pwa.install();
+    if (ok) toast('iSpend installed', { type: 'success' });
+    paint();
+  });
+  window.addEventListener('ispend:pwa-installable', paint);
+  window.addEventListener('ispend:pwa-installed', paint);
+  paint();
 }
 function paintRadios(group) { $$('.radio-item', group).forEach((l) => l.classList.toggle('is-checked', l.querySelector('input').checked)); }
 

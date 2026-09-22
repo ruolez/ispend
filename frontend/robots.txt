@@ -6,6 +6,8 @@ Allow: /privacy.html
 Allow: /terms.html
 Allow: /og.svg
 Allow: /favicon.svg
+Allow: /manifest.json
+Allow: /img/icons/
 Disallow: /api/
 Disallow: /index.html
 Disallow: /admin.html
@@ -22,3 +24,4 @@ Disallow: /categories.html
 Disallow: /rules.html
 Disallow: /reset.html
 Disallow: /verify.html
+Disallow: /offline.html

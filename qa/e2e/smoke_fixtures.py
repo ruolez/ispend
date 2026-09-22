@@ -77,7 +77,7 @@ def make_context(browser):
         kw = {"viewport": {"width": w, "height": h}, "accept_downloads": True, "base_url": BASE_URL}
         if color_scheme:
             kw["color_scheme"] = color_scheme
-        ctx = browser.new_context(**kw)
+        ctx = browser.new_context(**kw, service_workers="block")
         ctx.add_init_script(f"({INIT_JS})({json.dumps(theme if stored_theme else None)});")
         api_login(ctx, persona)
         page = ctx.new_page()

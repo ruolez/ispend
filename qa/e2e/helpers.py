@@ -35,6 +35,10 @@ DENY_WORDS = [
 ]
 
 
+# What Playwright's service_workers="block" stub logs from navigator.serviceWorker.register().
+SW_BLOCKED_WARNING = "Service Worker registration blocked by Playwright"
+
+
 class Recorder:
     """Attach to a page; collects console errors/warnings, page errors, failed and slow requests,
     each tagged with the current probe label so per-step deltas can be reported."""
@@ -60,7 +64,7 @@ class Recorder:
         self.label = label
 
     def _on_console(self, msg):
-        if msg.type not in ("error", "warning"):
+        if msg.type not in ("error", "warning") or msg.text == SW_BLOCKED_WARNING:
             return
         loc = msg.location or {}
         self.console.append({

@@ -293,7 +293,7 @@ class TestAuth:
             _purge(admin, r.json()["id"], "qa_api_gone")
 
     def test_security_headers_on_pages_and_api(self, anon):
-        for path in ("/login.html", "/api/health"):
+        for path in ("/login.html", "/api/health", "/manifest.json", "/sw.js"):
             h = anon.get(path).headers
             assert h.get("X-Frame-Options") == "DENY", (path, dict(h))
             assert h.get("X-Content-Type-Options") == "nosniff", path

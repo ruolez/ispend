@@ -2,7 +2,7 @@
 .tx-search .input { padding-left: 32px; }
 .tbl-toolbar .btn .ico-sm { color: var(--text-3); }
 .tbl-toolbar .btn .count { margin-left: 2px; }
-.tx-wrap { max-height: calc(100vh - var(--topbar-h) - 190px); min-height: 320px; }
+.tx-wrap { max-height: calc(100vh - var(--topbar-h) - var(--safe-top) - 190px); min-height: 320px; }
 .tbl-tx { table-layout: fixed; min-width: 760px; }
 .tbl-tx .col-check { width: 40px; }
 .tbl-tx .col-date { width: 96px; white-space: nowrap; }
@@ -76,7 +76,7 @@
   .tbl-tx td.col-actions [data-open] { display: none; }
   .tbl-tx td[colspan] { grid-column: 1 / -1; } /* empty/skeleton/error rows span the card, not the 28px check column */
   .tx-search { max-width: none; flex-basis: 100%; }
-  .floatbar { bottom: 72px; }
+  .floatbar { bottom: calc(72px + var(--safe-bottom)); }
 }
 @media (max-width: 640px) { .floatbar [data-bulk] .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 @media (max-width: 768px) {

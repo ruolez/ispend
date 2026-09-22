@@ -178,7 +178,7 @@ def main():
             for (w, h) in VIEWPORTS:
                 if QUICK and (w, h) == (1024, 768):
                     continue
-                context = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, has_touch=(w < 500), is_mobile=(w < 500))
+                context = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, has_touch=(w < 500), is_mobile=(w < 500), service_workers="block")
                 context.add_init_script(f"try{{localStorage.setItem('ispend.theme','{theme}');localStorage.removeItem('ispend.sidebar');}}catch(e){{}}")
                 login(context, 'qa_tester')
                 page = context.new_page()
@@ -189,7 +189,7 @@ def main():
                     url = f'{BASE}/{pg}.html' if pg != 'login' else f'{BASE}/login.html'
                     if pg == 'login':
                         # logged-out view: open in a fresh context without cookies
-                        ctx2 = browser.new_context(viewport={'width': w, 'height': h})
+                        ctx2 = browser.new_context(viewport={'width': w, 'height': h}, service_workers="block")
                         ctx2.add_init_script(f"try{{localStorage.setItem('ispend.theme','{theme}')}}catch(e){{}}")
                         lp = ctx2.new_page(); lp.goto(url); settle(lp)
                         rec = scan_state(lp, f'{pg}/{theme}/{w}', os.path.join(SHOTS, f'a11y-{pg}-{theme}-{w}.png'))
@@ -220,7 +220,7 @@ def main():
         # ---- admin: READ-ONLY populated pages (1440 + 390, both themes) ----
         for theme in THEMES:
             for (w, h) in ([(1440, 900), (390, 844)] if not QUICK else [(1440, 900)]):
-                context = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1)
+                context = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, service_workers="block")
                 context.add_init_script(f"try{{localStorage.setItem('ispend.theme','{theme}');localStorage.removeItem('ispend.sidebar');}}catch(e){{}}")
                 login(context, 'admin')
                 page = context.new_page()
