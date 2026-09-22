@@ -5,7 +5,8 @@ Writes frontend/img/icons/{icon-192,icon-512,icon-maskable-512,apple-touch-icon}
 Playwright's chromium (the host has no SVG rasteriser).
 
 The tile is built here rather than taken from frontend/img/mark-enamel.svg: that file is the
-30 px web mark, and an icon needs more depth at 180-512 px — a full-bleed navy field, a crisp
+30 px web mark, and an icon needs more depth at 180-512 px — a full-bleed periwinkle field (the
+disc is dark, so the tile must be light), a crisp
 offset step under the disc, a glass cap and a bevelled rim. Depth comes from hard edges and
 gradients, not blur (the logo rule). Maskable and Apple icons carry the field (iOS paints
 transparent pixels black; Android masks the outer 10%); the "any" icons are the bare disc.
@@ -17,7 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "img" / "icons"
 
-# name, size, disc diameter as a share of the box, with the navy field
+# name, size, disc diameter as a share of the box, with the periwinkle field
 ICONS = [
     ("icon-192.png", 192, 0.96, False),
     ("icon-512.png", 512, 0.96, False),
@@ -28,7 +29,7 @@ ICONS = [
 FIELD = """
 <defs>
   <radialGradient id="fld" cx="0.5" cy="0.42" r="0.75">
-    <stop offset="0" stop-color="#1b2a5e"/><stop offset="1" stop-color="#080d24"/>
+    <stop offset="0" stop-color="#eef1ff"/><stop offset="1" stop-color="#cdd6fb"/>
   </radialGradient>
 </defs>
 <rect width="100" height="100" fill="url(#fld)"/>
@@ -78,13 +79,13 @@ def icon_svg(share: float, field: bool) -> str:
     off = (100 - d) / 2
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">'
             f'{FIELD if field else ""}'
-            f'<g transform="translate({off:.3f} {off:.3f}) scale({s:.5f})">{DISC.format(shadow=0.9 if field else 0)}</g>'
+            f'<g transform="translate({off:.3f} {off:.3f}) scale({s:.5f})">{DISC.format(shadow=0.35 if field else 0)}</g>'
             f'</svg>')
 
 
 def page_html(svg: str, size: int, field: bool) -> str:
     return (f'<!doctype html><html><head><style>html,body{{margin:0;width:{size}px;height:{size}px;'
-            f'background:{"#080d24" if field else "transparent"}}}svg{{display:block}}</style></head>'
+            f'background:{"#cdd6fb" if field else "transparent"}}}svg{{display:block}}</style></head>'
             f'<body>{svg}</body></html>')
 
 
