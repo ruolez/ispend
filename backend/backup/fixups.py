@@ -52,6 +52,8 @@ NO_FIXUP_NEEDED = {
     "013_stripe_events.sql",
     "014_auth_tokens.sql",
     "015_backup_jobs.sql",
+    "016_import_layouts.sql",
+    "017_import_layouts_per_account.sql",
 }
 
 

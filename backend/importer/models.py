@@ -90,3 +90,6 @@ class ParseResult:
     sample: list[list[str]] = field(default_factory=list)
     ocr_applied: bool = False
     account_type_hint: str | None = None   # credit_card | checking, from the matched CSV format
+    layout_key: str | None = None          # fingerprint of the column layout (tabular files)
+    mapping_source: str = "auto"           # auto | user | memory
+    layout: dict | None = None             # the remembered layout row applied, when mapping_source is memory

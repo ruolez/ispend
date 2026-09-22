@@ -249,16 +249,31 @@ function detectionBanner(f) {
   const profiles = s.profile_options || [];
   const label = s.bank_profile ? ((profiles.find((p) => p.key === s.bank_profile) || {}).label || s.bank_profile) : 'Generic format';
   const conf = s.profile_confidence != null ? Number(s.profile_confidence) : null;
-  const low = !s.bank_profile || (conf != null && conf < 0.6);
-  const confText = conf == null ? '' : conf >= 0.85 ? 'high confidence' : conf >= 0.6 ? 'good match' : 'low confidence';
+  const remembered = rememberedLayout(s);
+  const stats = s.stats || {};
+  const mapped = stats.mapping_source === 'user' && s.file_kind !== 'pdf' && Number(stats.rows_valid) > 0;
+  const low = !remembered && !mapped && (!s.bank_profile || (conf != null && conf < 0.6));
+  const confText = remembered || mapped || conf == null ? '' : conf >= 0.85 ? 'high confidence' : conf >= 0.6 ? 'good match' : 'low confidence';
   const kind = String(s.file_kind || '').toUpperCase();
   const warns = (s.warnings || []).filter(Boolean);
+  const title = remembered || mapped ? `Using your ${remembered ? 'saved ' : ''}column mapping${s.bank_profile ? ` · ${esc(label)}` : ''} · ${kind}`
+    : low && !s.bank_profile ? `No known bank matched — using generic ${kind} detection` : `Detected: ${esc(label)} ${kind}${s.ocr_applied ? ' (OCR)' : ''}`;
+  const sub = warns.length ? esc(warns[0]) + (warns.length > 1 ? ` (+${warns.length - 1} more)` : '')
+    : remembered ? `Saved from ${esc(remembered.sample_filename || 'an earlier import')} · used ${plural(remembered.times_used || 1, 'time')} · ${fmtNumber(s.summary.rows_total)} rows found`
+      : mapped ? 'Column mapping saved. The next file with the same columns is mapped automatically.'
+        : low ? 'Check below that the columns line up and the pluses and minuses look right.' : `${fmtNumber(s.summary.rows_total)} rows found · ${esc(f.name)}`;
   return `<div class="detect-banner ${low || warns.length ? 'is-warning' : ''}">
     <span class="detect-icon">${icon(low ? 'alert-triangle' : 'check-circle')}</span>
-    <div class="detect-text"><div class="detect-title">${low && !s.bank_profile ? `No known bank matched — using generic ${kind} detection` : `Detected: ${esc(label)} ${kind}${s.ocr_applied ? ' (OCR)' : ''}`}${confText ? ` <span class="text-3 fw-500">· ${confText}</span>` : ''}</div>
-      <div class="detect-sub">${warns.length ? esc(warns[0]) + (warns.length > 1 ? ` (+${warns.length - 1} more)` : '') : low ? 'Check below that the columns line up and the pluses and minuses look right.' : `${fmtNumber(s.summary.rows_total)} rows found · ${esc(f.name)}`}</div></div>
-    <div class="detect-actions"><label class="text-3 fs-sm" for="rv-profile">Bank</label><select class="select input-sm" id="rv-profile"><option value="">Generic / auto</option>${profiles.map((p) => `<option value="${esc(p.key)}" ${p.key === s.bank_profile ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></div>
+    <div class="detect-text"><div class="detect-title">${title}${confText ? ` <span class="text-3 fw-500">· ${confText}</span>` : ''}</div>
+      <div class="detect-sub">${sub}</div></div>
+    <div class="detect-actions">${remembered ? `<button type="button" class="btn btn-ghost btn-sm" data-act="forget-layout" data-tip="Stop using this saved mapping and detect the columns again">${icon('trash', 'ico-sm')}Forget mapping</button>` : ''}<label class="text-3 fs-sm" for="rv-profile">Bank</label><select class="select input-sm" id="rv-profile"><option value="">Generic / auto</option>${profiles.map((p) => `<option value="${esc(p.key)}" ${p.key === s.bank_profile ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></div>
   </div>`;
+}
+
+/* The saved layout applied to this statement, when the backend parsed it from memory. */
+function rememberedLayout(s) {
+  const st = s.stats || {};
+  return st.mapping_source === 'memory' && st.layout ? st.layout : null;
 }
 
 function signCheck(s) {
@@ -301,7 +316,7 @@ function mappingEditor(s) {
     return '';
   };
   const hasAmount = m.amount != null || Object.keys(m.currency_columns || {}).length > 0;
-  const low = !s.bank_profile || (s.profile_confidence != null && Number(s.profile_confidence) < 0.6);
+  const low = !rememberedLayout(s) && (!s.bank_profile || (s.profile_confidence != null && Number(s.profile_confidence) < 0.6));
   const cols = Array.from({ length: ncols }, (_, i) => i);
   return `<div class="mapping mb-4"><details ${low ? 'open' : ''}><summary>${icon('chevron-right', 'ico-sm chev')}Column mapping<span class="text-3 fw-500 fs-sm">· ${m.date != null ? 'date' : '<span class="text-danger">no date</span>'}, ${(m.description || []).length ? 'description' : '<span class="text-danger">no description</span>'}, ${hasAmount ? 'amount' : m.debit != null || m.credit != null ? 'debit/credit' : '<span class="text-danger">no amount</span>'}</span></summary>
     <div class="mapping-body">
@@ -313,7 +328,7 @@ function mappingEditor(s) {
       </div>
       <div class="mapping-table"><table><thead><tr>${cols.map((i) => `<th class="${roleOf(i) ? 'is-mapped' : ''}"><select class="select input-sm" data-col="${i}" aria-label="Role for column ${i + 1}">${ROLE_OPTIONS.map(([v, l]) => `<option value="${v}" ${roleOf(i) === v ? 'selected' : ''}>${l}</option>`).join('')}</select><div class="colname" title="${esc(header[i] || '')}">${esc(header[i] || `Column ${i + 1}`)}</div></th>`).join('')}</tr></thead>
         <tbody>${sample.slice(0, 5).map((r) => `<tr>${cols.map((i) => `<td title="${esc(r[i] || '')}">${esc(r[i] || '')}</td>`).join('')}</tr>`).join('') || '<tr><td class="text-3">No sample rows</td></tr>'}</tbody></table></div>
-      <div class="hint mt-2">Changes re-parse the file immediately. Mark two columns as Description to join them; use Debit and Credit when amounts are in separate columns.</div>
+      <div class="hint mt-2">Changes re-parse the file immediately. Mark two columns as Description to join them; use Debit and Credit when amounts are in separate columns. Once you import, the mapping is remembered for files with the same columns.</div>
     </div></details></div>`;
 }
 
@@ -429,6 +444,7 @@ async function onImportClick(e) {
     case 'flip-signs': if (f) { const m = readMappingFromDom(f.statement); m.flip_sign = !((f.statement.mapping || {}).flip_sign); return applyMapping(f, m); } return;
     case 'rows-all': if (f) return setRows(f, { all: true, include: btn.dataset.include === '1' }); return;
     case 'reparse': if (f) return reparse(f); return;
+    case 'forget-layout': if (f) return forgetLayout(f, btn); return;
     case 'undo-import': return undoImport(Number(btn.dataset.sid), btn);
     case 'pick-cat': if (f) return pickRowCategory(f, btn, Number(btn.dataset.row)); return;
     case 'confirm-suggestions': if (f) return confirmSuggestions(f, btn); return;
@@ -461,7 +477,9 @@ function autoAccount(f) {
   const remembered = rememberedAccount();
   const pick = suggested || remembered || defaultAccount();
   if (!pick) return false;
-  changeAccount(f, pick, { reason: suggested ? '(matched from the statement)' : remembered ? '(your last import)' : '(your default account)' });
+  const layout = rememberedLayout(s);
+  const fromLayout = suggested && layout && layout.account_id === suggested;
+  changeAccount(f, pick, { reason: fromLayout ? '(where this file layout went last time)' : suggested ? '(matched from the statement)' : remembered ? '(your last import)' : '(your default account)' });
   return true;
 }
 async function setRows(f, body) {
@@ -533,6 +551,16 @@ async function reparse(f) {
     renderReview();
   } catch (err) { toast(err.message, { type: 'error' }); }
 }
+/* Drop the saved mapping this file was parsed with, then detect its columns from scratch. */
+async function forgetLayout(f, button) {
+  const layout = rememberedLayout(f.statement);
+  if (!layout) return;
+  await ui.busy(button, async () => {
+    try { await api(`/api/import-layouts/${layout.id}?scope=layout`, { method: 'DELETE' }); } catch (err) { if (err.status !== 404) { toast(err.message, { type: 'error' }); return; } }
+    toast('Saved mapping forgotten', { type: 'success' });
+    await reparse(f);
+  });
+}
 async function discard(f) {
   const ok = await ui.confirm({ title: 'Discard this file?', body: `“${f.name}” will be removed without importing anything.`, confirmText: 'Discard', danger: true });
   if (!ok) return;
@@ -573,6 +601,7 @@ function renderDone() {
         ${tot.dup ? `<div><div class="n text-3">${fmtNumber(tot.dup)}</div><div class="l">duplicates skipped</div></div>` : ''}
       </div>
       ${imp.results.some((r) => r.ai_queued) ? `<div class="notice mt-2 mb-4" style="text-align:left">${icon('sparkles')}<div>AI suggestions are being prepared for the remaining charges. They appear in Review shortly.</div></div>` : ''}
+      ${imp.results.some((r) => r.layout_saved) ? `<div class="notice mt-2 mb-4" style="text-align:left">${icon('check-circle')}<div>Column mapping saved. The next file with the same columns is mapped automatically; you can forget it under Settings.</div></div>` : ''}
       <div class="done-actions">
         ${tot.unc ? `<a class="btn btn-primary" href="/review.html?mode=merchant">${icon('inbox', 'ico-sm')}Review ${fmtNumber(tot.unc)} charge${tot.unc === 1 ? '' : 's'}</a>` : `<a class="btn btn-primary" href="/transactions.html?range=all">${icon('list', 'ico-sm')}View transactions</a>`}
         <a class="btn btn-secondary" href="/transactions.html?statement=${imp.results[imp.results.length - 1].statementId}&range=all">See imported rows</a>

@@ -31,6 +31,7 @@ TABLE_ORDER = [
     "statements",
     "budgets",
     "merchant_memory",
+    "import_layouts",
     # level 3
     "transactions",          # self-FK transfer_pair_id -> two-pass
     # level 4 - children of transactions

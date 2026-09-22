@@ -161,6 +161,10 @@ class SuggestAccountTest(unittest.TestCase):
     def test_without_a_hint_two_accounts_at_the_bank_is_ambiguous(self):
         self.assertIsNone(self._suggest({}))
 
+    def test_remembered_layout_account_wins_when_it_still_exists(self):
+        self.assertEqual(self._suggest({"layout": {"account_id": 1}, "account_type_hint": "credit_card"}), 1)
+        self.assertEqual(self._suggest({"layout": {"account_id": 99}, "account_type_hint": "credit_card"}), 2)
+
 
 class FormatAccountTypeHintTest(unittest.TestCase):
     def test_labels_map_to_account_types(self):

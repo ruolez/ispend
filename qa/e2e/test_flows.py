@@ -713,6 +713,51 @@ def test_f3_import(page, qapi):
     commit_and_wait(page, F, "xlsx")
     F.eq(txn_total(qapi), 14, "API total after xlsx")
 
+    # --- the xlsx layout is remembered: a re-upload uses the saved mapping and account ---
+    restart_import(page)
+    upload_and_wait(page, F, FIX / "generic.xlsx", "xlsx-again")
+    page.locator('[data-act="go-review"]').click()
+    wait_review(page)
+    st = review_state(page)
+    F.note(f"xlsx re-upload review: {st}")
+    F.check("saved column mapping" in st["title"].lower(), f"saved-mapping banner on re-upload: {st['title']!r}")
+    F.eq(page.locator(".mapping details[open]").count(), 0, "mapping editor stays closed for a remembered layout")
+    F.eq(st["account"], str(S["acct_checking"]), "account remembered from the layout's last import")
+    F.eq(st["rows"], 3, "xlsx re-upload rows")
+    shot(page, "F3-xlsx-remembered", full=True)
+    page.locator('[data-act="forget-layout"]').click()
+    toast(page, "forgotten")
+    # the file re-parses (parsing card, no banner) before the generic banner comes back
+    page.wait_for_function("() => { const t = (document.querySelector('.detect-title') || {}).innerText || ''; return t && !/saved column mapping/i.test(t); }", timeout=20000)
+    wait_review(page)
+    st = review_state(page)
+    F.check("no known bank" in st["title"].lower() or "generic" in st["title"].lower(), f"forgetting the layout brings generic detection back: {st['title']!r}")
+    F.eq(page.locator(".mapping details[open]").count(), 1, "mapping editor auto-opens again after forgetting")
+    F.eq(len([x for x in qapi.get("/api/import-layouts") if x["sample_filename"] == "generic.xlsx"]), 0, "layout gone from the API after Forget")
+
+    # --- a mapping applied in the preview is remembered even though this file is never imported ---
+    page.locator('[data-act="flip-signs"]').click()
+    page.wait_for_function("() => /using your column mapping/i.test((document.querySelector('.detect-title') || {}).innerText || '')", timeout=10000)
+    st = review_state(page)
+    F.check("column mapping saved" in st["sub"].lower(), f"banner says the mapping was saved right after mapping: {st['sub']!r}")
+    shot(page, "F3-xlsx-mapped-saved")
+    sid_again = [x for x in qapi.get("/api/statements") if x["status"] == "previewed" and x["original_filename"] == "generic.xlsx"][0]["id"]
+    qapi.delete(f"/api/statements/{sid_again}")
+    page.goto(f"{BASE}/import.html")
+    page.wait_for_selector("#dropzone", timeout=10000)
+    upload_and_wait(page, F, FIX / "generic.xlsx", "xlsx-mapped-not-imported")
+    page.locator('[data-act="go-review"]').click()
+    wait_review(page)
+    st = review_state(page)
+    F.check("saved column mapping" in st["title"].lower(), f"mapping made on a never-imported file is reused: {st['title']!r}")
+    F.eq(page.locator(".mapping details[open]").count(), 0, "no mapping prompt the second time, although the first file was never imported")
+    for x in qapi.get("/api/import-layouts"):
+        if x["sample_filename"] == "generic.xlsx":
+            qapi.delete(f"/api/import-layouts/{x['id']}?scope=layout")
+    sid_again = [x for x in qapi.get("/api/statements") if x["status"] == "previewed" and x["original_filename"] == "generic.xlsx"][0]["id"]
+    qapi.delete(f"/api/statements/{sid_again}")
+    F.eq(txn_total(qapi), 14, "API total unchanged after the remembered-layout check")
+
     # --- headerless + semicolon into QA Savings ---
     restart_import(page)
     page.select_option("#upload-account", str(S["acct_savings"]))

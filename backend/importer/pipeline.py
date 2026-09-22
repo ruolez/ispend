@@ -79,9 +79,15 @@ def parse_statement(statement_id, mapping=None, profile_key=None):
                (statement_id,))
     try:
         result, ocr_path = _parse_file(st, mapping, profile_key)
-        if mapping is None:
-            _auto_flip(st, result)
+        if mapping is None and result.mapping_source != "memory":
+            _auto_flip(st, result)  # a remembered mapping already carries the user's sign choice
         _stage(st, result, ocr_path)
+        if mapping is not None:
+            # remembered now, not only at commit: a preview that is never imported still taught us the columns
+            staged = _load(statement_id)
+            stats = staged.get("stats") or {}
+            if stats.get("rows_valid"):
+                _remember_layout(staged, stats, stats.get("header"), staged.get("account_id"), used=False)
     except ImportError_ as e:
         log.info("parse rejected statement %s: %s", statement_id, e)
         _set_error(statement_id, str(e))
@@ -120,22 +126,32 @@ def _auto_flip(st, result):
     result.warnings.append(AUTO_FLIP_WARNING)
 
 
-def _parse_file(st, mapping, profile_key):
+TABULAR_KINDS = ("csv", "xlsx", "xls")
+
+
+def _read_table(st, delimiter=None):
+    """(rows, delimiter) of a CSV or Excel statement file."""
     from importer import csv_parser, excel_parser
 
+    path = abs_path(st["stored_path"])
+    if st["file_kind"] == "csv":
+        with open(path, "rb") as f:
+            text = sniff.decode_text(f.read())
+        return csv_parser.read_table(text, delimiter or None)
+    rows = excel_parser.load_excel_rows(path, st["file_kind"])
+    if not rows:
+        raise ImportError_("The workbook has no data rows")
+    return rows, ","
+
+
+def _parse_file(st, mapping, profile_key):
     path = abs_path(st["stored_path"])
     kind = st["file_kind"]
     if isinstance(mapping, dict):
         mapping = Mapping.from_dict(mapping)
-    if kind == "csv":
-        with open(path, "rb") as f:
-            text = sniff.decode_text(f.read())
-        return csv_parser.parse_csv(text, mapping=mapping, profile_key=profile_key), None
-    if kind in ("xlsx", "xls"):
-        rows = excel_parser.load_excel_rows(path, kind)
-        if not rows:
-            raise ImportError_("The workbook has no data rows")
-        return csv_parser.parse_rows(rows, mapping=mapping, profile_key=profile_key), None
+    if kind in TABULAR_KINDS:
+        rows, delimiter = _read_table(st, mapping.delimiter if mapping else None)
+        return _parse_table(st, rows, mapping, profile_key, delimiter), None
     if kind == "pdf":
         from importer import pdf_ocr, pdf_text
 
@@ -152,6 +168,86 @@ def _parse_file(st, mapping, profile_key):
         result.ocr_applied = ocr_rel is not None
         return result, ocr_rel
     raise ImportError_("Unsupported file kind")
+
+
+def _parse_table(st, rows, mapping, profile_key, delimiter):
+    """Tabular files: a mapping the user saved for this column layout beats detection."""
+    from importer import csv_parser, layout
+
+    key, _ = layout.fingerprint(rows)
+    source, hit = ("user" if mapping is not None else "auto"), None
+    if mapping is None:
+        hit = _remembered_layout(st["user_id"], key, st.get("account_id"))
+        if hit:
+            mapping = Mapping.from_dict(hit["mapping"])
+            profile_key = profile_key or hit.get("bank_profile")
+            source = "memory"
+    result = csv_parser.parse_rows(rows, mapping=mapping, profile_key=profile_key, delimiter=delimiter)
+    result.layout_key, result.mapping_source = key, source
+    if hit:
+        result.layout = {k: hit.get(k) for k in ("id", "account_id", "times_used", "last_used_at", "sample_filename")}
+        result.warnings = [w for w in result.warnings if not w.startswith("Bank not recognised")]
+    return result
+
+
+def _remembered_layout(user_id, layout_key, account_id=None):
+    try:
+        import layout_memory
+        return layout_memory.lookup(user_id, layout_key, account_id)
+    except Exception:
+        log.warning("layout memory unavailable at parse", exc_info=True)
+        return None
+
+
+def _remember_layout(st, stats, header, account_id, used=True, overwrite=True):
+    """Keep the mapping the user settled on for the next file with the same columns: always when the
+    preview asked them to check the columns (unknown bank or a shaky match), for a confidently
+    recognised bank only when the user changed something."""
+    if st["file_kind"] not in TABULAR_KINDS or not stats.get("layout_key") or not st.get("mapping"):
+        return False
+    confident = st.get("bank_profile") and float(st.get("profile_confidence") or 0) >= 0.6
+    if confident and stats.get("mapping_source") not in ("user", "memory"):
+        return False
+    try:
+        import layout_memory
+        layout_memory.learn(st["user_id"], stats["layout_key"], st["mapping"], header=header,
+                            bank_profile=st.get("bank_profile"), account_id=account_id, filename=st["original_filename"],
+                            used=used, overwrite=overwrite)
+        return True
+    except Exception:
+        log.warning("layout learn failed for statement %s", st["id"], exc_info=True)
+        return False
+
+
+def backfill_layouts():
+    """Once, at startup: teach the layout memory from statements imported before it existed, so
+    nobody maps a second time the columns they already mapped."""
+    from importer import layout
+
+    try:
+        if db.get_setting("layout_backfill_done"):
+            return
+        statements = db.query(
+            """SELECT * FROM statements
+               WHERE file_kind IN ('csv', 'xlsx', 'xls') AND mapping IS NOT NULL AND account_id IS NOT NULL
+                 AND (status = 'committed' OR (status = 'previewed' AND stats->>'mapping_source' = 'user'))
+               ORDER BY COALESCE(committed_at, updated_at) DESC, id DESC""") or []
+        newest = {}
+        for st in statements:
+            stats = st.get("stats") or {}
+            try:
+                key, header = layout.fingerprint(_read_table(st, (st["mapping"] or {}).get("delimiter"))[0])
+            except Exception:
+                key, header = stats.get("layout_key"), stats.get("header")  # the file is gone or unreadable
+            if key:
+                newest.setdefault((st["user_id"], key, st["account_id"]), (st, {**stats, "layout_key": key}, header))
+        # oldest first, so last_used_at keeps the order the files were imported in
+        for st, stats, header in reversed(list(newest.values())):
+            _remember_layout(st, stats, header, st["account_id"], overwrite=False)
+        db.set_setting("layout_backfill_done", "1")
+        log.info("layout backfill looked at %s statements, %s layouts", len(statements), len(newest))
+    except Exception:
+        log.warning("layout backfill failed", exc_info=True)
 
 
 def _categorize_rows(user_id, account_id, staged):
@@ -223,6 +319,9 @@ def _stage(st, result, ocr_rel):
     stats["account_type_hint"] = getattr(result, "account_type_hint", None)
     stats["header"] = result.header
     stats["sample"] = result.sample
+    stats["layout_key"] = result.layout_key
+    stats["mapping_source"] = result.mapping_source
+    stats["layout"] = result.layout
     with db.transaction():
         db.execute("DELETE FROM import_rows WHERE statement_id = %s", (sid,), commit=False)
         db.execute_values(
@@ -279,6 +378,8 @@ def _should_auto_flip(st, account_id, amounts):
     mapping = st.get("mapping") or {}
     if mapping.get("flip_sign"):
         return False
+    if (st.get("stats") or {}).get("mapping_source") == "memory":
+        return False  # the saved mapping already carries the user's sign choice
     if st.get("bank_profile") and st.get("profile_confidence") is not None and float(st["profile_confidence"]) >= 0.6:
         return False
     acct = db.query("SELECT account_type FROM accounts WHERE id = %s", (account_id,), one=True)
@@ -304,6 +405,15 @@ def recompute_dupes(statement_id, account_id):
     st = _load(statement_id)
     if not st or st["status"] != "previewed":
         return
+    stats = st.get("stats") or {}
+    if account_id and stats.get("layout_key") and stats.get("mapping_source") in ("auto", "memory"):
+        # the account was chosen after parsing: its own saved mapping beats the one borrowed from another account
+        own = _remembered_layout(st["user_id"], stats["layout_key"], account_id)
+        if own and own.get("account_id") == account_id and \
+                Mapping.from_dict(own["mapping"]).to_dict() != Mapping.from_dict(st.get("mapping") or {}).to_dict():
+            db.execute("UPDATE statements SET account_id = %s, updated_at = now() WHERE id = %s", (account_id, statement_id))
+            parse_statement(statement_id)
+            return
     rows = db.query("SELECT id, txn_date, description, amount, is_valid, category_id, category_source, raw FROM import_rows "
                     "WHERE statement_id = %s ORDER BY row_index", (statement_id,))
     rows = [dict(r) for r in rows]
@@ -487,7 +597,7 @@ def _commit_locked(st, account):
             db.execute("UPDATE rules SET hit_count = hit_count + %s, last_hit_at = now() WHERE id = %s", (n, rid), commit=False)
         db.execute("DELETE FROM import_rows WHERE statement_id = %s", (sid,), commit=False)
         stats = dict(st["stats"] or {})
-        stats.pop("header", None)
+        header = stats.pop("header", None)
         stats.pop("sample", None)
         result = {
             "imported": len(inserted_ids), "skipped_duplicates": skipped_dupes, "skipped_invalid": skipped_invalid,
@@ -515,6 +625,7 @@ def _commit_locked(st, account):
             categorizer.learn(uid, key, cid)
         except Exception:
             log.debug("learn failed for %s", key, exc_info=True)
+    result["layout_saved"] = _remember_layout(st, stats, header, account_id)
 
     return result
 

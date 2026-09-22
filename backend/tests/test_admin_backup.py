@@ -240,6 +240,7 @@ class TablesTest(unittest.TestCase):
             "audit_log": ["users"], "rules": ["users", "accounts", "categories"],
             "statements": ["users", "accounts"], "budgets": ["users", "categories"],
             "merchant_memory": ["users", "categories"],
+            "import_layouts": ["users", "accounts"],
             "transactions": ["users", "accounts", "statements", "categories", "rules"],
             "import_rows": ["statements", "transactions", "categories"],
             "transaction_events": ["transactions", "users"],

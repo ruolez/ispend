@@ -36,6 +36,7 @@ def create_app():
     import auth
     import categories_api
     import budgets_api
+    import import_layouts_api
     import merchants_api
     import public_api
     import reports_api
@@ -48,7 +49,7 @@ def create_app():
 
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
-        transactions_api, review_api, rules_api, merchants_api, reports_api, ai_api, budgets_api, tags_api,
+        transactions_api, review_api, rules_api, merchants_api, import_layouts_api, reports_api, ai_api, budgets_api, tags_api,
         admin_api, admin_backup, admin_billing, billing_api, public_api,
     ):
         app.register_blueprint(module.bp)
@@ -84,6 +85,7 @@ def create_app():
     with app.app_context():
         import importer
         importer.recover_interrupted()
+        importer.backfill_layouts()
         backup_restore.clear_stale_sentinel()
         db.execute("""UPDATE backup_jobs SET status = 'error', finished_at = now(),
                              error_message = 'Interrupted by a server restart'

@@ -7,7 +7,7 @@ etc. resolve through __getattr__ on first use.
 
 _PIPELINE_NAMES = {
     "ImportError_", "abs_path", "store_upload", "parse_statement", "reparse_with_mapping", "reparse_async", "ai_extract_statement", "ai_extract_async", "recompute_dupes",
-    "commit_statement", "discard_statement", "recover_interrupted",
+    "commit_statement", "discard_statement", "recover_interrupted", "backfill_layouts",
 }
 
 

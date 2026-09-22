@@ -50,7 +50,7 @@ GET_ROUTES = [
     "/api/transactions/1/events", "/api/review/count", "/api/review", "/api/rules", "/api/rules/1", "/api/merchants",
     "/api/reports/dashboard", "/api/reports/summary", "/api/reports/by-category", "/api/reports/monthly",
     "/api/reports/trends", "/api/reports/top-merchants", "/api/reports/month-over-month", "/api/reports/recurring",
-    "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress", "/api/tags",
+    "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress", "/api/tags", "/api/import-layouts",
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
@@ -62,6 +62,7 @@ MUTATING_ROUTES = [
     ("PUT", "/api/statements/1/mapping"), ("PUT", "/api/statements/1/account"), ("PUT", "/api/statements/1/rows"),
     ("POST", "/api/statements/1/commit"), ("POST", "/api/statements/1/reparse"), ("DELETE", "/api/statements/1"),
     ("POST", "/api/statements/1/flip-signs"), ("POST", "/api/statements/1/ai-extract"),
+    ("DELETE", "/api/import-layouts/1"),
     ("POST", "/api/transactions"), ("PUT", "/api/transactions/1"), ("DELETE", "/api/transactions/1"),
     ("POST", "/api/transactions/1/rule-draft"), ("POST", "/api/transactions/1/unpair"),
     ("POST", "/api/transactions/pair"), ("POST", "/api/transactions/auto-pair"), ("POST", "/api/transactions/bulk"),
@@ -632,6 +633,97 @@ class TestImportPipeline:
         u1.delete(f"/api/accounts/{card}")
         u1.delete(f"/api/accounts/{chk}")
 
+    def test_column_mapping_is_remembered_per_file_layout(self, u1, u2):
+        acct = create_account(u1, "QA fx layout acct", "checking")
+        # first import of an unrecognised layout: the user changes the mapping, then commits
+        r = upload(u1, os.path.join(FIXTURES, "generic_semicolon.csv"), filename="layout_july.csv")
+        pv = wait_status(u1, r.json()["id"], ("previewed", "error"))
+        assert pv["status"] == "previewed" and pv["bank_profile"] is None
+        assert pv["stats"]["mapping_source"] == "auto" and pv["stats"]["layout"] is None
+        assert any("Bank not recognised" in w for w in pv["warnings"])
+        m = u1.put(f"/api/statements/{pv['id']}/mapping", json={"mapping": {**pv["mapping"], "flip_sign": True}})
+        assert m.status_code == 200 and m.json()["stats"]["mapping_source"] == "user"
+        c = u1.post(f"/api/statements/{pv['id']}/commit", json={"account_id": acct})
+        assert c.status_code == 200 and c.json()["layout_saved"] is True
+        layouts = [x for x in u1.get("/api/import-layouts").json() if x["sample_filename"] == "layout_july.csv"]
+        assert len(layouts) == 1
+        saved = layouts[0]
+        assert (saved["account_id"], saved["account_name"], saved["times_used"], saved["bank_profile"]) == (acct, "QA fx layout acct", 1, None)
+        assert saved["header"] and "Withdrawal" in " ".join(saved["header"])
+        # the next export with the same columns is parsed with the saved mapping and lands in the same account
+        r2 = upload(u1, os.path.join(FIXTURES, "generic_semicolon.csv"), filename="layout_august.csv")
+        pv2 = wait_status(u1, r2.json()["id"], ("previewed", "error"))
+        assert pv2["status"] == "previewed" and pv2["stats"]["mapping_source"] == "memory"
+        assert pv2["stats"]["layout"]["id"] == saved["id"] and pv2["mapping"]["flip_sign"] is True
+        assert pv2["suggested_account_id"] == acct
+        assert not any("Bank not recognised" in w for w in pv2["warnings"])
+        assert sums(_valid_rows(pv2)) == (money("-3000.00"), money("124.50"))
+        # another user can neither see nor delete it
+        assert not any(x["id"] == saved["id"] for x in u2.get("/api/import-layouts").json())
+        assert u2.delete(f"/api/import-layouts/{saved['id']}").status_code == 404
+        # forgetting it brings detection back
+        assert u1.delete(f"/api/import-layouts/{saved['id']}").json() == {"ok": True}
+        assert u1.delete(f"/api/import-layouts/{saved['id']}").status_code == 404
+        assert u1.post(f"/api/statements/{pv2['id']}/reparse", json={}).status_code in (200, 202)
+        pv3 = wait_status(u1, pv2["id"], ("previewed", "error"))
+        assert pv3["stats"]["mapping_source"] == "auto" and not pv3["mapping"]["flip_sign"]
+        assert any("Bank not recognised" in w for w in pv3["warnings"])
+        assert u1.delete(f"/api/statements/{pv2['id']}").status_code == 200
+        assert u1.delete(f"/api/statements/{pv['id']}?with_transactions=true").status_code == 200
+        u1.delete(f"/api/accounts/{acct}?force=true")
+
+    def test_column_mapping_is_remembered_even_when_the_statement_is_never_imported(self, u1):
+        fixture = os.path.join(FIXTURES, "generic_semicolon.csv")
+        pv = wait_status(u1, upload(u1, fixture, filename="layout_mapped_only.csv").json()["id"], ("previewed", "error"))
+        m = u1.put(f"/api/statements/{pv['id']}/mapping", json={"mapping": {**pv["mapping"], "flip_sign": True}})
+        assert m.status_code == 200
+        assert u1.delete(f"/api/statements/{pv['id']}").status_code == 200  # mapped, then abandoned
+        saved = [x for x in u1.get("/api/import-layouts").json() if x["sample_filename"] == "layout_mapped_only.csv"]
+        assert [(x["account_id"], x["times_used"]) for x in saved] == [(None, 0)]
+        pv2 = wait_status(u1, upload(u1, fixture, filename="layout_mapped_again.csv").json()["id"], ("previewed", "error"))
+        assert (pv2["stats"]["mapping_source"], pv2["mapping"]["flip_sign"]) == ("memory", True)
+        assert u1.delete(f"/api/statements/{pv2['id']}").status_code == 200
+        assert u1.delete(f"/api/import-layouts/{saved[0]['id']}").json() == {"ok": True}
+
+    def test_column_mapping_is_remembered_per_account_with_fallback(self, u1):
+        fixture = os.path.join(FIXTURES, "generic_semicolon.csv")
+        flipped, plain, other = (create_account(u1, f"QA fx layout {n}", "checking") for n in ("flipped", "plain", "other"))
+
+        def preview(account_id=None):
+            r = upload(u1, fixture, filename=f"layout_acct_{account_id}.csv", account_id=account_id)
+            return wait_status(u1, r.json()["id"], ("previewed", "error"))
+
+        committed = []
+        for acct, flip in ((flipped, True), (plain, False)):
+            pv = preview(acct)
+            m = u1.put(f"/api/statements/{pv['id']}/mapping", json={"mapping": {**pv["mapping"], "flip_sign": flip}})
+            assert m.status_code == 200
+            assert u1.post(f"/api/statements/{pv['id']}/commit", json={"account_id": acct}).status_code == 200
+            committed.append(pv["id"])
+        # each account gets its own mapping back; an account without one borrows the most recent
+        by_account = {acct: preview(acct) for acct in (flipped, plain, other)}
+        assert {a: (p["stats"]["mapping_source"], p["mapping"]["flip_sign"], p["stats"]["layout"]["account_id"])
+                for a, p in by_account.items()} == {
+            flipped: ("memory", True, flipped), plain: ("memory", False, plain), other: ("memory", False, plain)}
+        # account chosen after parsing: the preview borrowed `plain`, then switches to the account's own mapping
+        late = preview()
+        assert late["mapping"]["flip_sign"] is False
+        switched = u1.put(f"/api/statements/{late['id']}/account", json={"account_id": flipped})
+        assert switched.status_code == 200
+        assert (switched.json()["mapping"]["flip_sign"], switched.json()["stats"]["layout"]["account_id"]) == (True, flipped)
+        # "Forget mapping" in the preview drops the columns for every account, so detection starts over
+        applied = switched.json()["stats"]["layout"]["id"]
+        assert u1.delete(f"/api/import-layouts/{applied}?scope=layout").json() == {"ok": True}
+        assert not any((x["sample_filename"] or "").startswith("layout_acct_") for x in u1.get("/api/import-layouts").json())
+        assert u1.post(f"/api/statements/{late['id']}/reparse", json={}).status_code in (200, 202)
+        assert wait_status(u1, late["id"], ("previewed", "error"))["stats"]["mapping_source"] == "auto"
+        for p in (*by_account.values(), late):
+            assert u1.delete(f"/api/statements/{p['id']}").status_code == 200
+        for sid in committed:
+            assert u1.delete(f"/api/statements/{sid}?with_transactions=true").status_code == 200
+        for acct in (flipped, plain, other):
+            u1.delete(f"/api/accounts/{acct}?force=true")
+
     def test_flip_signs_on_committed_statement(self, u1):
         acct = create_account(u1, "QA fx flip acct", "checking")
         pv, res = import_fixture(u1, "td.csv", acct)
@@ -690,14 +782,19 @@ class TestImportPipeline:
         r = u1.put(f"/api/statements/{sid}/mapping", json={"mapping": pv["mapping"], "bank_profile": "scotiabank"})
         assert r.status_code == 200 and r.json()["bank_profile"] == "scotiabank"
         assert sums(_valid_rows(r.json())) == (money("-100.65"), money("3200.00"))
-        # plain reparse forgets the override; keep_mapping keeps it
+        # the relabel is remembered with the layout: keep_mapping and a plain reparse both come back as scotiabank
         r = u1.post(f"/api/statements/{sid}/reparse", json={"keep_mapping": True})
         assert r.json() == {"id": sid, "status": "parsing"}
         pv2 = wait_status(u1, sid, ("previewed", "error"))
         assert pv2["status"] == "previewed" and pv2["bank_profile"] == "scotiabank"
         r = u1.post(f"/api/statements/{sid}/reparse", json={})
         pv3 = wait_status(u1, sid, ("previewed", "error"))
-        assert pv3["bank_profile"] == "wells_fargo" and pv3["summary"] == pv["summary"]
+        assert (pv3["bank_profile"], pv3["stats"]["mapping_source"]) == ("scotiabank", "memory")
+        # forgetting the layout brings detection back
+        assert u1.delete(f"/api/import-layouts/{pv3['stats']['layout']['id']}").json() == {"ok": True}
+        r = u1.post(f"/api/statements/{sid}/reparse", json={})
+        pv4 = wait_status(u1, sid, ("previewed", "error"))
+        assert pv4["bank_profile"] == "wells_fargo" and pv4["summary"] == pv["summary"]
         u1.delete(f"/api/statements/{sid}")
 
     def test_rows_include_toggle_and_preview_category(self, u1):

@@ -7,7 +7,7 @@ const TAB_META = {
   account: { label: 'My account', icon: 'user' },
 };
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
-const state = { me: null, accounts: [], institutions: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
+const state = { me: null, accounts: [], institutions: [], layouts: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
 
 initNav('settings').then(async (me) => {
   state.me = me;
@@ -36,7 +36,7 @@ function showTab() {
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   setPageTitle(TAB_META[tab].label);
-  ({ accounts: loadAccounts, ai: loadAI, appearance: renderAppearance, account: renderAccount })[tab]();
+  ({ accounts: () => { loadAccounts(); loadLayouts(); }, ai: loadAI, appearance: renderAppearance, account: renderAccount })[tab]();
 }
 
 /* ---------- Accounts ---------- */
@@ -60,6 +60,28 @@ async function loadAccounts() {
       <td class="right num" data-label="Transactions">${fmtNumber(a.txn_count)}</td>
       <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
       <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+/* ---------- Saved file layouts ---------- */
+async function loadLayouts() {
+  const host = $('#layouts-table');
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(2, 6)}</tbody></table></div>`;
+  try { state.layouts = await api('/api/import-layouts'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-layouts' }); return; }
+  if (!state.layouts.length) {
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'Nothing remembered yet', body: 'Import a CSV or Excel file iSpend does not recognise, or change its column mapping, and the mapping is kept here for next time.' })}</div>`;
+    return;
+  }
+  const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k;
+  const columns = (l) => (Array.isArray(l.header) && l.header.length ? l.header.join(' · ') : 'No header row');
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+    ${state.layouts.map((l) => `<tr data-id="${l.id}">
+      <td><div class="text-1 fw-500 truncate" style="max-width:360px" title="${esc(columns(l))}">${esc(columns(l))}</div>${l.sample_filename ? `<div class="text-3 fs-sm">${esc(l.sample_filename)}</div>` : ''}</td>
+      <td data-label="Bank">${esc(l.bank_profile ? instLabel(l.bank_profile) : 'Generic')}</td>
+      <td data-label="Account">${esc(l.account_name || 'Any account')}</td>
+      <td class="text-3" data-label="Last used">${fmtRelative(l.last_used_at)}</td>
+      <td class="right num" data-label="Used">${fmtNumber(l.times_used)}</td>
+      <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="forget-layout" data-id="${l.id}" aria-label="Delete saved layout" data-tip="Delete">${icon('trash')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -359,6 +381,15 @@ async function onAction(e) {
       } },
     ]);
     case 'reload-accounts': return loadAccounts();
+    case 'reload-layouts': return loadLayouts();
+    case 'forget-layout': {
+      const l = state.layouts.find((x) => x.id === id);
+      if (!l) return;
+      const what = Array.isArray(l.header) && l.header.length ? `“${l.header.join(' · ')}”` : 'this headerless file layout';
+      if (!(await ui.confirm({ title: 'Delete saved layout?', body: `The next file with the columns ${what} is detected from scratch and you map it by hand again.`, confirmText: 'Delete', danger: true }))) return;
+      await api(`/api/import-layouts/${l.id}`, { method: 'DELETE' }); toast('Saved layout deleted'); loadLayouts();
+      return;
+    }
     case 'learn-history': {
       await ui.busy(el, async () => {
         const r = await api('/api/merchants/learn', { method: 'POST', body: {} });

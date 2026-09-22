@@ -59,13 +59,17 @@ def _predicted(statement_id):
 
 
 def _suggest_account(st):
-    """Best guess for the account a statement belongs to: an account whose last four digits appear in
-    the file name or statement text, else the only account at the detected bank."""
+    """Best guess for the account a statement belongs to: the account a remembered column layout was
+    last imported into, else an account whose last four digits appear in the file name or statement
+    text, else the only account at the detected bank."""
     accounts = db.query("SELECT id, last4, institution, account_type FROM accounts WHERE user_id = %s AND is_active",
                         (st["user_id"],)) or []
     if not accounts:
         return None
-    haystack = f"{st.get('original_filename') or ''} {json.dumps((st.get('stats') or {}).get('header') or '')}"
+    remembered = ((st.get("stats") or {}).get("layout") or {}).get("account_id")
+    if remembered and any(a["id"] == remembered for a in accounts):
+        return remembered  # the account this column layout was imported into last time
+    haystack =f"{st.get('original_filename') or ''} {json.dumps((st.get('stats') or {}).get('header') or '')}"
     digits = set(re.findall(r"\d{4}", haystack))
     by_last4 = [a for a in accounts if a["last4"] and a["last4"] in digits]
     if len(by_last4) == 1:

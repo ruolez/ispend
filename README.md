@@ -71,7 +71,7 @@ The `qa/` directory holds the QA audit: `qa/IMPROVEMENT_PLAN.md` (findings and p
 ## How an import works
 
 1. **Upload** a file on the Import page (drag and drop, several at once). The file is stored under the `statements` volume and parsed in the background.
-2. **Preview**: iSpend shows the detected bank, lets you pick the target account, edit the column mapping for CSV/Excel files, flip the sign convention if charges look inverted, and flags rows that already exist (duplicates are skipped by default).
+2. **Preview**: iSpend shows the detected bank, lets you pick the target account, edit the column mapping for CSV/Excel files, flip the sign convention if charges look inverted, and flags rows that already exist (duplicates are skipped by default). A column mapping is remembered per file layout and account the moment you apply it (not only when you import), so the next export with the same columns is mapped automatically and goes into the same account; an account without its own saved mapping borrows the one used most recently for those columns, and imports made before this existed are picked up once at startup (saved layouts are listed under Settings → Accounts).
 3. **Commit**: rows become transactions. Rules and merchant memory categorize what they can; if AI is enabled, the rest receive *suggested* categories you confirm in the Review queue.
 4. **Review** groups by merchant, one keystroke per decision. Confirmations feed merchant memory so the next statement needs less work.
 
