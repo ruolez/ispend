@@ -198,6 +198,42 @@ class TestAuth:
         finally:
             _purge(admin, uid, "qa_api_inactive")
 
+    def test_self_signup_must_confirm_email_until_admin_relaxes_it(self, admin):
+        """signup → 201 pending with no session → login 403 email_unverified → resend-pending is
+        always ok → admin turns the switch off → login 200. SMTP points at a closed local port so
+        the send fails fast without a relay; nothing here reads a mailbox."""
+        before = admin.get("/api/admin/billing/config").json()
+        keep = {k: before[k]["value"] for k in ("signup_enabled", "signup_require_verification")}
+        smtp_keys = ("smtp_host", "smtp_port", "smtp_from_email")
+        fake_smtp = {} if before["email_configured"] or any(before[k]["locked"] for k in smtp_keys) else {
+            "smtp_host": "127.0.0.1", "smtp_port": "1", "smtp_from_email": "qa@example.com"}
+        keep.update({k: before[k]["value"] for k in fake_smtp})
+        email, password = "qa_api_pending@example.com", "pending-pass-123"
+        uid = None
+        try:
+            r = admin.put("/api/admin/billing/config",
+                          json={"signup_enabled": True, "signup_require_verification": True, **fake_smtp})
+            assert r.json() == {"ok": True}
+            assert admin.get("/api/admin/billing/config").json()["email_configured"] is True
+            s = Api()
+            r = s.post("/api/auth/signup", json={"email": email, "password": password})
+            assert (r.status_code, r.json()) == (201, {"pending_verification": True, "email": email}), r.text
+            assert s.get("/api/auth/me").status_code == 401, "a pending sign-up must not get a session"
+            uid = next(u["id"] for u in admin.get("/api/admin/users", params={"q": email}).json()["items"]
+                       if u["username"] == email)
+            r = Api().login(email, password)
+            assert (r.status_code, r.json()["code"]) == (403, "email_unverified"), r.text
+            assert Api().login(email, "wrong-password-xx").status_code == 401
+            for address in (email, "nobody-qa@example.com"):
+                r = Api().post("/api/auth/email/resend-pending", json={"email": address})
+                assert (r.status_code, r.json()) == (200, {"ok": True}), address
+            assert admin.put("/api/admin/billing/config", json={"signup_require_verification": False}).status_code == 200
+            assert Api().login(email, password).status_code == 200, "turning the switch off must release pending accounts"
+        finally:
+            admin.put("/api/admin/billing/config", json=keep)
+            if uid:
+                _purge(admin, uid, email)
+
     def test_soft_deleted_user_is_hidden_restorable_and_purge_needs_the_trash_first(self, admin):
         r = admin.post("/api/admin/users", json={"username": "qa_api_trash", "password": "trash-pass-1"})
         uid = r.json()["id"]

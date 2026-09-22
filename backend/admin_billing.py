@@ -10,7 +10,7 @@ import entitlement
 import jobs
 import landing
 import mailer
-from auth import admin_required
+from auth import admin_required, verification_required_setting
 from settings_api import MASK
 from util import api_error, audit, json_body, rows_json, to_int
 
@@ -239,6 +239,8 @@ def get_config():
         out[key] = {"value": MASK if (value and key in SECRET_KEYS) else ("" if key in SECRET_KEYS else value),
                     "set": bool(locked or value), "locked": bool(locked)}
     out["signup_enabled"] = {"value": db.get_setting("signup_enabled") == "1", "locked": False}
+    out["signup_require_verification"] = {"value": verification_required_setting(), "locked": False}
+    out["email_configured"] = mailer.configured()
     out["landing"] = landing.load()
     out["billing_trial_days"] = {"value": entitlement.trial_days(), "locked": False}
     out["billing_grace_days"] = {"value": entitlement.grace_days(), "locked": False}
@@ -254,7 +256,7 @@ def put_config():
         landing.save(data["landing"])   # normalised on the way in; the loop below skips it
         changed.append("landing")
     for key, value in data.items():
-        if key == "signup_enabled":
+        if key in ("signup_enabled", "signup_require_verification"):
             db.set_setting(key, "1" if value else "0")
             changed.append(key)
             continue

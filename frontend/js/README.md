@@ -173,7 +173,7 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 ## Admin
 `/admin.html` (nav group "Admin", `g a`) is admin-only and mounts the same tabbed layout as Settings
 (`.settings-layout` / `.settings-nav` / `.settings-section` / `.setting-row`, now in **app.css** so both
-pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Backup.
+pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sign-ups & email, Backup.
 
 - **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
   the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
@@ -194,6 +194,11 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Bac
   `admin.html` — no edits to `admin.js`. `sub` is the page subtitle for that tab; `actions` is HTML for a
   page-head action group (`.adm-actions[data-actions=<tab>]`, hidden until the tab is current), so every
   tab's primary buttons sit in the same place. `js/pages/admin-backup.js` is the worked example.
+  Tabs that edit server settings share `js/pages/_adminform.js`: `secHead(title, badge)`,
+  `configField(prefix, key, meta, labels, hints)` for one `{value, set, locked}` row,
+  `collectConfigFields(prefix, keys)` (skips disabled inputs and the secret mask) and
+  `adminDirtyBar(tab, {saveAct, discardAct, unsavedText})`. Every panel is in the DOM at once, so each
+  tab keeps its own id prefix (`ab-` billing, `as-` sign-ups) and never reads another tab's inputs.
 - **Tab plumbing.** `showTab()` sets `aria-current="page"` on the nav item, swaps `#admin-sub`, reveals
   that tab's action group and fires `window` event `ispend:admin-tab` with the tab name — panels use it to
   drop viewport-fixed state (billing's save bar, backup's poll timer) when their tab goes away. `r`
@@ -203,9 +208,13 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Bac
   the raw action in the tooltip, `detail` as key/value chips, and day headers (Today / Yesterday / date).
   Filtering still sends the raw action, so nothing becomes unsearchable. The username on a row filters
   the log to that user; the chip in the toolbar clears it.
-- **Billing** edits are saved from a `.floatbar` that appears when the form is dirty (the same pattern as
-  the AI settings), not a button at the end of a long form. A secret whose value comes back as the mask
-  is skipped on save so re-saving the form never blanks it.
+- **Billing** and **Sign-ups & email** save from an `adminDirtyBar` that appears when the form is dirty
+  (the same pattern as the AI settings), not a button at the end of a long form. A secret whose value
+  comes back as the mask is skipped on save so re-saving the form never blanks it. Both tabs read and
+  write the one `GET|PUT /api/admin/billing/config` payload — Billing owns trial/grace, Stripe and the
+  landing copy; Sign-ups & email (`js/pages/admin-signups.js`) owns `signup_enabled`,
+  `signup_require_verification`, the `smtp_*` keys and `POST /email/test`. The payload also reports
+  `email_configured` (read-only), which is what makes the confirmation requirement effective.
 - **Backup tab** (`/api/admin/backup*`): `GET|POST /`, `GET|DELETE /:id`, `GET /:id/download`,
   `POST /upload` (raw octet-stream via `apiUploadRaw`, inspect only), `POST /restore`,
   `GET /restore/:id?token=` — the last one is not admin-gated because a restore signs the admin out
@@ -264,5 +273,13 @@ as it did before billing existed.
 - **Pages**: `/billing.html` (plan, Checkout, Portal) and the unauthenticated `/signup.html`,
   `/forgot.html`, `/reset.html`, `/verify.html`, which share `js/pages/_authpage.js` and
   `css/pages/login.css` and load no `nav.js`.
+- **Email confirmation gate.** When the admin requires confirmation and email is configured,
+  `POST /api/auth/signup` answers `201 {pending_verification: true, email}` with **no session**;
+  `signup.js` swaps the form for a "Check your inbox" state with a Resend button
+  (`POST /api/auth/email/resend-pending {email}`, always `{ok:true}`). Signing in before the link is
+  used returns `403 {code: "email_unverified"}`, which `login.js` shows as a notice with the same
+  resend. `/verify.html` never signs in: `POST /email/verify` reports `signed_in`, and a signed-out
+  visitor is sent to `/login.html?verified=1`. Accounts created by an admin, and every account that
+  predates the switch, are never gated (`users.verification_required` is only set at signup).
 - `?checkout=success` is never treated as proof of payment: the page calls
   `POST /api/billing/refresh`, which re-reads the subscription from Stripe.

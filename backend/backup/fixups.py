@@ -54,6 +54,7 @@ NO_FIXUP_NEEDED = {
     "015_backup_jobs.sql",
     "016_import_layouts.sql",
     "017_import_layouts_per_account.sql",
+    "018_user_verification_required.sql",
 }
 
 

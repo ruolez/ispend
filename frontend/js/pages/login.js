@@ -19,11 +19,32 @@ api('/api/auth/public-config')
   .then((cfg) => { if (cfg.signup_enabled) document.getElementById('signup-link').hidden = false; })
   .catch(() => { /* leave it hidden */ });
 
-/* Sent back here by api.js after a 401 in a browser that had signed in before. */
-if (new URLSearchParams(location.search).get('reason') === 'expired') {
-  const note = document.getElementById('login-notice');
-  note.innerHTML = `${icon('info')}<div>Your session expired. Sign in again to continue.</div>`;
-  note.hidden = false;
+/* Sent back here by api.js after a 401 in a browser that had signed in before, or by verify.html. */
+const noticeEl = document.getElementById('login-notice');
+function notice(html) {
+  noticeEl.innerHTML = html;
+  noticeEl.hidden = false;
+}
+const params = new URLSearchParams(location.search);
+if (params.get('reason') === 'expired') {
+  notice(`${icon('info')}<div>Your session expired. Sign in again to continue.</div>`);
+} else if (params.get('verified') === '1') {
+  notice(`${icon('check-circle')}<div>Email confirmed. Sign in to get started.</div>`);
+}
+
+/* A self-signup that has not opened its link yet: the address is the username, so a resend can
+   be offered right here. */
+function noticeUnverified(message, email) {
+  notice(`${icon('mail')}<div>${esc(message)}
+    <div class="mt-2"><button type="button" class="btn btn-secondary btn-sm" id="login-resend">Resend the email</button></div></div>`);
+  const btn = document.getElementById('login-resend');
+  btn.addEventListener('click', async () => {
+    const sent = await ui.busy(btn, async () => {
+      await api('/api/auth/email/resend-pending', { method: 'POST', body: { email } });
+      return true;
+    });
+    if (sent) { btn.textContent = 'Sent'; btn.disabled = true; }
+  });
 }
 const capsHint = document.getElementById('caps-hint');
 const pwField = document.getElementById('password');
@@ -63,6 +84,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       location.href = safeNext(new URLSearchParams(location.search).get('next'));
     }, { silent: true, rethrow: true });
   } catch (err) {
+    if (err.status === 403 && err.data && err.data.code === 'email_unverified') {
+      return noticeUnverified(err.message, username);
+    }
     errEl.innerHTML = `${icon('alert-triangle')}<div>${esc(err.message)}</div>`;
     errEl.classList.add('show');
     document.getElementById('password').focus();

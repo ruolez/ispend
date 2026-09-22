@@ -9,14 +9,17 @@ const token = new URLSearchParams(location.search).get('token') || '';
     return;
   }
   $('#page-body').innerHTML = ui.skeletonList(1);
+  let r;
   try {
-    await api('/api/auth/email/verify', { method: 'POST', body: { token } });
+    r = await api('/api/auth/email/verify', { method: 'POST', body: { token } });
   } catch (err) {
     $('#page-body').innerHTML = '';
     showError(err.message);
     return;
   }
+  // A pending sign-up lands here signed out; the link confirms the address, it does not sign in.
   $('#page-body').innerHTML = ui.emptyState({ icon: 'check-circle', title: 'Email confirmed',
-    body: 'You can subscribe whenever you are ready.',
-    action: { label: 'Continue to iSpend', href: '/index.html' } });
+    ...(r.signed_in
+      ? { body: 'You can subscribe whenever you are ready.', action: { label: 'Continue to iSpend', href: '/index.html' } }
+      : { body: 'Sign in to get started.', action: { label: 'Sign in', href: '/login.html?verified=1' } }) });
 })();

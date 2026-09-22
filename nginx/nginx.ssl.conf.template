@@ -134,6 +134,16 @@ server {
         error_page 429 = @rate_limited_generic;
         proxy_pass http://backend:5000;
     }
+    location = /api/auth/email/resend-pending {
+        limit_req zone=reset burst=3 nodelay;
+        error_page 429 = @rate_limited_generic;
+        proxy_pass http://backend:5000;
+    }
+    location = /api/auth/email/verify {
+        limit_req zone=reset burst=5 nodelay;
+        error_page 429 = @rate_limited_generic;
+        proxy_pass http://backend:5000;
+    }
 
     # Stripe signs the exact request bytes, so nothing here may touch the body. Deliberately in
     # NO limit_req zone: Stripe retries in bursts and would read a 429 as a hard failure.

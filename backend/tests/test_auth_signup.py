@@ -87,6 +87,89 @@ class SignupTest(_Base):
             self.assertEqual(s["user_id"], 9)
         self.assertEqual(self.sent[0][0], "welcome")
         self.assertIn("verify.html?token=", self.sent[0][2]["link"])
+        self.assertIs(self.x.sql("INSERT INTO users")[0][1][3], False)
+
+
+def _smtp_on():
+    FAKE.settings["smtp_host"] = "smtp.example.com"
+    FAKE.settings["smtp_from_email"] = "noreply@example.com"
+
+
+class PendingVerificationTest(_Base):
+    """With "Require email verification" on AND email configured, a self-signup gets no session
+    until the emailed link is used."""
+
+    USER = {"id": 9, "username": "a@b.co", "email": "a@b.co", "role": "user", "preferences": {}}
+
+    def _signup(self):
+        FAKE.settings["signup_enabled"] = "1"
+        self.x.routes.append(("INSERT INTO users", self.USER))
+        self.q.routes.append(("FROM users u LEFT JOIN subscriptions", {**self.USER, "sub_status": "trialing"}))
+        with mock.patch.object(seed_categories, "seed_for_user"):
+            return self._call("post", "/api/auth/signup", {"email": "a@b.co", "password": "long-enough-1"})
+
+    def test_signup_is_pending_by_default_once_email_is_configured(self):
+        _smtp_on()
+        c, res = self._signup()
+        self.assertEqual((res.status_code, res.get_json()),
+                         (201, {"pending_verification": True, "email": "a@b.co"}))
+        self.assertIs(self.x.sql("INSERT INTO users")[0][1][3], True)
+        with c.session_transaction() as s:
+            self.assertNotIn("user_id", s)
+        self.assertEqual(self.sent[0][0], "welcome_pending")
+        self.assertIn("verify.html?token=", self.sent[0][2]["link"])
+
+    def test_signup_is_not_gated_while_email_is_unconfigured(self):
+        """No link could ever arrive, so an install without SMTP must not strand new accounts."""
+        c, res = self._signup()
+        self.assertEqual(res.status_code, 201)
+        self.assertIs(self.x.sql("INSERT INTO users")[0][1][3], False)
+        with c.session_transaction() as s:
+            self.assertEqual(s["user_id"], 9)
+        self.assertEqual(self.sent[0][0], "welcome")
+
+    def test_signup_with_the_switch_off_signs_in_as_before(self):
+        _smtp_on()
+        FAKE.settings["signup_require_verification"] = "0"
+        c, res = self._signup()
+        self.assertEqual(res.status_code, 201)
+        self.assertIs(self.x.sql("INSERT INTO users")[0][1][3], False)
+        with c.session_transaction() as s:
+            self.assertEqual(s["user_id"], 9)
+        self.assertEqual(self.sent[0][0], "welcome")
+
+    def test_resend_pending_is_silent_for_anything_but_a_pending_account(self):
+        """Always ok, sends nothing: the answer must not reveal whether the address exists."""
+        for body in ({"email": "ghost@b.co"}, {"email": ""}, {}):
+            with self.subTest(body=body):
+                _, res = self._call("post", "/api/auth/email/resend-pending", body)
+                self.assertEqual(res.get_json(), {"ok": True})
+                self.assertEqual(self.sent, [])
+                self.assertEqual(self.x.sql("INSERT INTO auth_tokens"), [])
+
+    def test_resend_pending_sends_a_fresh_link_to_a_pending_account(self):
+        self.q.routes.append(("verification_required AND email_verified_at IS NULL", self.USER))
+        self.q.routes.append(("COUNT(*) AS n FROM auth_tokens", {"n": 0}))
+        _, res = self._call("post", "/api/auth/email/resend-pending", {"email": "A@B.co"})
+        self.assertEqual(res.get_json(), {"ok": True})
+        self.assertEqual(self.sent[0][:2], ("verify_email", "a@b.co"))
+        self.assertEqual(self.x.sql("INSERT INTO auth_tokens")[0][1][1], "verify")
+        sql = self.q.sql("verification_required AND email_verified_at IS NULL")[0][0]
+        self.assertIn("status = 'active'", sql)
+
+    def test_resend_pending_waits_five_minutes_between_links(self):
+        self.q.routes.append(("verification_required AND email_verified_at IS NULL", self.USER))
+        self.q.routes.append(("COUNT(*) AS n FROM auth_tokens", {"n": 1}))
+        _, res = self._call("post", "/api/auth/email/resend-pending", {"email": "a@b.co"})
+        self.assertEqual(res.get_json(), {"ok": True})
+        self.assertEqual(self.sent, [])
+
+    def test_verify_reports_whether_the_visitor_is_signed_in(self):
+        for uid, signed_in in ((None, False), (4, True), (7, False)):
+            with self.subTest(uid=uid):
+                self.x.routes = [("UPDATE auth_tokens SET used_at", {"user_id": 4})]
+                _, res = self._call("post", "/api/auth/email/verify", {"token": "t" * 43}, uid=uid)
+                self.assertEqual(res.get_json(), {"ok": True, "signed_in": signed_in})
 
 
 class TokenTest(_Base):

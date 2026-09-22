@@ -263,6 +263,31 @@ def signup_enabled():
     return db.get_setting("signup_enabled") == "1"
 
 
+def verification_required_setting():
+    """Absent reads as on, rather than seeding a row a restored older backup would drop."""
+    return (db.get_setting("signup_require_verification") or "1") == "1"
+
+
+def verification_enforced():
+    """The switch only means something when a link can actually be delivered: an install that
+    cannot send mail must not strand every new account."""
+    import mailer
+    return verification_required_setting() and mailer.configured()
+
+
+def _send_verification(user):
+    """At most one link per five minutes per account, whoever asks."""
+    import mailer
+
+    recent = db.query(
+        """SELECT COUNT(*) AS n FROM auth_tokens WHERE user_id = %s AND kind = 'verify'
+            AND created_at > now() - interval '5 minutes'""", (user["id"],), one=True)
+    if not recent["n"]:
+        token = _issue_token(user["id"], "verify", VERIFY_TTL)
+        mailer.send_async("verify_email", user["email"], username=user["username"],
+                          link=f"{_base_url()}/verify.html?token={token}")
+
+
 def _me_payload(user):
     ent = entitlement.evaluate(user) if "sub_status" in (user or {}) else None
     return {
@@ -291,6 +316,10 @@ def login():
         # locked and deleted read identically so the two cannot be told apart.
         audit("auth.login.blocked", {"status": user["status"]}, user_id=user["id"])
         return api_error(user_state.BLOCKED_MESSAGE, 403)
+    if user_state.needs_verification(user, verification_enforced()):
+        audit("auth.login.unverified", {}, user_id=user["id"])
+        return jsonify({"error": user_state.UNVERIFIED_MESSAGE,
+                        "code": user_state.UNVERIFIED_CODE}), 403
     session.clear()
     session.permanent = True
     session["user_id"] = user["id"]
@@ -397,16 +426,25 @@ def signup():
         return jsonify({"error": "That email already has an account. Sign in instead.",
                         "code": "email_taken"}), 409
     trial = entitlement.trial_days()
+    enforced = verification_enforced()
     with db.transaction():
         user = db.execute(
-            """INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)
-               RETURNING *""",
-            (email, email, generate_password_hash(password)), returning=True, commit=False)
+            """INSERT INTO users (username, email, password_hash, verification_required)
+               VALUES (%s, %s, %s, %s) RETURNING *""",
+            (email, email, generate_password_hash(password), enforced), returning=True, commit=False)
         db.execute(
             """INSERT INTO subscriptions (user_id, status, trial_end)
                VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
             (user["id"], trial), commit=False)
         seed_categories.seed_for_user(db.get_db(), user["id"])
+    token = _issue_token(user["id"], "verify", VERIFY_TTL)
+    link = f"{_base_url()}/verify.html?token={token}"
+    trial_end = (datetime.now(timezone.utc) + timedelta(days=trial)).strftime("%d %B %Y")
+    if enforced:
+        # No session: the account exists but cannot sign in until the emailed link is used.
+        audit("auth.signup", {"id": user["id"], "pending_verification": True}, user_id=user["id"])
+        mailer.send_async("welcome_pending", email, username=email, trial_end=trial_end, link=link)
+        return jsonify({"pending_verification": True, "email": email}), 201
     session.clear()
     session.permanent = True
     session["user_id"] = user["id"]
@@ -415,10 +453,7 @@ def signup():
     session["epoch"] = db.get_setting("session_epoch") or ""
     session["uepoch"] = 0
     audit("auth.signup", {"id": user["id"]}, user_id=user["id"])
-    token = _issue_token(user["id"], "verify", VERIFY_TTL)
-    trial_end = (datetime.now(timezone.utc) + timedelta(days=trial)).strftime("%d %B %Y")
-    mailer.send_async("welcome", email, username=email, trial_end=trial_end,
-                      link=f"{_base_url()}/verify.html?token={token}")
+    mailer.send_async("welcome", email, username=email, trial_end=trial_end, link=link)
     row = db.query(
         """SELECT u.*, s.status AS sub_status, s.trial_end, s.current_period_end,
                   s.cancel_at_period_end, s.grace_until, s.comped_until, s.stripe_subscription_id
@@ -490,27 +525,34 @@ def verify_email():
     db.execute("UPDATE users SET email_verified_at = now(), updated_at = now() WHERE id = %s",
                (user_id,))
     audit("auth.email_verified", {"id": user_id}, user_id=user_id)
-    return jsonify({"ok": True})
+    # The page picks its next step from this; an anonymous /me would only bounce it to the login page.
+    return jsonify({"ok": True, "signed_in": session.get("user_id") == user_id})
 
 
 @bp.post("/email/resend")
 @login_required
 def resend_verification():
-    import mailer
-
     user = db.query("SELECT id, username, email, email_verified_at FROM users WHERE id = %s",
                     (session["user_id"],), one=True)
     if not user.get("email"):
         return api_error("Add an email address first")
-    if user.get("email_verified_at"):
-        return jsonify({"ok": True})
-    recent = db.query(
-        """SELECT COUNT(*) AS n FROM auth_tokens WHERE user_id = %s AND kind = 'verify'
-            AND created_at > now() - interval '5 minutes'""", (user["id"],), one=True)
-    if not recent["n"]:
-        token = _issue_token(user["id"], "verify", VERIFY_TTL)
-        mailer.send_async("verify_email", user["email"], username=user["username"],
-                          link=f"{_base_url()}/verify.html?token={token}")
+    if not user.get("email_verified_at"):
+        _send_verification(user)
+    return jsonify({"ok": True})
+
+
+@bp.post("/email/resend-pending")
+def resend_pending():
+    """For an account that cannot sign in yet. Always {ok: true}: the answer must not say whether
+    the address exists or is waiting on a link."""
+    email = (json_body().get("email") or "").strip().lower()
+    user = db.query(
+        """SELECT id, username, email FROM users
+            WHERE lower(email) = lower(%s) AND status = 'active'
+              AND verification_required AND email_verified_at IS NULL""",
+        (email,), one=True) if email else None
+    if user:
+        _send_verification(user)
     return jsonify({"ok": True})
 
 

@@ -198,9 +198,12 @@ full access, which is what a self-hosted install wants. To sell it instead:
    `invoice.paid`, `invoice.payment_failed` and `customer.subscription.trial_will_end`.
    Copy its signing secret.
 3. Put the keys in `.env` (see `.env.example`) or in **Admin → Billing**, set `APP_BASE_URL`, and
-   turn on **Accept new sign-ups**.
-4. Optionally configure SMTP so iSpend can send its welcome, trial-ending, payment-failed and
-   password-reset messages. Stripe emails receipts itself.
+   turn on **Accept new sign-ups** in **Admin → Sign-ups & email**.
+4. Configure SMTP on the same tab so iSpend can send its sign-up confirmation, welcome,
+   trial-ending, payment-failed and password-reset messages. Stripe emails receipts itself.
+   **Require email confirmation** is on by default: once email works, a new sign-up cannot sign
+   in until the emailed link is opened. It only ever applies to self-service sign-ups made while
+   it is on, and turning it off lets any account still waiting on a link sign in straight away.
 5. Edit the pricing wording in **Admin → Billing → Landing page**; the amounts come from Stripe
    on their own.
 
@@ -225,5 +228,5 @@ How it behaves:
 - Uploaded statements are stored in a private Docker volume and are only downloadable by their owner.
 - Locked and deleted accounts return the same message at sign-in, so a password holder cannot tell which happened; a wrong password is always the generic "Invalid username or password".
 - Changing a password signs every other session out; password-reset links are single-use, expire in an hour, and are stored only as a hash.
-- Sign-up and password-reset endpoints are rate-limited in nginx and again in the application, because nginx can be bypassed by anything that reaches the backend directly.
+- Sign-up, password-reset and email-confirmation endpoints are rate-limited in nginx and again in the application, because nginx can be bypassed by anything that reaches the backend directly. "Resend the confirmation email" always answers OK, so it never reveals whether an address has an account.
 - Every mutating action is written to `audit_log`.

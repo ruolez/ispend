@@ -16,6 +16,14 @@ TEMPLATES = {
                  "Confirm your email address so you can subscribe when the trial ends:\n{link}\n\n"
                  "If you did not create this account, ignore this message.\n"),
     },
+    "welcome_pending": {
+        "subject": "Confirm your email to start using iSpend",
+        "text": ("Hi {username},\n\n"
+                 "Your account is ready, and your free trial runs until {trial_end}.\n\n"
+                 "You need to confirm your email address before you can sign in:\n{link}\n\n"
+                 "The link works for the next 7 days. If you did not create this account, "
+                 "ignore this message.\n"),
+    },
     "verify_email": {
         "subject": "Confirm your email address",
         "text": ("Hi {username},\n\nConfirm your email address for iSpend:\n{link}\n\n"

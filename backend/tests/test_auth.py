@@ -16,7 +16,8 @@ import auth  # noqa: E402
 import user_state  # noqa: E402
 import util  # noqa: E402
 
-HASH = generate_password_hash("correct-horse-battery")
+PASSWORD = "correct-horse-battery"  # noqa: S105 - test fixture
+HASH = generate_password_hash(PASSWORD)
 
 
 def build_app():
@@ -157,6 +158,75 @@ class LoginTest(unittest.TestCase):
         res = c.post("/api/auth/login", data=json.dumps([1, 2]), content_type="application/json")
         self.assertEqual(res.status_code, 400)
         self.assertIn(b"JSON object expected", res.get_data())
+
+
+PENDING = {"id": 3, "username": "amy@b.co", "email": "amy@b.co", "role": "user", "status": "active",
+           "password_hash": HASH, "preferences": {}, "verification_required": True,
+           "email_verified_at": None}
+
+
+class UnverifiedLoginTest(unittest.TestCase):
+    """A self-signup that has not used its link may not sign in while verification is enforced."""
+
+    def setUp(self):
+        self.app = build_app()
+        FAKE.settings.clear()
+        FAKE.settings["smtp_host"] = "smtp.example.com"
+        FAKE.settings["smtp_from_email"] = "noreply@example.com"
+
+    def tearDown(self):
+        FAKE.settings.clear()
+
+    def _login_as(self, user, password=None):
+        c = self.app.test_client()
+        password = PASSWORD if password is None else password
+        with mock.patch.object(FAKE, "query", side_effect=_stubs.Router([("FROM users WHERE username", user)])), \
+                mock.patch.object(FAKE, "execute", side_effect=_stubs.Router(default=1)), \
+                mock.patch.object(util, "db", FAKE), mock.patch.object(auth, "db", FAKE):
+            return c, c.post("/api/auth/login", data=json.dumps({"username": user["username"], "password": password}),
+                             content_type="application/json")
+
+    def test_refused_only_after_the_password_check(self):
+        c, res = self._login_as(PENDING)
+        self.assertEqual((res.status_code, res.get_json()),
+                         (403, {"error": user_state.UNVERIFIED_MESSAGE, "code": "email_unverified"}))
+        with c.session_transaction() as s:
+            self.assertNotIn("user_id", s)
+        _, res = self._login_as(PENDING, password="not-the-password")
+        self.assertEqual((res.status_code, res.get_json()), (401, {"error": "Invalid username or password"}))
+
+    def test_locked_wins_over_unverified(self):
+        _, res = self._login_as({**PENDING, "status": "locked"})
+        self.assertEqual(res.get_json(), {"error": user_state.BLOCKED_MESSAGE})
+
+    def test_turning_the_switch_off_or_losing_email_releases_a_pending_account(self):
+        for name, settings in (("switch off", {**FAKE.settings, "signup_require_verification": "0"}),
+                               ("no smtp", {})):
+            with self.subTest(name):
+                FAKE.settings.clear()
+                FAKE.settings.update(settings)
+                _, res = self._login_as(PENDING)
+                self.assertEqual(res.status_code, 200)
+
+    def test_accounts_that_never_had_the_flag_are_not_gated(self):
+        """Admin-created and pre-existing accounts: unverified, but the flag was never set."""
+        for row in ({**PENDING, "verification_required": False}, {k: v for k, v in PENDING.items() if k != "verification_required"}):
+            with self.subTest(row=row):
+                _, res = self._login_as(row)
+                self.assertEqual(res.status_code, 200)
+
+
+class VerificationPredicateTest(unittest.TestCase):
+    def test_needs_verification(self):
+        pending = {"verification_required": True, "email_verified_at": None}
+        cases = ((pending, True, True),
+                 (pending, False, False),
+                 ({**pending, "email_verified_at": "2026-09-21"}, True, False),
+                 ({**pending, "verification_required": False}, True, False),
+                 ({}, True, False),
+                 (None, True, False))
+        self.assertEqual([user_state.needs_verification(row, enforced) for row, enforced, _ in cases],
+                         [want for _, _, want in cases])
 
 
 class PasswordPolicyTest(unittest.TestCase):

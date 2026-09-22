@@ -39,9 +39,11 @@ $('#signup-form').addEventListener('submit', async (e) => {
   if (!email || !password) return showError('Enter an email address and a password.');
   try {
     await ui.busy($('#signup-btn'), async () => {
-      await api('/api/auth/signup', { method: 'POST', body: { email, password } });
+      const r = await api('/api/auth/signup', { method: 'POST', body: { email, password } });
+      if (r.pending_verification) return showPending(r.email);
       clearUserState();
       location.href = '/index.html';
+      return undefined;
     }, { silent: true, rethrow: true });
   } catch (err) {
     if (err.data && err.data.code === 'email_taken') {
@@ -51,3 +53,21 @@ $('#signup-form').addEventListener('submit', async (e) => {
   }
   return undefined;
 });
+
+/* The account exists but cannot sign in until the emailed link is opened. */
+function showPending(email) {
+  document.querySelector('h1').textContent = 'Check your inbox';
+  document.querySelector('.login-sub').textContent = 'One more step.';
+  $('#page-body').innerHTML = ui.emptyState({
+    icon: 'inbox-check', title: 'We emailed you a link',
+    body: `Open the message we sent to ${email} to confirm your address, then sign in.`,
+    action: { label: 'Resend the email', act: 'resend-pending' } });
+  $('#page-body').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act="resend-pending"]');
+    if (!btn) return;
+    ui.busy(btn, async () => {
+      await api('/api/auth/email/resend-pending', { method: 'POST', body: { email } });
+      showNotice('Sent again. Give it a minute, and check your spam folder.');
+    });
+  });
+}
