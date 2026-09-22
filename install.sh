@@ -38,7 +38,9 @@ fail()  { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
 
 require_root() { [ "$(id -u)" -eq 0 ] || fail "Run this script as root: sudo bash install.sh"; }
 
-compose() { docker compose --project-directory "$INSTALL_DIR" "$@"; }
+# Run from inside the install dir: COMPOSE_FILE in .env lists the compose files with
+# relative paths, which Compose resolves against the current directory, not --project-directory.
+compose() { (cd "$INSTALL_DIR" && docker compose "$@"); }
 
 get_env() { grep -E "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 
@@ -123,7 +125,7 @@ wait_for_health() {
         if curl -fsSk "${url}/api/health" >/dev/null 2>&1; then ok "Application is up"; return 0; fi
         sleep 2
     done
-    warn "Health check timed out. Inspect logs with: docker compose --project-directory $INSTALL_DIR logs"
+    warn "Health check timed out. Inspect logs with: cd $INSTALL_DIR && docker compose logs"
     return 1
 }
 
@@ -215,7 +217,7 @@ install_renew_hook() {
     cat > "$RENEW_HOOK" <<EOF
 #!/usr/bin/env bash
 # Reload nginx inside the iSpend stack after certbot renews the certificate.
-docker compose --project-directory "$INSTALL_DIR" exec -T nginx nginx -s reload >/dev/null 2>&1 || true
+cd "$INSTALL_DIR" && docker compose exec -T nginx nginx -s reload >/dev/null 2>&1 || true
 EOF
     chmod +x "$RENEW_HOOK"
     systemctl enable --now certbot.timer >/dev/null 2>&1 || true
