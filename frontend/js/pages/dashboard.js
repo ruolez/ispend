@@ -335,7 +335,7 @@ async function renderDonut(data) {
   const canDrill = (c) => !state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0;
   legend.innerHTML = cats.map((c, i) => `<button type="button" class="legend-item" data-i="${i}" data-tip="${canDrill(c) ? 'Show subcategories' : 'View transactions'}">
     <span class="legend-name"><i class="dot" style="--c:${colorOf(c)}"></i><span class="truncate">${esc(c.name)}</span><span class="legend-pct">${fmtPct(c.pct / 100)}</span></span>
-    <span class="legend-val">${fmtMoney(c.total, cur)}${canDrill(c) ? icon('chevron-right', 'ico-sm legend-drill') : ''}</span></button>`).join('');
+    <span class="legend-val">${fmtMoney(c.total, cur)}${canDrill(c) ? icon('chevron-right', 'ico-sm legend-drill') : '<span class="legend-drill"></span>'}</span></button>`).join('');
   legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) pickCategory(cats[Number(b.dataset.i)]); };
   legend.onmouseover = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; chart.setActiveElements([{ datasetIndex: 0, index: Number(b.dataset.i) }]); chart.update(); };
   legend.onmouseleave = () => { chart.setActiveElements([]); chart.update(); };
