@@ -7,9 +7,9 @@ function rememberCategory(id) {
   try { localStorage.setItem(RECENT_CATS_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
 }
 
-/* categoryPicker({anchor, value, onPick(category|null), allowCreate, suggestedId, allowNone})
+/* categoryPicker({anchor, value, onPick(category|null), allowCreate, suggestedId, allowNone, noneLabel})
    -> popover handle. Ranks prefix > word-start > contains, on name and parent name. */
-async function categoryPicker({ anchor, value = null, onPick, allowCreate = true, suggestedId = null, allowNone = false, placeholder = 'Search categories…' } = {}) {
+async function categoryPicker({ anchor, value = null, onPick, allowCreate = true, suggestedId = null, allowNone = false, noneLabel = 'Uncategorized', placeholder = 'Search categories…' } = {}) {
   const flat = await store.categoriesFlat();
   const byId = new Map(flat.map((c) => [c.id, c]));
   const el = document.createElement('div');
@@ -72,7 +72,7 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
     }
     if (allowNone && !q) {
       rows.unshift({ id: null });
-      html = `<li class="menu-item cp-opt" role="option" id="${listId}-none" data-id="" aria-selected="false"><i class="dot" style="--c:var(--warning)"></i><span class="grow">Uncategorized</span></li>` + html;
+      html = `<li class="menu-item cp-opt" role="option" id="${listId}-none" data-id="" aria-selected="false"><i class="dot" style="--c:var(--warning)"></i><span class="grow">${esc(noneLabel)}</span>${value == null && noneLabel !== 'Uncategorized' ? `<span class="menu-check">${icon('check')}</span>` : ''}</li>` + html;
     }
     list.innerHTML = html;
     active = 0;

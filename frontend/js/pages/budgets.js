@@ -1,6 +1,8 @@
-/* Budgets: one limit per category and month, progress against this month's spending, copy last month. */
+/* Budgets: one limit per category and month, plus an optional category-less "All spending" limit that caps the
+   whole month and drives the summary tiles; progress against this month's spending, copy last month. */
 const bud = { month: null, list: null, progress: null, cats: new Map(), catsFlat: [], currency: 'USD', seq: 0, months: [] };
 const STATUS = { over: ['Over budget', 'badge-danger'], ahead: ['Ahead of pace', 'badge-warning'], on_track: ['On track', 'badge-neutral'] };
+const OVERALL_NAME = 'All spending';
 
 function currentYm() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function shiftYm(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
@@ -84,29 +86,37 @@ function render() {
   const t = p.totals;
   const stats = $$('#bud-stats .stat');
   const paint = (el, value, delta, cls) => { el.classList.remove('is-loading'); el.querySelector('.stat-value').textContent = value; const d = el.querySelector('.stat-delta'); d.textContent = delta; d.className = `stat-delta ${cls || ''}`; };
-  paint(stats[0], fmtMoney(t.budget, cur), `${fmtNumber(p.items.length)} categor${p.items.length === 1 ? 'y' : 'ies'}`);
+  const overall = overallItem();
+  const any = p.items.length > 0 || !!overall;
+  const catCount = `${fmtNumber(p.items.length)} categor${p.items.length === 1 ? 'y' : 'ies'}`;
+  paint(stats[0], fmtMoney(t.budget, cur), overall ? `${OVERALL_NAME} · ${catCount} budgeted` : catCount);
   paint(stats[1], fmtMoney(t.spent, cur), t.budget ? `${fmtPct(t.pct / 100)} used · ${fmtPct(p.elapsed_pct / 100)} of the month gone` : 'No budgets yet');
   paint(stats[2], fmtMoney(Math.max(t.remaining, 0), cur), t.remaining < 0 ? `Over by ${fmtMoney(-t.remaining, cur)}` : STATUS[t.pace_status][0], t.pace_status === 'over' ? 'stat-delta--bad' : t.pace_status === 'ahead' ? 'stat-delta--warn' : '');
   const prev = shiftYm(bud.month, -1);
-  $('#btn-copy').hidden = !bud.months.includes(prev) || p.items.length >= bud.months.length && bud.months.includes(bud.month) && false;
-  $('#bud-hint').textContent = p.items.length ? `${fmtPct(p.elapsed_pct / 100)} of the month has passed` : '';
+  $('#btn-copy').hidden = !bud.months.includes(prev);
+  $('#bud-hint').textContent = any ? `${fmtPct(p.elapsed_pct / 100)} of the month has passed` : '';
   const host = $('#bud-list');
-  if (!p.items.length) {
-    host.innerHTML = `<div class="card-body">${ui.emptyState({ icon: 'target', title: 'No budgets for this month', body: bud.months.includes(prev) ? `Copy ${fmtMonth(prev, { long: true })}'s budgets or add a new one.` : 'Set a monthly limit for a category to see how the month is going.', action: bud.months.includes(prev) ? { label: `Copy ${fmtMonth(prev)}`, act: 'copy-last' } : { label: 'Add budget', act: 'add-budget' } })}</div>`;
+  if (!any) {
+    host.innerHTML = `<div class="card-body">${ui.emptyState({ icon: 'target', title: 'No budgets for this month', body: bud.months.includes(prev) ? `Copy ${fmtMonth(prev, { long: true })}'s budgets or add a new one.` : 'Set a monthly limit for a category, or for all spending, to see how the month is going.', action: bud.months.includes(prev) ? { label: `Copy ${fmtMonth(prev)}`, act: 'copy-last' } : { label: 'Add budget', act: 'add-budget' } })}</div>`;
   } else {
-    host.innerHTML = `<div class="bud-rows">${p.items.map(rowHtml).join('')}</div>`;
+    host.innerHTML = `<div class="bud-rows">${(overall ? [overall, ...p.items] : p.items).map(rowHtml).join('')}</div>`;
   }
   const u = p.unbudgeted;
   $('#bud-unbudgeted').innerHTML = u.count
     ? `<p class="text-2 mb-3">${fmtMoney(u.spent, cur)} across ${fmtNumber(u.count)} categor${u.count === 1 ? 'y' : 'ies'} without a budget.</p><div class="list">${u.categories.map((c) => `<div class="list-item bud-unb"><span class="cat-icon" style="--c:${catColorOf(catOf(c.id))}">${icon(c.icon || 'tag')}</span><div class="grow"><div class="fw-500">${esc(c.name)}</div><div class="fs-sm text-3">${fmtMoney(c.total, cur)} this month</div></div><button type="button" class="btn btn-secondary btn-sm" data-act="set-budget" data-cat="${c.id}" data-amount="${Math.ceil(c.total)}">Set budget</button></div>`).join('')}</div>`
-    : ui.emptyState({ icon: 'check-circle', title: p.items.length ? 'Everything is budgeted' : 'Nothing spent yet', body: p.items.length ? 'Every category with spending this month has a limit.' : '' });
+    : ui.emptyState({ icon: 'check-circle', title: any ? 'Everything is budgeted' : 'Nothing spent yet', body: any ? 'Every category with spending this month has a limit.' : '' });
+}
+function overallItem() {
+  const o = bud.progress && bud.progress.overall;
+  return o ? { ...o, category_id: null, name: OVERALL_NAME, icon: 'target', parent_id: null } : null;
 }
 function rowHtml(it) {
-  const cur = bud.currency; const c = catOf(it.category_id);
+  const cur = bud.currency; const c = catOf(it.category_id); const global = it.category_id == null;
   const [label, badge] = STATUS[it.pace_status] || STATUS.on_track;
   const width = Math.min(it.pct, 100);
-  return `<div class="bud-row is-${it.pace_status}" data-id="${it.budget_id}" data-cat="${it.category_id}">
-    <div class="bud-name"><span class="cat-icon" style="--c:${catColorOf(c)}">${icon(it.icon || 'tag')}</span><div class="min-w-0"><div class="bud-title truncate">${esc(it.name)}</div><div class="bud-sub truncate">${esc(c && c.parent_name ? `${c.parent_name} › ` : '')}${it.note ? esc(it.note) : (c && c.parent_name ? 'subcategory' : 'category')}</div></div></div>
+  const sub = it.note ? esc(it.note) : global ? 'every category, including uncategorized' : (c && c.parent_name ? 'subcategory' : 'category');
+  return `<div class="bud-row ${global ? 'bud-row--overall' : ''} is-${it.pace_status}" data-id="${it.budget_id}" data-cat="${global ? '' : it.category_id}">
+    <div class="bud-name"><span class="cat-icon" style="--c:${global ? 'var(--text-2)' : catColorOf(c)}">${icon(it.icon || 'tag')}</span><div class="min-w-0"><div class="bud-title truncate">${esc(it.name)}</div><div class="bud-sub truncate">${esc(c && c.parent_name ? `${c.parent_name} › ` : '')}${sub}</div></div></div>
     <div class="bud-bar" role="progressbar" aria-label="${esc(it.name)} budget" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}"><span class="fill" style="width:${width.toFixed(1)}%"></span>${bud.progress.elapsed_pct > 0 && bud.progress.elapsed_pct < 100 ? `<i class="tick" style="left:${bud.progress.elapsed_pct}%" data-tip="${fmtPct(bud.progress.elapsed_pct / 100)} of the month gone"></i>` : ''}</div>
     <div class="bud-amounts num"><span class="spent">${fmtMoney(it.spent, cur)}</span><span class="text-4"> / </span><button type="button" class="bud-edit" data-act="edit-amount" data-id="${it.budget_id}" data-tip="Change the limit" aria-label="Change the ${esc(it.name)} budget, currently ${esc(fmtMoney(it.budget, cur))}">${fmtMoney(it.budget, cur)}</button></div>
     <div class="bud-left num ${it.remaining < 0 ? 'is-over' : ''}">${it.remaining < 0 ? `Over by ${fmtMoney(-it.remaining, cur)}` : `${fmtMoney(it.remaining, cur)} left`}${it.projected != null && it.pace_status !== 'over' ? `<span class="bud-proj">≈ ${fmtMoney(it.projected, cur)} by month end</span>` : ''}</div>
@@ -114,7 +124,10 @@ function rowHtml(it) {
     <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="menu" data-id="${it.budget_id}" aria-label="More for ${esc(it.name)}">${icon('more-horizontal')}</button>
   </div>`;
 }
-function itemById(id) { return (bud.progress.items || []).find((i) => i.budget_id === Number(id)) || null; }
+function itemById(id) {
+  const o = overallItem();
+  return o && o.budget_id === Number(id) ? o : (bud.progress.items || []).find((i) => i.budget_id === Number(id)) || null;
+}
 
 /* ---------- actions ---------- */
 async function onAction(e) {
@@ -186,22 +199,22 @@ function openBudgetModal(preset = {}) {
   const m = ui.modal({
     title: 'Add budget',
     html: `<form id="bf-form">
-      <div class="field"><label data-required>Category</label><button type="button" class="btn btn-secondary btn-block" id="bf-cat" style="justify-content:space-between"><span id="bf-cat-label" class="row gap-2 text-3">Choose a category…</span>${icon('chevron-down')}</button><div class="hint">A category and its subcategories cannot both have a budget in the same month.</div></div>
+      <div class="field"><label>Category</label><button type="button" class="btn btn-secondary btn-block" id="bf-cat" style="justify-content:space-between"><span id="bf-cat-label" class="row gap-2"></span>${icon('chevron-down')}</button><div class="hint">Leave it as “${OVERALL_NAME}” to cap the whole month, every category included. A category and its subcategories cannot both have a budget in the same month.</div></div>
       <div class="field"><label for="bf-amount" data-required>Monthly limit</label><input id="bf-amount" class="input num" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" value="${preset.amount ? Number(preset.amount).toFixed(2) : ''}"></div>
       <div class="field"><label for="bf-note">Note</label><input id="bf-note" class="input" maxlength="200" placeholder="Optional"></div>
       <div class="hint">For ${esc(fmtMonth(bud.month, { long: true }))}. Use “Copy last month” to carry budgets forward.</div>
       <button type="submit" hidden></button></form>`,
     actions: [{ label: 'Cancel' }, { label: 'Save budget', primary: true, onClick: async () => {
-      if (!ui.validate(m.el, [{ sel: '#bf-cat', test: () => !!categoryId || 'Choose a category' }, { sel: '#bf-amount', test: (v) => Number(v) > 0 || 'Enter a limit above zero' }])) return false;
+      if (!ui.validate(m.el, [{ sel: '#bf-amount', test: (v) => Number(v) > 0 || 'Enter a limit above zero' }])) return false;
       const r = await api('/api/budgets', { method: 'POST', body: { category_id: categoryId, month: bud.month, amount: Number(m.el.querySelector('#bf-amount').value), note: m.el.querySelector('#bf-note').value.trim() || null } });
       const c = catOf(r.category_id);
-      toast(`${c ? c.name : 'Budget'} · ${fmtMoney(r.amount, bud.currency)} a month`, { type: 'success' });
+      toast(`${c ? c.name : OVERALL_NAME} · ${fmtMoney(r.amount, bud.currency)} a month`, { type: 'success' });
       await load();
     } }],
   });
-  const setLabel = () => { const c = categoryId ? catOf(categoryId) : null; m.el.querySelector('#bf-cat-label').innerHTML = c ? `<i class="dot" style="--c:${catColorOf(c)}"></i><span class="text-1">${esc(c.path)}</span>` : '<span class="text-3">Choose a category…</span>'; };
+  const setLabel = () => { const c = categoryId ? catOf(categoryId) : null; m.el.querySelector('#bf-cat-label').innerHTML = c ? `<i class="dot" style="--c:${catColorOf(c)}"></i><span class="text-1">${esc(c.path)}</span>` : `${icon('target', 'ico-sm')}<span class="text-1">${OVERALL_NAME}</span>`; };
   setLabel();
-  m.el.querySelector('#bf-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowCreate: false, onPick: (c) => { if (c && c.kind === 'transfer') { toast('Transfers cannot be budgeted', { type: 'error' }); return; } categoryId = c ? c.id : null; setLabel(); ui.fieldError(m.el.querySelector('#bf-cat'), null); } }));
+  m.el.querySelector('#bf-cat').addEventListener('click', (e) => categoryPicker({ anchor: e.currentTarget, value: categoryId, allowCreate: false, allowNone: true, noneLabel: OVERALL_NAME, onPick: (c) => { if (c && c.kind === 'transfer') { toast('Transfers cannot be budgeted', { type: 'error' }); return; } categoryId = c ? c.id : null; setLabel(); } }));
   m.el.querySelector('#bf-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
   if (categoryId) setTimeout(() => m.el.querySelector('#bf-amount').focus(), 30);
 }

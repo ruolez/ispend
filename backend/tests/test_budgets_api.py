@@ -42,7 +42,7 @@ class BudgetsApiTest(unittest.TestCase):
 
     def test_validation(self):
         self.q.routes += [("FROM categories WHERE id = %s AND user_id", lambda sql, p: CAT if p[0] == 3 else None)]
-        cases = [({}, 400, "category_id is required"), ({"category_id": 3, "amount": 0}, 400, "amount must be greater than zero"),
+        cases = [({}, 400, "amount must be an amount"), ({"category_id": 3, "amount": 0}, 400, "amount must be greater than zero"),
                  ({"category_id": 3, "amount": "abc"}, 400, "amount must be an amount"), ({"category_id": 3, "amount": 5, "month": "2026-13"}, 400, "month must be YYYY-MM"),
                  ({"category_id": 99, "amount": 5}, 404, "Category not found"), ({"category_id": 3, "amount": 5, "note": "x" * 201}, 400, "note must be at most 200 characters")]
         for body, status, msg in cases:
@@ -73,6 +73,15 @@ class BudgetsApiTest(unittest.TestCase):
         self.assertEqual(params, (1, 3, date(2026, 9, 1), Decimal("600.00"), "lunches"))
         self.x.routes = [("INSERT INTO budgets", {"id": 7, "inserted": False})]
         self.assertEqual(self._call("post", "/api/budgets", {"category_id": 3, "amount": 650, "month": "2026-09"}).status_code, 200)
+
+    def test_global_budget_skips_category_checks(self):
+        self.q.routes += [("FROM budgets b WHERE b.id", {**ROW, "category_id": None, "amount": Decimal("500.00")})]
+        self.x.routes += [("INSERT INTO budgets", {"id": 7, "inserted": True})]
+        res = self._call("post", "/api/budgets", {"amount": 500, "month": "2026-09"})
+        self.assertEqual(res.status_code, 201)
+        self.assertIsNone(res.get_json()["category_id"])
+        self.assertEqual(self.q.sql("FROM categories"), [])
+        self.assertEqual(self.x.sql("INSERT INTO budgets")[0][1], (1, None, date(2026, 9, 1), Decimal("500.00"), None))
 
     def test_update_and_delete_require_ownership(self):
         self.assertEqual(self._call("put", "/api/budgets/7", {"amount": 10}).status_code, 404)

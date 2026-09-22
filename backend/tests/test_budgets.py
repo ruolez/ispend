@@ -68,8 +68,31 @@ class BuildProgressTest(unittest.TestCase):
         # Groceries has no budget; Transport's only spending sits in the budgeted Fuel child; Dining is budgeted
         self.assertEqual(out["unbudgeted"], {"spent": 200.0, "count": 1, "categories": [{"id": 5, "name": "Groceries", "color": "c3", "icon": "cart", "total": 200.0}]})
 
+    def test_no_global_budget_leaves_overall_empty(self):
+        out = budgets.build_progress([{"id": 10, "category_id": 1, "amount": 200, "note": None}], ROWS, 0.5, CATS)
+        self.assertIsNone(out["overall"])
+        self.assertEqual(out["totals"], {"budget": 200.0, "spent": 150.0, "remaining": 50.0, "pct": 75.0, "pace_status": "ahead"})
+
+    def test_global_budget_counts_all_spending_including_uncategorized(self):
+        # every ROWS total: 100 + 40 + 10 + 200 + 30 + 7 (uncategorized) = 387
+        out = budgets.build_progress([{"id": 12, "category_id": None, "amount": 400, "note": "whole month"}], ROWS, 0.5, CATS)
+        self.assertEqual(out["items"], [])
+        self.assertEqual(out["overall"], {"budget_id": 12, "budget": 400.0, "spent": 387.0, "remaining": 13.0, "pct": 96.8,
+                                          "projected": 774.0, "pace_status": "ahead", "note": "whole month"})
+        self.assertEqual(out["totals"], {"budget": 400.0, "spent": 387.0, "remaining": 13.0, "pct": 96.8, "pace_status": "ahead"})
+        self.assertEqual(out["unbudgeted"]["count"], 3)
+
+    def test_global_budget_drives_totals_beside_category_budgets(self):
+        out = budgets.build_progress([{"id": 12, "category_id": None, "amount": 300, "note": None},
+                                      {"id": 10, "category_id": 1, "amount": 200, "note": None},
+                                      {"id": 11, "category_id": 9, "amount": 20, "note": "petrol"}], ROWS, 0.5, CATS)
+        self.assertEqual([(i["category_id"], i["spent"], i["pace_status"]) for i in out["items"]], [(9, 30.0, "over"), (1, 150.0, "ahead")])
+        self.assertEqual(out["overall"]["budget_id"], 12)
+        self.assertEqual(out["totals"], {"budget": 300.0, "spent": 387.0, "remaining": -87.0, "pct": 129.0, "pace_status": "over"})
+
     def test_empty(self):
-        self.assertEqual(budgets.build_progress([], [], 0.3, {}), {"items": [], "totals": {"budget": 0.0, "spent": 0.0, "remaining": 0.0, "pct": 0.0, "pace_status": "on_track"},
+        self.assertEqual(budgets.build_progress([], [], 0.3, {}), {"items": [], "overall": None,
+                                                                    "totals": {"budget": 0.0, "spent": 0.0, "remaining": 0.0, "pct": 0.0, "pace_status": "on_track"},
                                                                     "unbudgeted": {"spent": 0.0, "count": 0, "categories": []}})
 
     def test_month_meta(self):

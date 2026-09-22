@@ -2429,6 +2429,19 @@ def test_f13_budgets(page, qapi, browser):
         toast(page, "a month")
         page.wait_for_timeout(500)
         F.check(len(qapi.get(f"/api/budgets?month={month}")["budgets"]) == 2, "second budget saved from the unbudgeted card")
+    # a budget with no category caps all spending and drives the tiles
+    dismiss_toasts(page)
+    page.locator("#btn-add").click()
+    page.wait_for_selector("#bf-cat", timeout=4000)
+    F.check("All spending" in page.locator("#bf-cat").inner_text(), "category defaults to All spending")
+    page.fill("#bf-amount", "900")
+    page.locator(".modal-foot .btn-primary").click()
+    toast(page, "All spending")
+    page.wait_for_selector(".bud-row--overall", timeout=8000)
+    F.check("bud-row--overall" in (page.locator(".bud-row").first.get_attribute("class") or ""), "All spending row is pinned first")
+    F.check("$900.00" in page.locator("#bud-stats .stat").first.inner_text(), "Budgeted tile shows the global limit")
+    g = [b for b in qapi.get(f"/api/budgets?month={month}")["budgets"] if b["category_id"] is None]
+    F.check(len(g) == 1 and g[0]["amount"] == 900.0, "global budget persisted without a category")
     shot(page, "F13-budgets", full=True)
     # dashboard card and reports column
     goto(page, "/index.html", wait_sel="#budget-card:not([hidden])", soft=F, label="dashboard with budgets")

@@ -49,30 +49,42 @@ def projected(spent, elapsed):
     return round(spent / elapsed, 2)
 
 
+def _progress(spent, budget, elapsed):
+    return {"budget": round(budget, 2), "spent": round(spent, 2), "remaining": round(budget - spent, 2),
+            "pct": round(spent / budget * 100, 1) if budget else 0.0,
+            "projected": projected(spent, elapsed), "pace_status": pace_status(spent, budget, elapsed)}
+
+
 def build_progress(budgets, rows, elapsed, categories=None):
     """budgets: [{id, category_id, amount, note}], rows: by_category sub rows for the month,
-    categories: {id: {name, color, icon, parent_id}}. Items are sorted by percent used (highest first)."""
+    categories: {id: {name, color, icon, parent_id}}. Items are sorted by percent used (highest first).
+    A budget without a category is the month's global limit (`overall`): it is measured against every
+    row, uncategorized included, and when present it is what `totals` reports."""
     spent_by = rollup(rows)
     cats = categories or {}
     items = []
+    overall = None
     for b in budgets:
         cid = b["category_id"]
         budget = float(b["amount"])
-        spent = float(spent_by.get(cid, 0.0))
+        if cid is None:
+            all_spent = sum(float(r.get("total") or 0) for r in rows)
+            overall = {"budget_id": b["id"], **_progress(all_spent, budget, elapsed), "note": b.get("note")}
+            continue
         meta = cats.get(cid, {})
         items.append({
             "budget_id": b["id"], "category_id": cid, "name": meta.get("name") or "Category",
             "color": meta.get("color") or "c1", "icon": meta.get("icon") or "tag", "parent_id": meta.get("parent_id"),
-            "budget": round(budget, 2), "spent": round(spent, 2), "remaining": round(budget - spent, 2),
-            "pct": round(spent / budget * 100, 1) if budget else 0.0,
-            "projected": projected(spent, elapsed), "pace_status": pace_status(spent, budget, elapsed),
-            "note": b.get("note"),
+            **_progress(float(spent_by.get(cid, 0.0)), budget, elapsed), "note": b.get("note"),
         })
     items.sort(key=lambda x: (-x["pct"], x["name"]))
-    tb = round(sum(i["budget"] for i in items), 2)
-    ts = round(sum(i["spent"] for i in items), 2)
-    totals = {"budget": tb, "spent": ts, "remaining": round(tb - ts, 2),
-              "pct": round(ts / tb * 100, 1) if tb else 0.0, "pace_status": pace_status(ts, tb, elapsed) if tb else "on_track"}
+    if overall:
+        totals = {k: overall[k] for k in ("budget", "spent", "remaining", "pct", "pace_status")}
+    else:
+        tb = round(sum(i["budget"] for i in items), 2)
+        ts = round(sum(i["spent"] for i in items), 2)
+        totals = {"budget": tb, "spent": ts, "remaining": round(tb - ts, 2),
+                  "pct": round(ts / tb * 100, 1) if tb else 0.0, "pace_status": pace_status(ts, tb, elapsed) if tb else "on_track"}
     budgeted = {i["category_id"] for i in items}
     parents = {}
     for r in rows:
@@ -94,7 +106,7 @@ def build_progress(budgets, rows, elapsed, categories=None):
             unb.append({"id": pid, "name": r.get("name") or "Category", "color": r.get("color") or "muted",
                         "icon": r.get("icon") or "tag", "total": round(t, 2)})
     unb.sort(key=lambda x: -x["total"])
-    return {"items": items, "totals": totals,
+    return {"items": items, "overall": overall, "totals": totals,
             "unbudgeted": {"spent": round(sum(x["total"] for x in unb), 2), "count": len(unb), "categories": unb[:3]}}
 
 

@@ -55,6 +55,7 @@ NO_FIXUP_NEEDED = {
     "016_import_layouts.sql",
     "017_import_layouts_per_account.sql",
     "018_user_verification_required.sql",
+    "019_budgets_optional_category.sql",
 }
 
 

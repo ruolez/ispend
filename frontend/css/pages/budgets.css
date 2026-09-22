@@ -2,8 +2,10 @@
 .stat-delta--warn { color: var(--warning); }
 .month-nav #month-btn { min-width: 170px; }
 .bud-rows { display: flex; flex-direction: column; }
-.bud-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(120px, 1fr) auto minmax(120px, auto) auto 28px; gap: var(--sp-3); align-items: center; padding: 10px var(--sp-5); border-bottom: 1px solid var(--border); }
+.bud-row { display: grid; grid-template-columns: minmax(88px, 1.4fr) minmax(56px, 1fr) auto minmax(110px, auto) auto 28px; gap: var(--sp-3); align-items: center; padding: 10px var(--sp-5); border-bottom: 1px solid var(--border); }
 .bud-row:last-child { border-bottom: 0; }
+.bud-row--overall { background: var(--surface-2); border-bottom: 2px solid var(--border-strong); }
+.bud-row--overall .bud-title { font-weight: 600; }
 .bud-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .min-w-0 { min-width: 0; }
 .bud-title { font-weight: 500; }

@@ -135,14 +135,15 @@ async function loadBudgetCard(ym) {
   const cur = state.currency;
   const label = fmtMonth(ym, { long: true });
   host.hidden = false;
-  if (!p.items.length) {
-    host.innerHTML = `<div class="card-body row-between gap-3 wrap"><div><div class="fw-600">No budgets for ${esc(label)}</div><div class="text-3 fs-sm">Set a monthly limit per category to see how the month is going.</div></div><a class="btn btn-secondary btn-sm" href="/budgets.html${toQuery({ month: ym })}">${icon('target', 'ico-sm')}Set budgets</a></div>`;
+  if (!p.items.length && !p.overall) {
+    host.innerHTML = `<div class="card-body row-between gap-3 wrap"><div><div class="fw-600">No budgets for ${esc(label)}</div><div class="text-3 fs-sm">Set a monthly limit per category, or for all spending, to see how the month is going.</div></div><a class="btn btn-secondary btn-sm" href="/budgets.html${toQuery({ month: ym })}">${icon('target', 'ico-sm')}Set budgets</a></div>`;
     return;
   }
   const t = p.totals;
   const tone = t.pace_status === 'over' ? 'text-danger' : t.pace_status === 'ahead' ? 'text-warning' : '';
+  const rows = p.overall ? [{ ...p.overall, name: 'All spending', icon: 'target', color: null }, ...p.items.slice(0, 5)] : p.items.slice(0, 6);
   host.innerHTML = `<header class="card-head"><h2>Budgets · <span class="text-3 fw-500">${esc(label)}</span></h2><div class="card-actions"><span class="hint ${tone}">${esc(fmtMoney(t.spent, cur))} of ${esc(fmtMoney(t.budget, cur))}${t.remaining < 0 ? ` · over by ${esc(fmtMoney(-t.remaining, cur))}` : ''}</span><a class="btn btn-ghost btn-xs" href="/budgets.html${toQuery({ month: ym })}">All budgets</a></div></header>
-    <div class="card-body bud-mini">${p.items.slice(0, 6).map((it) => `<a class="bud-mini-row is-${it.pace_status}" href="/budgets.html${toQuery({ month: ym })}"><span class="cat-icon" style="--c:${catColor(it.color || 'muted')}">${icon(it.icon || 'tag')}</span><span class="bud-mini-name truncate">${esc(it.name)}</span><span class="bud-mini-bar" aria-hidden="true"><span style="width:${Math.min(it.pct, 100).toFixed(1)}%"></span></span><span class="bud-mini-val num">${it.remaining < 0 ? `Over by ${esc(fmtMoney(-it.remaining, cur))}` : `${esc(fmtMoney(it.remaining, cur))} left`}</span></a>`).join('')}</div>`;
+    <div class="card-body bud-mini">${rows.map((it) => `<a class="bud-mini-row is-${it.pace_status}" href="/budgets.html${toQuery({ month: ym })}"><span class="cat-icon" style="--c:${it.color ? catColor(it.color) : 'var(--text-2)'}">${icon(it.icon || 'tag')}</span><span class="bud-mini-name truncate">${esc(it.name)}</span><span class="bud-mini-bar" aria-hidden="true"><span style="width:${Math.min(it.pct, 100).toFixed(1)}%"></span></span><span class="bud-mini-val num">${it.remaining < 0 ? `Over by ${esc(fmtMoney(-it.remaining, cur))}` : `${esc(fmtMoney(it.remaining, cur))} left`}</span></a>`).join('')}</div>`;
 }
 
 /* ---------- first-run checklist ---------- */

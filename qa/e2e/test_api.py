@@ -1687,9 +1687,33 @@ class TestBudgets:
             u1.delete(f"/api/budgets/{x['id']}")
         u1.delete(f"/api/categories/{sub['id']}")
 
+    def test_global_budget_caps_all_spending(self, u1, u2, manual):
+        y = manual["year"]
+        cat_a, m, nxt = manual["cat_a"]["id"], f"{y}-08", f"{y}-09"
+        r = u1.post("/api/budgets", json={"month": m, "amount": 400, "note": "everything"})
+        assert r.status_code == 201, r.text
+        g = r.json()
+        assert (g["category_id"], g["month"], g["amount"], g["note"]) == (None, m, 400.0, "everything")
+        r = u1.post("/api/budgets", json={"month": m, "amount": 350})
+        assert r.status_code == 200 and r.json()["id"] == g["id"]  # one global row per month
+        assert u1.post("/api/budgets", json={"category_id": cat_a, "month": m, "amount": 80}).status_code == 201
+        p = u1.get("/api/budgets/progress", params={"month": m}).json()
+        # 40 (cat_a) + 275.5 (cat_b) + 7.25 uncategorized: the global limit counts every spend row
+        assert p["overall"] == {"budget_id": g["id"], "budget": 350.0, "spent": 322.75, "remaining": 27.25, "pct": 92.2,
+                                "projected": None, "pace_status": "on_track", "note": None}
+        assert p["totals"] == {"budget": 350.0, "spent": 322.75, "remaining": 27.25, "pct": 92.2, "pace_status": "on_track"}
+        assert [i["category_id"] for i in p["items"]] == [cat_a]
+        assert u2.delete(f"/api/budgets/{g['id']}").status_code == 404
+        assert u1.post("/api/budgets/copy", json={"from": m, "to": nxt}).json() == {"copied": 2, "skipped": 0}
+        assert u1.get("/api/budgets/progress", params={"month": nxt}).json()["overall"]["budget"] == 350.0
+        assert u1.delete(f"/api/budgets/{g['id']}").json() == {"ok": True}
+        assert u1.get("/api/budgets/progress", params={"month": m}).json()["overall"] is None
+        for x in u1.get("/api/budgets", params={"month": m}).json()["budgets"] + u1.get("/api/budgets", params={"month": nxt}).json()["budgets"]:
+            u1.delete(f"/api/budgets/{x['id']}")
+
     def test_empty_user_progress_is_zero(self, u2):
         p = u2.get("/api/budgets/progress").json()
-        assert p["items"] == [] and p["totals"]["budget"] == 0.0 and p["unbudgeted"] == {"spent": 0.0, "count": 0, "categories": []}
+        assert p["items"] == [] and p["overall"] is None and p["totals"]["budget"] == 0.0 and p["unbudgeted"] == {"spent": 0.0, "count": 0, "categories": []}
         assert u2.get("/api/budgets").json()["budgets"] == []
 
 

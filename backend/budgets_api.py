@@ -1,5 +1,6 @@
-"""/api/budgets: per-category monthly budgets and their progress. Never touches reports.py; the
-progress view composes reports.by_category so existing report payloads stay byte-identical."""
+"""/api/budgets: monthly budgets per category, plus one optional category-less row per month that caps
+all spending. Never touches reports.py; the progress view composes reports.by_category so existing
+report payloads stay byte-identical."""
 import re
 
 from flask import Blueprint, abort, jsonify, request, session
@@ -80,18 +81,19 @@ def list_budgets():
 def upsert_budget():
     uid = _uid()
     data = json_body()
-    category_id = to_int(data.get("category_id"), "category_id", required=True)
+    category_id = to_int(data.get("category_id"), "category_id")
     start, _end = _month(data.get("month"))
     amount = to_money(data.get("amount"), "amount")
     if amount <= 0:
         return api_error("amount must be greater than zero")
     note = _note(data.get("note"))
-    cat = db.query("SELECT id, name, parent_id, kind FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
-    if not cat:
-        return api_error("Category not found", 404)
-    if cat["kind"] == "transfer":
-        return api_error("Transfers cannot be budgeted")
-    _check_overlap(uid, cat, start)
+    if category_id is not None:
+        cat = db.query("SELECT id, name, parent_id, kind FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
+        if not cat:
+            return api_error("Category not found", 404)
+        if cat["kind"] == "transfer":
+            return api_error("Transfers cannot be budgeted")
+        _check_overlap(uid, cat, start)
     row = db.execute(
         """INSERT INTO budgets (user_id, category_id, month, amount, note) VALUES (%s, %s, %s, %s, %s)
            ON CONFLICT (user_id, category_id, month) DO UPDATE SET amount = EXCLUDED.amount, note = EXCLUDED.note, updated_at = now()

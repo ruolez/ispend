@@ -125,8 +125,10 @@ Layers (modal/drawer/popover/palette) trap focus, close on Esc, and restore focu
 
 ## pickers.js
 ```js
-categoryPicker({ anchor, value: currentCategoryId, onPick: (cat|null) => {}, allowCreate:true, suggestedId, allowNone:false });
+categoryPicker({ anchor, value: currentCategoryId, onPick: (cat|null) => {}, allowCreate:true, suggestedId, allowNone:false, noneLabel:'Uncategorized' });
 // ARIA combobox popover; groups Suggested / Recent (localStorage ispend.recentCats) / tree; typing ranks prefix > word-start > contains;
+// allowNone prepends a "none" option that picks null; a custom noneLabel (e.g. budgets' "All spending") makes it a real
+// selectable state, checked when value is null, rather than a "clear" action.
 // "Create “x”" POSTs /api/categories and invalidates the store. `cat` has {id,name,color,parent_name,path,…}.
 tagPicker({ anchor, selected:new Set(ids), onChange(set), allowCreate:true });   // multi-select with inline create; rows are role=checkbox
 dateRangePicker({ anchor, value:{preset:'this-month'} | {from:'2026-01-01', to:'2026-01-31'}, onChange(value), allowAll });
