@@ -103,3 +103,14 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
 - Activity rows are humanized (`auditTitle()`), grouped by day (`.adm-day`), and carry `detail` as
   `.adm-kv` chips; the filter still uses raw action strings.
 - `r` refreshes the current tab (it was advertised in the shortcuts sheet before but never registered).
+
+## Added 2026-09-25 (mobile makeover)
+- `qa/e2e/test_mobile.py`: touch/mobile device matrix (SE 320, 375, 390, 430, landscape 844×390,
+  iPad mini 744) with `is_mobile` + `has_touch`. Per page: no horizontal overflow (every device), and at
+  375: inputs ≥ 16px (iOS focus zoom), hit areas ≥ 40px probed with `elementFromPoint` (so `::after`
+  expansions count), no text under 12px, no `title=""` tooltips. Plus shell checks (5 bottom tabs, More
+  opens a `.sheet`, one page title, date sheet inside the visual viewport, first transaction on the first
+  screen). Known defects are `xfail(strict=True)`; the phase that fixes one removes its mark.
+- `css_audit.touch_checks()` (+ `test_css_touch_rules`): no bare `100vh` without a `dvh` companion, no
+  `:hover` outside `@media (hover: hover)` (landing.css exempt). Joins `--check` once it passes.
+- `qa/e2e/phone_gallery.py <out-dir>`: every page × {320,375,430} × {light,dark} screenshots for review.

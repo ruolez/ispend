@@ -218,6 +218,44 @@ def static_checks():
         fails.append(f"css/tokens.css: dark token block defined {n_dark} times (expected once)")
     return fails
 
+def _blocks(css):
+    """yield (media_prelude_or_None, selector, body, line) for every rule, one @media level deep."""
+    out = []
+    def scan(start, end, media):
+        pos = start
+        while pos < end:
+            b = css.find('{', pos)
+            if b < 0 or b >= end:
+                break
+            head = css[pos:b].strip()
+            depth, k = 1, b + 1
+            while k < end and depth:
+                depth += {'{': 1, '}': -1}.get(css[k], 0)
+                k += 1
+            if head.startswith('@media') or head.startswith('@supports'):
+                scan(b + 1, k - 1, head)
+            elif not head.startswith('@'):
+                out.append((media, head, css[b + 1:k - 1], css.count(chr(10), 0, b) + 1))
+            pos = k
+    scan(0, len(css), None)
+    return out
+
+
+def touch_checks():
+    """Mobile-makeover rules: no bare 100vh (pair it with dvh) and hover styling only for real hover devices."""
+    fails = []
+    for f in CSS_FILES:
+        if f.endswith('landing.css'):
+            continue  # marketing page, out of the app makeover's scope
+        css = re.sub(r'/\*.*?\*/', lambda m: chr(10) * m.group(0).count(chr(10)), read(f), flags=re.S)
+        for media, sel, body, line in _blocks(css):
+            if '100vh' in body and 'dvh' not in body:
+                fails.append(f"{f}:{line} {sel[:60]} uses 100vh without a dvh companion")
+            if ':hover' in sel and not (media and 'hover: hover' in media.replace('hover:hover', 'hover: hover')):
+                fails.append(f"{f}:{line} {sel[:60]} :hover outside @media (hover: hover)")
+    return fails
+
+
 if __name__ == '__main__':
     if '--check' in sys.argv:
         problems = static_checks()
