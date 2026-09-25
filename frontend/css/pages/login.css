@@ -5,7 +5,7 @@
    so the theme toggle in .login-foot keeps meaning something. Below 960px the panel is dropped and
    what is left is the centred card these pages have always been. */
 
-.login-wrap { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 1fr; }
+.login-wrap { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 1.05fr 1fr; }
 
 .auth-form {
   display: flex; align-items: center; justify-content: center; padding: var(--sp-6);
@@ -34,7 +34,7 @@
 }
 
 .auth-brand { display: inline-flex; align-items: center; gap: 10px; color: #fff; font-weight: 650; font-size: var(--fs-lg); letter-spacing: -0.02em; align-self: flex-start; }
-.auth-brand:hover { text-decoration: none; opacity: 0.86; }
+@media (hover: hover) { .auth-brand:hover { text-decoration: none; opacity: 0.86; } }
 .auth-brand-mark { width: 32px; height: 32px; display: grid; place-items: center; }
 .auth-brand-mark .brand-mark { width: 28px; height: 28px; display: block; }
 
@@ -63,7 +63,7 @@
 }
 .login-legal { margin-top: var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-3); text-wrap: pretty; }
 .login-legal a { color: var(--text-2); text-decoration: underline; text-underline-offset: 0.2em; }
-.login-legal a:hover { color: var(--text-1); }
+@media (hover: hover) { .login-legal a:hover { color: var(--text-1); } }
 .login-links { display: flex; flex-direction: column; gap: 6px; align-items: center;
   margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--text-3); }
 

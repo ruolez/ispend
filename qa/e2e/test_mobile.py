@@ -40,10 +40,11 @@ MIN_TEXT_PX = 12
 
 # ---------------------------------------------------------------------------------------------
 # Known defects, removed phase by phase (see the mobile makeover plan).
-OVERFLOW_XFAIL = {("review", "se-320"), ("import", "se-320"), ("insights", "se-320"), ("statements", "landscape")}
-INPUT_XFAIL = {"transactions", "import", "reports", "insights", "rules", "admin", "login", "forgot"}
-TARGET_XFAIL = set(PAGES) | set(AUTH_PAGES)
-TEXT_XFAIL = set(PAGES) | set(AUTH_PAGES)
+OVERFLOW_XFAIL = {("review", "se-320"), ("import", "se-320"), ("statements", "landscape")}
+INPUT_XFAIL = set()
+TARGET_XFAIL = {"budgets", "categories", "index", "insights", "reports", "settings", "statements", "transactions",
+                "forgot", "login", "signup"}
+TEXT_XFAIL = set()
 TITLE_XFAIL = {"index", "reports", "review", "settings", "statements", "transactions"}
 
 

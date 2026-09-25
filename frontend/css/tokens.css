@@ -120,6 +120,22 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --row-h: 40px;
   --cell-py: 10px;
+
+  /* Touch sizing: controls are 36/30px for a mouse and grow to 44/40px under a coarse pointer
+     (phones, touch tablets); --tap is the minimum hit area pseudo-element expansions reach for. */
+  --control-h: 36px;
+  --control-h-sm: 30px;
+  --tap: 44px;
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --kb-inset: 0px;   /* height of the on-screen keyboard over the layout viewport, set by ui.js (iOS) */
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
 }
 
 /* .lp-dark: a dark island inside the light landing page (the product mock). */
@@ -212,6 +228,34 @@
   --sh-1: 0 1px 2px rgba(0, 0, 0, 0.35);
   --sh-2: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --sh-3: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Phone type ramp: the same rem tokens, one step larger at arm's length (12 / 13 / 15 / 16 / 17 /
+   22 / 28 px). --fs-md is 16px here, which is also what keeps iOS from zooming into a focused field.
+   The landing page (.lp) keeps its own tuned sizes. */
+@media (max-width: 768px) {
+  :root {
+    --fs-xs: 0.75rem;
+    --fs-sm: 0.8125rem;
+    --fs-base: 0.9375rem;
+    --fs-md: 1rem;
+    --fs-lg: 1.0625rem;
+    --fs-xl: 1.375rem;
+    --fs-2xl: 1.75rem;
+  }
+  .lp {
+    --fs-xs: 0.6875rem;
+    --fs-sm: 0.75rem;
+    --fs-base: 0.8125rem;
+    --fs-md: 0.875rem;
+    --fs-lg: 1rem;
+    --fs-xl: 1.25rem;
+    --fs-2xl: 1.625rem;
+  }
+}
+@media (pointer: coarse) {
+  :root { --control-h: 44px; --control-h-sm: 40px; }
+  .lp { --control-h: 36px; --control-h-sm: 30px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

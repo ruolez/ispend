@@ -4,7 +4,7 @@ Vanilla JS, no build step, classic `<script>` globals. Every authenticated page 
 
 ```html
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">  <!-- cover: shell pages + offline.html only -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">  <!-- cover: shell pages + offline.html only; auth pages keep interactive-widget without cover -->
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/img/icons/apple-touch-icon.png">
@@ -168,6 +168,13 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Import: `.dropzone.is-dragover` (`.dropzone-icon`, `.dropzone-title`, `.dropzone-sub`).
 - Misc: `.list > .list-item`, `.swatches > .swatch.active[style=--c]`, `.icon-grid > button.active`, `.timeline > .tl-item` (`.tl-dot`, `.tl-text`, `.tl-time`), `.avatar`, `.m-0`.
 - Breakpoints (the only widths allowed, checked by `css_audit.py --check`): 1280 (sidebar full), 960 (rail / off-canvas, `.btn.tb-menu` appears), 768 (bottom nav, drawer full-screen, card-mode tables), 640 (2-col stat grid, stacked headers), 480 (compact stats). Type sizes are rem tokens (`--fs-*`); radii `--r-xs|sm|md|lg|xl|pill`; never px literals for either.
+
+## Phones and touch
+- **Type ramp.** At ≤768px the `--fs-*` tokens step up one size (xs 12 · sm 13 · base 15 · md 16 · lg 17 · xl 22 · 2xl 28 px); the landing page (`.lp`) keeps its own. Inputs use `--fs-md`, which is 16px on phones, so iOS never zooms into a focused field; `-sm` inputs are raised to it too.
+- **Touch sizing.** Heights come from `--control-h` / `--control-h-sm` (36/30 for a mouse, 44/40 under `(pointer: coarse)`). Small controls (`.btn-sm/-xs`, `.seg-btn`, `.catchip`, `.chip`, `.legend-item`, `.toast-close`, `.tagchip-x`, `.switch-track`, `.row-link`, …) keep their look and get an invisible `::before` hit area that grows to `--tap` (44px). Don't give those classes a `::before` of your own.
+- **Hover.** Every `:hover` rule lives inside `@media (hover: hover)` so taps don't leave sticky hover states; `css_audit.py --check` enforces it, and also rejects a `100vh` without a `100dvh` companion.
+- **Layers.** Layers with `lock: true` (modals, drawers, phone sheets, the phone menu) put `html.is-locked` on the page so the background can't scroll. `--kb-inset` holds the iOS keyboard's height while a field has focus; bottom-docked UI adds it to its offset. `--safe-left/right` pad the shell in landscape.
+- **Tests.** `qa/e2e/test_mobile.py` (device matrix with touch) and `qa/e2e/phone_gallery.py` (screenshots) — see `qa/CONTEXT.md`.
 
 Conventions: no inline `onclick`; delegate `click` on a container and dispatch on `data-act` (and `data-id`). Every interpolated string goes through `esc()`. Money is neutral for expenses and green for income; red is for errors/warnings only.
 

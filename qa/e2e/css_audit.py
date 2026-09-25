@@ -213,6 +213,7 @@ def static_checks():
                 fails.append(f"{f}:{line} hex colour inside a data URI ({m.group(0)}); swap per theme with a token")
             else:
                 fails.append(f"{f}:{line} hex colour {m.group(0)} outside tokens.css")
+    fails += touch_checks()
     n_dark = tokens_css.count('--bg: #0c0e13')
     if n_dark != 1:
         fails.append(f"css/tokens.css: dark token block defined {n_dark} times (expected once)")

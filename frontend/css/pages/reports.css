@@ -19,7 +19,7 @@
 .delta--down { color: var(--success); }
 .delta--flat { color: var(--text-4); }
 .delta .ico { width: 12px; height: 12px; }
-.tbl.report-tbl tbody tr.is-clickable:hover .name { color: var(--accent); }
+@media (hover: hover) { .tbl.report-tbl tbody tr.is-clickable:hover .name { color: var(--accent); } }
 .totals-row td { font-weight: 600; background: var(--surface-2); }
 .chart-toolbar { display: flex; align-items: center; gap: var(--sp-2); }
 @media (max-width: 640px) {

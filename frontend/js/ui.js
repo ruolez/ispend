@@ -46,8 +46,26 @@ const ui = (() => {
     const el = (prefer && container.querySelector(prefer)) || container.querySelector('[autofocus]') || $$(FOCUSABLE, container).find((x) => !x.classList.contains('modal-close') && !x.classList.contains('drawer-close')) || container.querySelector(FOCUSABLE);
     if (el) el.focus();
   }
-  function pushLayer(layer) { layers.unshift(layer); }
-  function popLayer(layer) { const i = layers.indexOf(layer); if (i >= 0) layers.splice(i, 1); }
+  /* A layer with lock: true (modals, drawers, sheets, the phone menu) stops the page behind it from
+     scrolling while it is open. */
+  function syncLock() { document.documentElement.classList.toggle('is-locked', layers.some((l) => l.lock)); }
+  function pushLayer(layer) { layers.unshift(layer); syncLock(); }
+  function popLayer(layer) { const i = layers.indexOf(layer); if (i >= 0) layers.splice(i, 1); syncLock(); }
+
+  /* iOS Safari does not resize the layout viewport for the on-screen keyboard (no interactive-widget
+     support), so bottom-docked sheets would sit under it. --kb-inset carries the keyboard's height
+     while a text field has focus; pinch zoom leaves it at 0. */
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); };
+    const syncKeyboard = () => {
+      const inset = typing() && vv.scale <= 1.01 ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+      document.documentElement.style.setProperty('--kb-inset', `${inset}px`);
+    };
+    vv.addEventListener('resize', syncKeyboard);
+    vv.addEventListener('scroll', syncKeyboard);
+    document.addEventListener('focusout', () => setTimeout(syncKeyboard, 50));
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && layers.length && !e.defaultPrevented) {
       const top = layers[0];
@@ -110,6 +128,7 @@ const ui = (() => {
     if (closeBtn) closeBtn.addEventListener('click', () => handle.close());
     backdrop.addEventListener('mousedown', (e) => { if (closeOnBackdrop && dismissible && e.target === backdrop) handle.close(); });
     handle.onEsc = dismissible;
+    handle.lock = true;
     host.appendChild(backdrop);
     setInert(true);
     const untrap = trapFocus(el);
@@ -185,6 +204,7 @@ const ui = (() => {
     host.appendChild(wrap);
     setInert(true);
     const untrap = trapFocus(el);
+    handle.lock = true;
     pushLayer(handle);
     currentDrawer = handle;
     requestAnimationFrame(() => focusFirst(el, '.drawer-body input,.drawer-body button,.drawer-close'));
@@ -234,6 +254,7 @@ const ui = (() => {
       window.addEventListener('resize', position);
       document.addEventListener('scroll', onScroll, true);
     }, 0);
+    handle.lock = sheet;
     pushLayer(handle);
     return handle;
   }

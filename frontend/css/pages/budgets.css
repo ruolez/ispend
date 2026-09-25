@@ -18,7 +18,8 @@
 .bud-amounts { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .bud-amounts .spent { font-weight: 600; }
 .bud-edit { padding: 2px 4px; margin: -2px -4px; border-radius: var(--r-xs); color: var(--text-2); border-bottom: 1px dashed var(--border-strong); }
-.bud-edit:hover, .bud-edit:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+.bud-edit:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+@media (hover: hover) { .bud-edit:hover { color: var(--accent); border-bottom-color: var(--accent); } }
 .bud-amt-input { width: 110px; }
 .bud-left { white-space: nowrap; font-size: var(--fs-base); color: var(--text-2); display: flex; flex-direction: column; gap: 1px; }
 .bud-left.is-over { color: var(--danger-text); font-weight: 500; }

@@ -2,7 +2,7 @@
 .tx-search .input { padding-left: 32px; }
 .tbl-toolbar .btn .ico-sm { color: var(--text-3); }
 .tbl-toolbar .btn .count { margin-left: 2px; }
-.tx-wrap { max-height: calc(100vh - var(--topbar-h) - var(--safe-top) - 190px); min-height: 320px; }
+.tx-wrap { max-height: calc(100vh - var(--topbar-h) - var(--safe-top) - 190px); max-height: calc(100dvh - var(--topbar-h) - var(--safe-top) - 190px); min-height: 320px; }
 .tbl-tx { table-layout: fixed; min-width: 760px; }
 .tbl-tx .col-check { width: 40px; }
 .tbl-tx .col-date { width: 96px; white-space: nowrap; }
@@ -14,9 +14,10 @@
 .tbl-tx .merchant-raw { max-width: 100%; }
 .tbl-tx tr.is-transfer .merchant-name, .tbl-tx tr.is-excluded .merchant-name { color: var(--text-3); }
 .tbl-tx .row-actions { opacity: 0; transition: opacity var(--dur-1); justify-content: flex-end; display: flex; gap: 2px; }
-.tbl-tx tr:hover .row-actions, .tbl-tx tr.is-focused .row-actions, .tbl-tx tr:focus-within .row-actions { opacity: 1; }
+.tbl-tx tr.is-focused .row-actions, .tbl-tx tr:focus-within .row-actions { opacity: 1; }
+@media (hover: hover) { .tbl-tx tr:hover .row-actions { opacity: 1; } }
 .tbl-tx .catchip { cursor: pointer; }
-.tbl-tx .catchip:hover { border-color: var(--border-strong); }
+@media (hover: hover) { .tbl-tx .catchip:hover { border-color: var(--border-strong); } }
 .tbl-tx .catchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .catcell { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .catcell .catchip { min-width: 0; }
@@ -44,7 +45,7 @@
 .txd-flags { display: flex; flex-direction: column; gap: 10px; }
 .txd-flags .switch { justify-content: space-between; width: 100%; }
 .txd-others .list-item { padding: 8px 0; font-size: var(--fs-base); cursor: pointer; }
-.txd-others .list-item:hover { background: var(--surface-2); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: var(--r-md); }
+@media (hover: hover) { .txd-others .list-item:hover { background: var(--surface-2); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: var(--r-md); } }
 .txd-merchant-edit { display: flex; gap: 6px; align-items: center; }
 .txd-merchant-edit .input { flex: 1; }
 .txd-danger { padding-top: var(--sp-4); border-top: 1px solid var(--border); }
@@ -90,7 +91,8 @@
 /* description autocomplete in the Add transaction modal */
 .sug-list { max-height: 320px; overflow-y: auto; padding: 4px; }
 .sug-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 8px 10px; border-radius: var(--r-sm); cursor: pointer; }
-.sug-opt:hover, .sug-opt.active { background: var(--surface-2); }
+.sug-opt.active { background: var(--surface-2); }
+@media (hover: hover) { .sug-opt:hover { background: var(--surface-2); } }
 .sug-main { display: flex; flex-direction: column; min-width: 0; }
 .sug-name { font-weight: 500; color: var(--text-1); }
 .sug-meta { font-size: var(--fs-xs); color: var(--text-4); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }

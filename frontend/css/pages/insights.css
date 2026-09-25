@@ -9,7 +9,7 @@
 .rec-table th:last-child, .rec-table td:last-child { width: 36px; }
 .rec-merchant { display: flex; flex-direction: column; min-width: 0; }
 .rec-merchant a { color: var(--text-1); font-weight: 500; text-decoration: none; }
-.rec-merchant a:hover { color: var(--accent); }
+@media (hover: hover) { .rec-merchant a:hover { color: var(--accent); } }
 .rec-merchant .sub { font-size: var(--fs-xs); color: var(--text-4); }
 .cadence { text-transform: capitalize; }
 .rec-next { display: flex; flex-direction: column; align-items: flex-end; }
@@ -20,11 +20,12 @@
 .rec-amt { display: flex; flex-direction: column; align-items: flex-end; }
 .rec-amt .badge { margin-top: 2px; }
 .rec-dismiss { opacity: 0; transition: opacity var(--dur-1); }
-tr:hover .rec-dismiss, tr:focus-within .rec-dismiss { opacity: 1; }
+tr:focus-within .rec-dismiss { opacity: 1; }
+@media (hover: hover) { tr:hover .rec-dismiss { opacity: 1; } }
 .rec-foot { padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-3); display: flex; justify-content: space-between; }
 
 .anom-list { display: flex; flex-direction: column; gap: 10px; }
-.anom { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: start; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
+.anom { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
 .anom-ico { width: 36px; height: 36px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--warning-soft); color: var(--warning); }
 .anom--new_merchant .anom-ico { background: var(--info-soft); color: var(--accent); }
 .anom--duplicate_charge .anom-ico { background: var(--danger-soft); color: var(--danger); }
@@ -62,3 +63,7 @@ tr:hover .rec-dismiss, tr:focus-within .rec-dismiss { opacity: 1; }
   .rec-table th:last-child, .rec-table td:last-child { width: auto; }
 }
 
+@media (max-width: 640px) {
+  .anom { grid-template-columns: 36px minmax(0, 1fr); }
+  .anom-actions { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; }
+}

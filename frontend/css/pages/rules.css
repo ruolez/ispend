@@ -7,9 +7,10 @@
 .rule-list { list-style: none; margin: 0; padding: 0; }
 .rule { padding: 8px 16px; border-bottom: 1px solid var(--border); min-height: 52px; transition: background var(--dur-1); }
 .rule:last-child { border-bottom: 0; }
-.rule:hover, .rule:focus-within { background: var(--surface-2); }
+.rule:focus-within { background: var(--surface-2); }
+@media (hover: hover) { .rule:hover { background: var(--surface-2); } }
 .rule.is-off { opacity: 0.6; }
-.rule.is-off:hover { opacity: 1; }
+@media (hover: hover) { .rule.is-off:hover { opacity: 1; } }
 .rule.is-dragging { opacity: 0.35; }
 .rule.is-dropover { box-shadow: inset 0 2px 0 var(--accent); }
 .rule.is-saving { background: var(--accent-soft); }
@@ -17,8 +18,8 @@
 .rule-grip:active { cursor: grabbing; }
 .rule-prio { font-size: var(--fs-xs); color: var(--text-4); font-variant-numeric: tabular-nums; text-align: center; }
 .rule-cond { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.rule-cond .select { height: 30px; padding: 0 26px 0 8px; font-size: var(--fs-sm); background-position: right 8px center; width: auto; flex: 0 0 auto; }
-.rule-cond .rule-pattern { height: 30px; flex: 1 1 140px; min-width: 120px; font-family: var(--mono); font-size: var(--fs-sm); }
+.rule-cond .select { height: var(--control-h-sm); padding: 0 26px 0 8px; font-size: var(--fs-sm); background-position: right 8px center; width: auto; flex: 0 0 auto; }
+.rule-cond .rule-pattern { height: var(--control-h-sm); flex: 1 1 140px; min-width: 120px; font-family: var(--mono); font-size: var(--fs-sm); }
 .rule-cond .rule-pattern.is-invalid { border-color: var(--danger); }
 .rule-extra { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .rule-extra .badge { text-transform: none; letter-spacing: 0; font-weight: 500; }
@@ -29,7 +30,8 @@
 .rule-hits.is-zero { color: var(--text-4); }
 .rule-on { display: flex; justify-content: flex-end; }
 .rule-actions { display: flex; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity var(--dur-1); }
-.rule:hover .rule-actions, .rule:focus-within .rule-actions { opacity: 1; }
+.rule:focus-within .rule-actions { opacity: 1; }
+@media (hover: hover) { .rule:hover .rule-actions { opacity: 1; } }
 .rules-empty { padding: var(--sp-4); }
 .rule-name { font-size: var(--fs-xs); color: var(--text-4); width: 100%; margin-top: 2px; }
 
@@ -65,10 +67,16 @@
 .merch-tbl .merchant { min-width: 0; }
 .merch-name { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font: inherit; font-weight: 500; color: var(--text-1); cursor: text; text-align: left; border-radius: var(--r-sm); }
 .merch-name .ico { opacity: 0; color: var(--text-4); transition: opacity var(--dur-1); }
-.merch-name:hover .ico, .merch-name:focus-visible .ico { opacity: 1; }
+.merch-name:focus-visible .ico { opacity: 1; }
+@media (hover: hover) { .merch-name:hover .ico { opacity: 1; } }
 .merch-name-input { max-width: 260px; }
 .merch-tbl .row-actions { opacity: 0; transition: opacity var(--dur-1); }
-.merch-tbl tr:hover .row-actions, .merch-tbl tr:focus-within .row-actions { opacity: 1; }
+.merch-tbl tr:focus-within .row-actions { opacity: 1; }
+@media (hover: hover) { .merch-tbl tr:hover .row-actions { opacity: 1; } }
 #view-seg .seg-btn { white-space: nowrap; }
 @media (max-width: 960px) { .merch-tbl .col-used, .merch-tbl .col-last { display: none; } .merch-tbl .row-actions { opacity: 1; } }
 @media (max-width: 640px) { .page-actions #view-seg { width: 100%; } }
+
+@media (max-width: 768px) {
+  .rule-cond .select, .rule-cond .rule-pattern { font-size: var(--fs-md); }
+}

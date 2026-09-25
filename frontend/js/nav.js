@@ -133,7 +133,7 @@ async function initNav(activePage) {
     document.body.classList.add('sidebar-open');
     const sb = $('#sidebar');
     untrapMobile = ui.trapFocus(sb);
-    mobileLayer = { close: closeMobile, onEsc: true, opener: e && e.currentTarget };
+    mobileLayer = { close: closeMobile, onEsc: true, lock: true, opener: e && e.currentTarget };
     ui.pushLayer(mobileLayer);
     const first = sb.querySelector('a[href], button'); if (first) first.focus();
   }
