@@ -71,3 +71,15 @@
   .login-wrap { grid-template-columns: 1fr; }
   .auth-aside { display: none; }
 }
+
+@media (max-width: 640px) {
+  .login-wrap { align-items: start; padding: calc(var(--sp-6) + env(safe-area-inset-top, 0px)) var(--sp-4) var(--sp-6); }
+  .login-card { max-width: none; border: 0; box-shadow: none; background: transparent; padding: var(--sp-6) var(--sp-1) var(--sp-4); animation: none; }
+  .login-card h1 { font-size: var(--fs-2xl); }
+  .login-sub { font-size: var(--fs-md); }
+  .login-card .btn-primary.btn-block { height: 48px; font-size: var(--fs-md); }
+}
+@media (pointer: coarse) {
+  .login-links a, .login-foot a, .login-legal a { display: inline-flex; align-items: center; min-height: var(--tap); }
+  .login-foot .btn { min-height: var(--tap); }
+}

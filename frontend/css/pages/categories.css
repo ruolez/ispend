@@ -68,3 +68,22 @@
   .cat-row--child { padding-left: 32px; }
   .cat-actions { opacity: 1; }
 }
+
+@media (max-width: 640px) {
+  .cat-row { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 56px; gap: var(--sp-2); }
+  .cat-row--child { min-height: 52px; }
+  .cat-main { overflow: hidden; gap: var(--sp-2); }
+  .cat-name { min-width: 0; flex: 1 1 auto; }
+  .cat-main > .badge.cat-kind { display: none; }
+  .cat-actions [data-act="add-sub"], .cat-actions [data-act="rename"] { display: none; }
+  .cat-total { font-size: var(--fs-base); }
+}
+@media (pointer: coarse) {
+  .cat-grip { display: none; }
+  .cat-row .cat-icon { width: 40px; height: 40px; }
+  .cat-row--child .cat-icon { width: 40px; height: 40px; }
+  .cat-chevron { width: 40px; height: 40px; margin-left: 0; margin-right: -4px; position: relative; z-index: 1; }
+  .cat-actions .btn-icon { width: var(--tap); height: var(--tap); }
+  .tag-row { min-height: 52px; }
+  .tag-row .swatch-btn { width: 32px; height: 32px; }
+}

@@ -3,7 +3,7 @@ initAuthPage();
 $('#page-body').innerHTML = `
   <form id="forgot-form" novalidate>
     <div class="field"><label for="email">Email</label>
-      <input class="input" type="email" id="email" autocomplete="email" required autofocus spellcheck="false"></div>
+      <input class="input" type="email" id="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" required autofocus spellcheck="false"></div>
     <button type="submit" class="btn btn-primary btn-block" id="forgot-btn">Email me a link</button>
   </form>`;
 

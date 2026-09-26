@@ -227,8 +227,8 @@ function ruleFormHtml(r) {
     <div id="rf-sample" class="rule-sample"></div>
     <details class="mt-3"><summary>${icon('chevron-right', 'ico-sm')}Advanced</summary>
       <div class="field-row">
-        <div class="field"><label for="rf-min">Amount from</label><input id="rf-min" class="input num" type="number" step="0.01" value="${r.amount_min ?? ''}" placeholder="any"></div>
-        <div class="field"><label for="rf-max">Amount to</label><input id="rf-max" class="input num" type="number" step="0.01" value="${r.amount_max ?? ''}" placeholder="any"></div>
+        <div class="field"><label for="rf-min">Amount from</label><input id="rf-min" class="input num" type="number" step="0.01" value="${r.amount_min ?? ''}" placeholder="any" inputmode="decimal"></div>
+        <div class="field"><label for="rf-max">Amount to</label><input id="rf-max" class="input num" type="number" step="0.01" value="${r.amount_max ?? ''}" placeholder="any" inputmode="decimal"></div>
       </div>
       <div class="hint mb-3">Signed amounts: charges are negative (e.g. −50 to −10), income positive.</div>
       <div class="field"><label for="rf-acct">Only for account</label><select id="rf-acct" class="select"><option value="">Any account</option>${acc.map((a) => `<option value="${a.id}" ${r.account_id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>

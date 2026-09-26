@@ -3,7 +3,7 @@ initAuthPage();
 $('#page-body').innerHTML = `
   <form id="signup-form" novalidate>
     <div class="field"><label for="email">Email</label>
-      <input class="input" type="email" id="email" autocomplete="email" required autofocus spellcheck="false"></div>
+      <input class="input" type="email" id="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" required autofocus spellcheck="false"></div>
     <div class="field"><label for="password">Password</label>
       <div class="input-group"><input class="input has-trailing" type="password" id="password"
         autocomplete="new-password" minlength="10" required aria-describedby="pw-hint">

@@ -294,12 +294,12 @@ function renderHousekeeping(h, generatedAt) {
     <div class="setting-row">
       <div><div class="title">Activity log retention</div>
         <div class="desc">${fmtNumber(h.audit_rows || 0)} entries${h.oldest_audit_at ? `, oldest ${fmtRelative(h.oldest_audit_at)}` : ''}. Older entries are pruned as new ones are written.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" min="7" max="3650" aria-label="How long to keep the activity log, in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
+      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" inputmode="numeric" min="7" max="3650" aria-label="How long to keep the activity log, in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
     </div>
     <div class="setting-row">
       <div><div class="title">Trash retention</div>
         <div class="desc">Deleted users are listed for purging after this long. Nothing is ever purged automatically — you always confirm.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-trash" class="input input-sm num-input" type="number" min="0" max="3650" aria-label="Trash retention in days" value="${h.deleted_user_retention_days}"><span class="text-3">days</span></div>
+      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-trash" class="input input-sm num-input" type="number" inputmode="numeric" min="0" max="3650" aria-label="Trash retention in days" value="${h.deleted_user_retention_days}"><span class="text-3">days</span></div>
     </div>
     <div class="row-between mt-4"><span class="hint" id="hk-state">Saved</span>
       <button type="button" class="btn btn-secondary btn-sm" data-act="save-housekeeping" disabled>Save</button></div>`;
@@ -338,7 +338,7 @@ const USER_COLS = [['username', 'User'], ['role', 'Role'], ['status', 'Status'],
 
 async function loadUsers() {
   const host = $('#users-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><tbody>${ui.skeletonRows(4, 8)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><tbody>${ui.skeletonRows(4, 8)}</tbody></table></div>`;
   const f = AD.filters;
   const qs = toQuery({ status: f.status || undefined, role: f.role || undefined, q: f.q || undefined, sort: f.sort, dir: f.dir });
   let data;
@@ -402,7 +402,7 @@ function renderUsersTable() {
     const num = ['txn_count', 'storage_bytes'].includes(key);
     return `<th class="sortable ${num ? 'right' : ''}" data-act="sort" data-sort="${key}" aria-sort="${on ? (AD.filters.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${esc(label)}</th>`;
   }).join('');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr>${head}
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr>${head}
     <th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${AD.users.map((u) => `<tr data-id="${u.id}" class="is-clickable ${u.status === 'deleted' ? 'is-trashed' : ''}">
       <td><span class="row gap-2"><span class="avatar" aria-hidden="true">${esc(initials(u.username))}</span>

@@ -815,3 +815,25 @@ body[data-readonly] [data-needs-write] { opacity: 0.45; pointer-events: none; }
 .more-theme { display: flex; width: 100%; }
 .more-theme .seg-btn { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .more-sheet .modal-body { padding-bottom: calc(var(--sp-5) + var(--safe-bottom)); }
+
+/* ---------- .tbl--list: phone list rows for record tables (with .tbl--cards) ----------
+   The first cell is the title line; the other cells run together underneath as one quiet meta line
+   separated by dots, without the UPPERCASE label stacks. data-unit="transactions" appends a unit to a
+   bare number. Desktop is unaffected. */
+@media (max-width: 768px) {
+  .tbl--list.tbl--cards tr { display: block; padding: 12px 60px 12px var(--sp-4); min-height: 64px; line-height: 1.6; }
+  .tbl--list.tbl--cards tr:has(.row-actions > :nth-child(2)) { padding-right: 108px; }
+  .tbl--list.tbl--cards tr:has(.row-actions > .btn:not(.btn-icon)) { padding-right: 150px; }
+  .tbl--list.tbl--cards td { display: inline; padding: 0; font-size: var(--fs-sm); color: var(--text-3); white-space: normal; }
+  .tbl--list.tbl--cards td.hide-mobile, .tbl--list.tbl--cards td:empty { display: none; }
+  .tbl--list.tbl--cards td:first-child { display: block; margin: 0 0 2px; font-size: var(--fs-md); color: var(--text-1); }
+  .tbl--list.tbl--cards td[data-label]::before { content: none; }
+  .tbl--list.tbl--cards td:not(:first-child):not(.col-actions):not(.hide-mobile):not(:empty) ~ td:not(.col-actions)::before { content: ' · '; color: var(--text-4); }
+  .tbl--list.tbl--cards td[data-unit]::after { content: attr(data-unit); }
+  .tbl--list.tbl--cards td.num, .tbl--list.tbl--cards td[data-unit] { white-space: nowrap; }
+  .tbl--list.tbl--cards td.col-actions { display: block; top: 50%; transform: translateY(-50%); right: var(--sp-2); }
+  .tbl--list.tbl--cards .st-counts { display: inline; }
+  .tbl--list.tbl--cards .st-counts .muted { margin-left: 4px; }
+  .tbl--list.tbl--cards .st-status { display: inline-flex; vertical-align: middle; }
+}
+@media (pointer: coarse) { .row-actions { gap: 6px; } a.row-link { min-height: var(--tap); } }

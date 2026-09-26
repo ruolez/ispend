@@ -80,3 +80,14 @@
 @media (max-width: 768px) {
   .rule-cond .select, .rule-cond .rule-pattern { font-size: var(--fs-md); }
 }
+
+@media (max-width: 768px) {
+  .rule { padding: 12px var(--sp-4); }
+  .rule-cond .select { flex: 1 1 40%; min-width: 0; }
+  .rule-cond .rule-pattern { flex: 1 1 100%; }
+  .rules-search { width: 100%; flex: 1 1 100%; }
+}
+@media (pointer: coarse) {
+  .rule-grip { display: none; }
+  .rule { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "cond cond cond" "then on actions"; }
+}

@@ -18,3 +18,4 @@
   .tbl-statements .col-file { max-width: none; }
   .tbl-statements .col-actions { width: auto; }
 }
+@media (max-width: 960px) { .tbl-statements .hide-mobile, .tbl-statements .col-uploaded { display: none; } .tbl-statements .col-file { max-width: 180px; } }

@@ -43,7 +43,7 @@ function renderStatements() {
     host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'No statements yet', body: 'Upload a statement from your bank or card — spreadsheet, CSV or PDF. iSpend works out the layout, checks for anything you already have, and sorts what it can.', action: { label: 'Import a statement', href: '/import.html' } })}</div>`;
     return;
   }
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements tbl--cards"><thead><tr>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl-statements tbl--cards tbl--list"><thead><tr>
       <th class="col-file">File</th><th class="col-bank hide-mobile">Bank</th><th class="col-account">Account</th><th class="col-period">Period</th><th class="col-status">Status</th><th class="right col-rows">Rows</th><th class="col-uploaded">Uploaded</th><th class="col-by hide-mobile">By</th><th class="col-actions"><span class="sr-only">Actions</span></th>
     </tr></thead><tbody>${stState.rows.map(statementRow).join('')}</tbody></table></div>`;
 }

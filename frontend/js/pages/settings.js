@@ -42,7 +42,7 @@ function showTab() {
 /* ---------- Accounts ---------- */
 async function loadAccounts() {
   const host = $('#accounts-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(3, 7)}</tbody></table></div>`;
   try {
     [state.accounts, state.institutions] = await Promise.all([api('/api/accounts?all=1'), api('/api/accounts/institutions').catch(() => [])]);
   } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-accounts' }); return; }
@@ -51,13 +51,13 @@ async function loadAccounts() {
     return;
   }
   const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k || '—';
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Currency</th><th class="right">Transactions</th><th>Last import</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.accounts.map((a) => `<tr data-id="${a.id}" class="${a.is_active ? '' : 'text-3'}">
       <td><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1 fw-500">${esc(a.name)}</span>${a.last4 ? `<span class="text-4 mono">•${esc(a.last4)}</span>` : ''}${a.is_active ? '' : '<span class="badge badge-neutral">Archived</span>'}</span></td>
       <td data-label="Institution">${esc(instLabel(a.institution))}</td>
       <td data-label="Type">${esc((ACCOUNT_TYPES.find((t) => t[0] === a.account_type) || [])[1] || a.account_type)}</td>
       <td data-label="Currency">${esc(a.currency)}</td>
-      <td class="right num" data-label="Transactions">${fmtNumber(a.txn_count)}</td>
+      <td class="right num" data-label="Transactions" data-unit=" transactions">${fmtNumber(a.txn_count)}</td>
       <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
       <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
@@ -66,7 +66,7 @@ async function loadAccounts() {
 /* ---------- Saved file layouts ---------- */
 async function loadLayouts() {
   const host = $('#layouts-table');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(2, 6)}</tbody></table></div>`;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(2, 6)}</tbody></table></div>`;
   try { state.layouts = await api('/api/import-layouts'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-layouts' }); return; }
   if (!state.layouts.length) {
     host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'file-text', title: 'Nothing remembered yet', body: 'Import a CSV or Excel file iSpend does not recognise, or change its column mapping, and the mapping is kept here for next time.' })}</div>`;
@@ -74,7 +74,7 @@ async function loadLayouts() {
   }
   const instLabel = (k) => (state.institutions.find((i) => i.key === k) || {}).label || k;
   const columns = (l) => (Array.isArray(l.header) && l.header.length ? l.header.join(' · ') : 'No header row');
-  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.layouts.map((l) => `<tr data-id="${l.id}">
       <td><div class="text-1 fw-500 truncate" style="max-width:360px" data-tip="${esc(columns(l))}">${esc(columns(l))}</div>${l.sample_filename ? `<div class="text-3 fs-sm">${esc(l.sample_filename)}</div>` : ''}</td>
       <td data-label="Bank">${esc(l.bank_profile ? instLabel(l.bank_profile) : 'Generic')}</td>
