@@ -154,8 +154,10 @@ function setQs(obj, { merge = true } = {}) {
   });
   const q = params.toString();
   const url = location.pathname + (q ? `?${q}` : '') + location.hash;
-  history.replaceState(null, '', url); // filter changes never create history entries
-  rememberQuery();
+  const run = () => { history.replaceState(null, '', url); rememberQuery(); }; // filter changes never create history entries
+  // a sheet that just closed is stepping Back off its own history entry: write after that lands,
+  // or the Back would restore the old query
+  if (window.historyPending) window.historyPending.then(run); else run();
 }
 
 /* ---------- per-page query memory (session) ----------

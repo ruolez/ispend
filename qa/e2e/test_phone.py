@@ -16,7 +16,7 @@ from playwright.sync_api import TimeoutError as PWTimeout
 
 # Elements that legitimately scroll sideways on a phone (chip rows, tab strips, mapping tables, charts).
 ALLOW_HSCROLL = [".tbl-toolbar .seg", ".tabs", ".file-tabs", ".settings-nav", ".filter-row", ".mapping-table",
-                 "canvas", ".menu-opts", ".tx-wrap", ".rv-toolbar .seg", ".page-actions .seg"]
+                 "canvas", ".menu-opts", ".tx-wrap", ".rv-toolbar .seg", ".page-actions .seg", ".tx-chips", "#tx-summary"]
 AMOUNT_SEL = ".amt, td.num, .stat-value, .rt-amt, .anom-amt, .cat-total, .col-total, .rec-amt .num, .inc-row .num, .bd-table .num"
 
 INNER_OVERFLOW_JS = """

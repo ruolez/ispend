@@ -42,7 +42,7 @@ MIN_TEXT_PX = 12
 # Known defects, removed phase by phase (see the mobile makeover plan).
 OVERFLOW_XFAIL = {("review", "se-320"), ("import", "se-320"), ("statements", "landscape")}
 INPUT_XFAIL = set()
-TARGET_XFAIL = {"budgets", "categories", "index", "insights", "reports", "settings", "statements", "transactions",
+TARGET_XFAIL = {"budgets", "categories", "index", "insights", "reports", "settings", "statements",
                 "forgot", "login", "signup"}
 TEXT_XFAIL = set()
 TITLE_XFAIL = set()
@@ -205,7 +205,6 @@ def test_no_title_tooltips(device, page_key):
     assert measure(device, page_key)["titled"] == []
 
 
-@pytest.mark.xfail(strict=True, reason="Transactions filter header lands in Phase 4")
 def test_transactions_first_row_in_first_screen(device):
     page = device("375")
     page.goto(PAGES["transactions"])

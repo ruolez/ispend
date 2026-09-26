@@ -136,7 +136,7 @@ const ui = (() => {
         if (closed) return; closed = true;
         popLayer(handle); untrap(); backdrop.remove();
         if (!layers.length) setInert(false);
-        if (histId) { window.removeEventListener('popstate', onPop); if (history.state && history.state.uiSheet === histId) history.back(); }
+        if (histId) { window.removeEventListener('popstate', onPop); if (history.state && history.state.uiSheet === histId) stepBack(); }
         if (onClose) onClose(result);
         if (prevFocus && prevFocus.focus) prevFocus.focus();
       },
@@ -179,6 +179,16 @@ const ui = (() => {
       else focusFirst(el, 'input,select,textarea,.btn-primary');
     });
     return handle;
+  }
+
+  /* history.back() lands asynchronously; window.historyPending lets URL writers (setQs) wait for it. */
+  function stepBack() {
+    window.historyPending = new Promise((resolve) => {
+      const done = () => { window.removeEventListener('popstate', done); clearTimeout(t); window.historyPending = null; resolve(); };
+      const t = setTimeout(done, 600);
+      window.addEventListener('popstate', done);
+    });
+    history.back();
   }
 
   /* A bottom sheet on phones (a centred dialog elsewhere) that Back closes. Same options as modal(). */

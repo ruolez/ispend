@@ -26,9 +26,13 @@
         <button type="button" class="btn btn-primary" data-needs-write data-tip="Subscribe to make changes" id="btn-add" data-primary-action>Add transaction</button>
         <a class="btn btn-secondary" id="btn-export" data-overflow href="/api/transactions/export" download>Export CSV</a>
         <button type="button" class="btn btn-ghost btn-icon" id="btn-density" data-tip="Toggle density"></button>
+        <button type="button" class="btn btn-secondary phone-only" id="btn-select" data-overflow>Select transactions</button>
       </div>
     </div>
     <div class="tbl-toolbar" id="tx-toolbar">
+      <div class="input-group tx-search"><span class="ico-wrap"></span><input class="input input-sm" id="f-q" type="search" enterkeyhint="search" placeholder="Search description, merchant, notes…" autocomplete="off" aria-label="Search transactions"></div>
+      <button type="button" class="btn btn-secondary phone-only" id="f-sheet" aria-haspopup="dialog"></button>
+      <div class="tx-chips" id="tx-chips">
       <button type="button" class="btn btn-secondary" id="f-views" aria-haspopup="menu"></button>
       <div class="month-nav" role="group" aria-label="Period">
         <button type="button" class="btn btn-secondary btn-icon" data-period="prev" aria-label="Previous period"></button>
@@ -42,14 +46,15 @@
       <button type="button" class="btn btn-secondary active" id="f-split" hidden data-tip="Showing split transactions only — click to show all"></button>
       <div class="seg" id="f-status" aria-label="Status"></div>
       <div class="seg" id="f-flow" aria-label="Debits or credits"><button type="button" class="seg-btn" data-flow="out" data-tip="Only money out (debits, charges)">Debits</button><button type="button" class="seg-btn" data-flow="in" data-tip="Only money in (credits, deposits)">Credits</button></div>
-      <div class="input-group tx-search"><span class="ico-wrap"></span><input class="input input-sm" id="f-q" type="search" placeholder="Search description, merchant, notes…" autocomplete="off"></div>
       <button type="button" class="btn btn-ghost btn-sm" id="f-clear" hidden>Clear filters</button>
+      </div>
     </div>
     <div class="tbl-summary" id="tx-summary"></div>
     <div class="tbl-wrap tx-wrap" id="tx-wrap">
       <table class="tbl tbl-tx" id="tx-table" role="grid">
         <thead><tr>
           <th class="col-check"><input type="checkbox" class="check" id="tx-check-all" aria-label="Select all loaded"></th>
+          <th class="col-ico" aria-hidden="true"></th>
           <th class="col-date sortable" data-sort="date" tabindex="0" aria-sort="none">Date</th>
           <th class="col-merchant sortable" data-sort="merchant" tabindex="0" aria-sort="none">Merchant</th>
           <th class="col-cat">Category</th>

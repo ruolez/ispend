@@ -21,7 +21,7 @@ const tx = {
   filters: { range: { preset: 'this-month' }, acct: [], cat: [], status: 'all', flow: '', q: '', sort: SORT_DEFAULT, statement: '', transfers: '', min: '', max: '', view: '', tag: [], split: false },
   items: [], byId: new Map(), cursor: null, total: 0, sumIn: 0, sumOut: 0, facets: null,
   loading: false, done: false, seq: 0,
-  selection: new Set(), focus: -1,
+  selection: new Set(), focus: -1, selectMode: false,
   cats: new Map(), accounts: new Map(), catsFlat: [], tags: new Map(),
   observer: null, drawer: null,
 };
@@ -41,6 +41,14 @@ initNav('transactions').then(async () => {
   $('#f-q').addEventListener('input', searchDebounced);
   $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { searchDebounced.cancel(); tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
   $('#f-clear').addEventListener('click', clearFilters);
+  $('#f-sheet').addEventListener('click', openFilterSheet);
+  $('#btn-select').addEventListener('click', () => setSelectMode(true));
+  ui.longPress($('#tx-body'), 'tr[data-id]', (tr) => { setSelectMode(true); toggleSelect(Number(tr.dataset.id), true); });
+  ui.swipe($('#tx-body'), 'tr[data-id]', {
+    left: { label: 'Categorize', icon: 'tag', run: (tr) => openPickerFor(Number(tr.dataset.id)) },
+    right: { label: 'Exclude', icon: 'eye-off', cls: 'is-muted', run: (tr) => { const it = tx.byId.get(Number(tr.dataset.id)); if (it) updateItem(it.id, { is_excluded: !it.is_excluded }, it.is_excluded ? 'Included in reports' : 'Excluded from reports'); } },
+  });
+  watchToolbarHeight();
   $('#f-accounts').addEventListener('click', openAccountFilter);
   $('#f-views').addEventListener('click', openViewsMenu);
   $('#f-tags').addEventListener('click', openTagFilter);
@@ -63,7 +71,7 @@ initNav('transactions').then(async () => {
   await reload();
   const q = qs();
   if (q.open) openDrawer(Number(q.open));
-}).catch((err) => { $('#tx-body').innerHTML = `<tr><td colspan="7">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`; });
+}).catch((err) => { $('#tx-body').innerHTML = `<tr><td colspan="8">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`; });
 
 function setupObserver() {
   const wrap = $('#tx-wrap');
@@ -113,12 +121,10 @@ function writeUrl() {
   const f = tx.filters;
   setQs({ ...rangeToQuery(f.range), acct: f.acct, cat: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort === SORT_DEFAULT ? null : f.sort, statement: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, view: f.view || null, tag: f.tag, split: f.split ? 1 : null, open: null });
 }
-function queryParams(extra = {}) {
-  const f = tx.filters;
+function queryParams(extra = {}, f = tx.filters) {
   return { ...rangeToQuery(f.range), account_id: f.acct, category_id: f.cat, status: f.status === 'all' ? null : f.status, flow: f.flow || null, q: f.q, sort: f.sort, statement_id: f.statement, transfers: f.transfers, min: f.min || null, max: f.max || null, tag: f.tag, split: f.split ? 1 : null, ...extra };
 }
-function hasFilters() {
-  const f = tx.filters;
+function hasFilters(f = tx.filters) {
   return f.acct.length || f.cat.length || f.status !== 'all' || f.flow || f.q || f.statement || f.transfers || f.min || f.max || f.tag.length || f.split || (f.range && !['this-month', 'all'].includes(f.range.preset));
 }
 function emptyListHtml() {
@@ -148,6 +154,7 @@ const views = {
     return p.saved_views || [];
   },
   apply(v) {
+    if (window.historyPending) { window.historyPending.then(() => views.apply(v)); return; }
     const params = new URLSearchParams(v.query.replace(/^\?/, ''));
     params.set('view', v.id);
     history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
@@ -302,6 +309,10 @@ function paintToolbar() {
     th.setAttribute('aria-sort', s === `-${k}` ? 'descending' : s === k ? 'ascending' : 'none');
   });
   $('#btn-export').href = '/api/transactions/export' + toQuery(queryParams());
+  const nf = activeFilterCount(f);
+  $('#f-sheet').innerHTML = `${icon('sliders', 'ico-sm')}<span>Filters</span>${nf ? `<span class="pill">${nf}</span>` : ''}`;
+  $('#f-sheet').classList.toggle('active', !!nf);
+  $('#f-sheet').setAttribute('aria-label', nf ? `Filters and sort, ${nf} active` : 'Filters and sort');
   syncSegScroll();
   $('#tx-sub').textContent = f.statement ? 'Rows imported from one statement.' : activeView ? `View: ${activeView.name}` : 'Every charge across your accounts.';
 }
@@ -363,8 +374,8 @@ function paintDensity() { const t = Theme.density() === 'compact' ? 'Comfortable
 /* ---------- loading ---------- */
 async function reload() {
   tx.seq += 1; tx.loading = false; // a reload supersedes any load still in flight
-  tx.items = []; tx.byId.clear(); tx.cursor = null; tx.done = false; tx.selection.clear(); tx.focus = -1;
-  $('#tx-body').innerHTML = ui.skeletonRows(8, 7);
+  tx.items = []; tx.byId.clear(); tx.cursor = null; tx.done = false; tx.selection.clear(); tx.focus = -1; tx.selectMode = false;
+  $('#tx-body').innerHTML = ui.skeletonRows(8, 8);
   $('#tx-foot').innerHTML = '';
   $('#tx-summary').innerHTML = `${ui.skeleton(220, 12)}`;
   paintSelection();
@@ -384,14 +395,15 @@ async function loadMore(first = false) {
     r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
     if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); tx.renderedAt = performance.now(); }
     if (!tx.items.length) {
-      $('#tx-body').innerHTML = `<tr><td colspan="7">${emptyListHtml()}</td></tr>`;
+      $('#tx-body').innerHTML = `<tr><td colspan="8">${emptyListHtml()}</td></tr>`;
     } else {
       $('#tx-body').insertAdjacentHTML('beforeend', r.items.map((it, i) => rowHtml(it, startIdx + i)).join(''));
+      paintDays();
     }
     $('#tx-foot').innerHTML = tx.done ? (tx.items.length ? `<div class="tx-foot-msg">${fmtNumber(tx.items.length)} of ${fmtNumber(tx.total)} shown</div>` : '') : `<div class="tx-foot-msg"><span class="spinner"></span> Loading more…</div>`;
   } catch (err) {
     if (seq !== tx.seq) return;
-    if (first) $('#tx-body').innerHTML = `<tr><td colspan="7">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`;
+    if (first) $('#tx-body').innerHTML = `<tr><td colspan="8">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`;
     else $('#tx-foot').innerHTML = `<div class="tx-foot-msg">${ui.errorBox(err.message, { retry: 'reload' })}</div>`;
   } finally { if (seq === tx.seq) tx.loading = false; }
 }
@@ -433,6 +445,7 @@ function rowHtml(it, idx) {
   const amtCls = it.is_transfer ? 'amt--transfer' : it.is_excluded ? 'amt--excluded' : it.amount > 0 ? 'amt--income' : 'amt--expense';
   return `<tr class="tx-row ${it.is_transfer ? 'is-transfer' : ''} ${it.is_excluded ? 'is-excluded' : ''} ${idx === tx.focus ? 'is-focused' : ''}" data-id="${it.id}" data-idx="${idx}" aria-selected="${tx.selection.has(it.id)}" tabindex="-1">
     <td class="col-check"><input type="checkbox" class="check" data-select="${it.id}" ${tx.selection.has(it.id) ? 'checked' : ''} aria-label="Select"></td>
+    <td class="col-ico" aria-hidden="true">${rowIconHtml(it)}</td>
     <td class="col-date num">${fmtDate(it.txn_date)}</td>
     <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}${tagChipsHtml(it)}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" data-tip="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
     <td class="col-cat">${catCellHtml(it)}</td>
@@ -454,13 +467,159 @@ function rerenderRow(id) {
   tr.replaceWith(fresh);
   if (keep) ui.refocus(fresh, keep);
 }
-function rerenderAll() { $('#tx-body').innerHTML = tx.items.map((it, i) => rowHtml(it, i)).join(''); }
+function rerenderAll() { $('#tx-body').innerHTML = tx.items.map((it, i) => rowHtml(it, i)).join(''); paintDays(); }
 function removeRows(ids) {
   ids.forEach((id) => { const tr = $(`tr[data-id="${id}"]`); if (tr) tr.remove(); tx.byId.delete(id); tx.selection.delete(id); });
   tx.items = tx.items.filter((it) => !ids.includes(it.id));
   tx.items.forEach((it, i) => { const tr = $(`tr[data-id="${it.id}"]`); if (tr) tr.dataset.idx = String(i); });
   if (tx.focus >= tx.items.length) tx.focus = tx.items.length - 1;
+  paintDays();
   paintSelection();
+}
+
+/* ---------- phone: selection mode, day groups, filters sheet ---------- */
+/* Selection mode (phone): long-press a row or ⋯ › Select transactions. Rows show checkboxes, a tap
+   toggles instead of opening the row, and the bulk bar stays until ✕. Desktop selects as before. */
+function setSelectMode(on) {
+  tx.selectMode = !!on;
+  if (!on) tx.selection.clear();
+  paintSelection();
+}
+
+/* A category-coloured disc with the category's icon: the row's visual anchor on phones. */
+function rowIconHtml(it) {
+  const c = catOf(it.category_id);
+  if (it.is_transfer) return `<span class="tx-disc" style="--c:var(--c10)">${icon('arrow-left-right')}</span>`;
+  if (!c) return `<span class="tx-disc tx-disc--empty">${icon('tag')}</span>`;
+  return `<span class="tx-disc" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})">${icon(c.icon || (c.parent_id && catOf(c.parent_id) ? catOf(c.parent_id).icon : 'tag'))}</span>`;
+}
+
+/* Day headers ("Mon, Sep 22" + the day's net) between rows when the list is in date order. They are
+   phone-only (hidden above 768px) and sticky under the filter bar. */
+function paintDays() {
+  const body = $('#tx-body');
+  $$('tr.tx-day', body).forEach((r) => r.remove());
+  if (!/date$/.test(tx.filters.sort) || !tx.items.length) return;
+  const sums = new Map();
+  tx.items.forEach((it) => { if (!it.is_transfer && !it.is_excluded) sums.set(it.txn_date, (sums.get(it.txn_date) || 0) + Number(it.amount)); });
+  const cur = tx.items.length ? currencyOf(tx.items[0]) : 'USD';
+  const today = toISODate(new Date());
+  const yest = toISODate(new Date(Date.now() - 864e5));
+  let last = null;
+  $$('tr[data-id]', body).forEach((tr) => {
+    const it = tx.byId.get(Number(tr.dataset.id));
+    if (!it || it.txn_date === last) return;
+    last = it.txn_date;
+    const d = new Date(`${it.txn_date}T12:00:00`);
+    const label = it.txn_date === today ? 'Today' : it.txn_date === yest ? 'Yesterday' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+    const sum = sums.get(it.txn_date);
+    const h = document.createElement('tr');
+    h.className = 'tx-day';
+    h.innerHTML = `<td colspan="8"><span>${esc(label)}</span>${sum ? `<span class="amt ${sum > 0 ? 'amt--income' : ''}">${fmtMoney(sum, cur, { sign: 'always' })}</span>` : ''}</td>`;
+    tr.before(h);
+  });
+}
+
+/* Sticky offsets: the filter bar sits under the topbar and the day headers under the filter bar. */
+function watchToolbarHeight() {
+  const bar = $('#tx-toolbar');
+  if (!('ResizeObserver' in window)) return;
+  new ResizeObserver(() => document.documentElement.style.setProperty('--tx-bar-h', `${bar.offsetHeight}px`)).observe(bar);
+}
+
+function activeFilterCount(f) {
+  let n = 0;
+  if (f.acct.length) n++; if (f.cat.length) n++; if (f.tag.length) n++; if (f.status !== 'all') n++; if (f.flow) n++;
+  if (f.min || f.max) n++; if (f.split) n++; if (f.sort !== SORT_DEFAULT) n++;
+  return n;
+}
+
+const SORTS = [['-date', 'Newest'], ['date', 'Oldest'], ['-amount', 'Largest'], ['amount', 'Smallest'], ['merchant', 'A–Z']];
+/* Every filter and the sort in one sheet. Edits are buffered on a draft; the footer shows how many
+   transactions the draft matches and applies it in one go. */
+function openFilterSheet() {
+  const draft = JSON.parse(JSON.stringify(tx.filters));
+  const cur = tx.displayCurrency || 'USD';
+  const segHtml = (name, opts, val) => `<div class="seg fs-seg" role="radiogroup" data-fs="${name}">${opts.map(([k, l]) => `<button type="button" class="seg-btn${k === val ? ' active' : ''}" role="radio" aria-checked="${k === val}" data-v="${esc(k)}">${esc(l)}</button>`).join('')}</div>`;
+  const pickRow = (key, ic, label, value) => `<button type="button" class="fs-row" data-fs-pick="${key}">${icon(ic, 'ico-sm')}<span class="grow">${esc(label)}</span><span class="fs-val truncate">${esc(value)}</span>${icon('chevron-right', 'ico-sm text-4')}</button>`;
+  const labels = () => ({
+    range: rangeLabel(draft.range),
+    acct: !draft.acct.length ? 'All' : draft.acct.length === 1 && acctOf(draft.acct[0]) ? acctOf(draft.acct[0]).name : `${draft.acct.length} accounts`,
+    cat: !draft.cat.length ? 'All' : draft.cat.length === 1 ? (draft.cat[0] === 'none' ? 'Uncategorized' : (catOf(draft.cat[0]) || {}).name || '1 category') : `${draft.cat.length} categories`,
+    tag: !draft.tag.length ? 'All' : draft.tag.length === 1 ? (draft.tag[0] === 'none' ? 'Untagged' : (tx.tags.get(Number(draft.tag[0])) || {}).name || '1 tag') : `${draft.tag.length} tags`,
+  });
+  const body = () => {
+    const l = labels();
+    return `
+    <div class="fs-sec"><div class="section-label">Sort</div>${segHtml('sort', SORTS, draft.sort)}</div>
+    <div class="fs-sec"><div class="section-label">Show</div>${segHtml('status', STATUS_OPTS, draft.status)}
+      <div class="mt-2">${segHtml('flow', [['', 'In and out'], ['out', 'Money out'], ['in', 'Money in']], draft.flow)}</div></div>
+    <div class="fs-sec fs-list">
+      ${pickRow('range', 'calendar', 'Dates', l.range)}
+      ${pickRow('acct', 'landmark', 'Accounts', l.acct)}
+      ${pickRow('cat', 'tags', 'Categories', l.cat)}
+      ${tx.tags.size ? pickRow('tag', 'tag', 'Tags', l.tag) : ''}
+    </div>
+    <div class="fs-sec"><div class="section-label">Amount</div>
+      <div class="field-row fs-amt"><div class="field"><label for="fs-min">At least</label><input id="fs-min" class="input num" inputmode="decimal" enterkeyhint="done" placeholder="0.00" value="${esc(draft.min)}"></div>
+      <div class="field"><label for="fs-max">At most</label><input id="fs-max" class="input num" inputmode="decimal" enterkeyhint="done" placeholder="No limit" value="${esc(draft.max)}"></div></div>
+      <div class="hint">Compares the amount without its sign, in ${esc(cur)}.</div></div>
+    ${draft.split ? `<div class="fs-sec"><label class="switch"><input type="checkbox" id="fs-split" checked><span class="switch-track"></span>Split transactions only</label></div>` : ''}
+    <div class="fs-sec fs-list">${pickRow('views', 'star', 'Saved views', draft.view && views.byId(draft.view) ? views.byId(draft.view).name : `${views.list().length || 'None'}`)}</div>`;
+  };
+  const sh = ui.sheet({
+    title: 'Filters',
+    html: `<div id="fs-body">${body()}</div>`,
+    className: 'filter-sheet',
+    actions: [
+      { label: 'Reset', keepOpen: true, onClick: () => { Object.assign(draft, { range: { preset: 'all' }, acct: [], cat: [], status: 'all', flow: '', sort: SORT_DEFAULT, min: '', max: '', tag: [], split: false, view: '' }); repaint(); return false; } },
+      { label: 'Show results', primary: true, onClick: () => {
+        const clean = (v) => { const n = Number(String(v).replace(/[^0-9.]/g, '')); return String(v).trim() !== '' && Number.isFinite(n) && n >= 0 ? n.toFixed(2).replace(/\.00$/, '') : ''; };
+        draft.min = clean(sh.el.querySelector('#fs-min').value); draft.max = clean(sh.el.querySelector('#fs-max').value);
+        if (draft.min && draft.max && Number(draft.max) < Number(draft.min)) { ui.fieldError(sh.el.querySelector('#fs-max'), 'Must be at least the lower bound'); return false; }
+        sh.close();
+        tx.filters = { ...draft, q: tx.filters.q, statement: tx.filters.statement, transfers: tx.filters.transfers };
+        periodSet(tx.filters.range);
+        applyFilters({ keepView: !!draft.view });
+        return false;
+      } },
+    ],
+  });
+  const showBtn = sh.el.querySelector('.modal-foot .btn-primary');
+  let countSeq = 0;
+  const recount = debounce(async () => {
+    const seq = ++countSeq;
+    showBtn.textContent = 'Counting…';
+    try {
+      const r = await api('/api/transactions' + toQuery(queryParams({ limit: 1 }, { ...draft, q: tx.filters.q, statement: tx.filters.statement, transfers: tx.filters.transfers })));
+      if (seq === countSeq) showBtn.textContent = r.total ? `Show ${fmtNumber(r.total)} transaction${r.total === 1 ? '' : 's'}` : 'No matches';
+    } catch { if (seq === countSeq) showBtn.textContent = 'Show results'; }
+  }, 250);
+  const wire = () => {
+    $$('[data-fs]', sh.el).forEach((g) => ui.segmented(g, { onChange: (b) => { draft[g.dataset.fs] = b.dataset.v; if (g.dataset.fs !== 'sort') draft.view = ''; recount(); } }));
+  };
+  function repaint() { const y = sh.body.scrollTop; $('#fs-body', sh.el).innerHTML = body(); wire(); sh.body.scrollTop = y; recount(); }
+  wire(); recount();
+  sh.el.addEventListener('input', (e) => { if (e.target.matches('#fs-min, #fs-max')) { draft[e.target.id === 'fs-min' ? 'min' : 'max'] = e.target.value.trim(); draft.view = ''; recount(); } });
+  sh.el.addEventListener('change', (e) => { if (e.target.id === 'fs-split') { draft.split = e.target.checked; repaint(); } });
+  sh.el.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-fs-pick]'); if (!p) return;
+    const k = p.dataset.fsPick;
+    const done = () => { draft.view = ''; repaint(); };
+    if (k === 'range') return dateRangePicker({ anchor: p, value: draft.range, onChange: (v) => { draft.range = v; done(); } });
+    if (k === 'acct') return ui.multiFilter(p, { title: 'Accounts', options: Array.from(tx.accounts.values()).filter((a) => a.is_active || draft.acct.includes(a.id)).map((a) => ({ value: String(a.id), label: a.name, color: a.color })), selected: new Set(draft.acct.map(String)), onChange: (set) => { draft.acct = Array.from(set).map(Number); done(); } });
+    if (k === 'cat') return ui.multiFilter(p, { title: 'Categories', searchable: true, options: [{ value: 'none', label: 'Uncategorized' }, ...tx.catsFlat.map((c) => ({ value: String(c.id), label: c.name, indent: c.depth || 0, color: c.color || c.parent_color }))], selected: new Set(draft.cat), onChange: (set) => { draft.cat = Array.from(set); done(); } });
+    if (k === 'tag') return ui.multiFilter(p, { title: 'Tags', options: [{ value: 'none', label: 'Untagged' }, ...Array.from(tx.tags.values()).map((t) => ({ value: String(t.id), label: t.name, color: t.color }))], selected: new Set(draft.tag), onChange: (set) => { draft.tag = Array.from(set); done(); } });
+    if (k === 'views') {
+      const list = views.list();
+      return ui.menu(p, [
+        ...list.map((v) => ({ label: v.name, icon: v.pinned ? 'star' : 'filter', checked: v.id === draft.view, onClick: () => { sh.close(); views.apply(v); } })),
+        ...(list.length ? [{ divider: true }] : []),
+        { label: 'Save current view…', icon: 'plus', onClick: () => { sh.close(); openSaveView(); } },
+        { label: 'Manage views…', icon: 'sliders', disabled: !list.length, onClick: () => { sh.close(); openManageViews(); } },
+      ]);
+    }
+  });
 }
 
 /* ---------- selection & focus ---------- */
@@ -481,15 +640,17 @@ function paintSelection() {
     if ((tr.getAttribute('aria-selected') === 'true') !== on) tr.setAttribute('aria-selected', String(on));
     const cb = tr.querySelector('input[data-select]'); if (cb && cb.checked !== on) cb.checked = on;
   });
+  $('#tx-table').classList.toggle('is-selecting', tx.selectMode || n > 0);
   let bar = $('#tx-bulk');
-  if (!n) { if (bar) bar.remove(); return; }
+  if (!n && !tx.selectMode) { if (bar) bar.remove(); return; }
   const partial = tx.total > tx.items.length && n === tx.items.length ? ` <span class="text-3">· all ${fmtNumber(tx.items.length)} loaded of ${fmtNumber(tx.total)}</span>` : '';
   if (!bar) { bar = document.createElement('div'); bar.id = 'tx-bulk'; bar.className = 'floatbar'; bar.setAttribute('role', 'status'); document.body.appendChild(bar); bar.addEventListener('click', onBulkClick); }
   bar.innerHTML = `<span><span class="n">${fmtNumber(n)}</span> selected${partial}</span><span class="sep"></span>
+
     <button type="button" class="btn btn-primary btn-sm" data-bulk="categorize">${icon('tag', 'ico-sm')}Categorize</button>
-    <button type="button" class="btn btn-ghost btn-sm" data-bulk="set_transfer">${icon('arrow-left-right', 'ico-sm')}Transfer</button>
-    <button type="button" class="btn btn-ghost btn-sm" data-bulk="exclude">${icon('eye-off', 'ico-sm')}<span class="label">Exclude</span></button>
-    <button type="button" class="btn btn-ghost btn-sm" data-bulk="tag" aria-haspopup="true">${icon('tag', 'ico-sm')}<span class="label">Tag</span></button>
+    <button type="button" class="btn btn-ghost btn-sm phone-hide" data-bulk="set_transfer">${icon('arrow-left-right', 'ico-sm')}Transfer</button>
+    <button type="button" class="btn btn-ghost btn-sm phone-hide" data-bulk="exclude">${icon('eye-off', 'ico-sm')}<span class="label">Exclude</span></button>
+    <button type="button" class="btn btn-ghost btn-sm phone-hide" data-bulk="tag" aria-haspopup="true">${icon('tag', 'ico-sm')}<span class="label">Tag</span></button>
     <button type="button" class="btn btn-ghost btn-sm" data-bulk="more">${icon('more-horizontal', 'ico-sm')}</button>
     <span class="sep"></span><button type="button" class="btn btn-ghost btn-sm" data-bulk="clear" data-tip="Clear selection (Esc)" aria-label="Clear selection">${icon('x', 'ico-sm')}</button>`;
 }
@@ -524,13 +685,15 @@ function registerShortcuts() {
   ui.shortcuts.register('n', () => { const it = focusedItem(); if (it) openDrawer(it.id, { focusNotes: true }); }, { when: noLayer, description: 'Edit note' });
   ui.shortcuts.register('v', () => openViewsMenu(), { when: noLayer, description: 'Saved views' });
   ui.shortcuts.register('a', () => { const it = focusedItem(); if (it && it.category_status === 'suggested') bulk([it.id], 'accept_suggestion'); }, { when: noLayer, description: 'Accept suggestion' });
-  ui.shortcuts.register('Escape', () => { if (tx.selection.size) { tx.selection.clear(); paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
+  ui.shortcuts.register('Escape', () => { if (tx.selection.size || tx.selectMode) { tx.selection.clear(); tx.selectMode = false; paintSelection(); } else if (tx.focus >= 0) setFocus(-1); }, { when: noLayer });
   window.PAGE_SHORTCUTS = [{ title: 'Transactions', items: [['j / k', 'Move between rows'], ['x', 'Select row'], ['c', 'Change category'], ['a', 'Accept suggestion'], ['↵', 'Open details'], ['t', 'Toggle transfer'], ['n', 'Edit note'], ['v', 'Saved views'], ['← / →', 'Previous / next period'], ['Esc', 'Clear selection']] }];
 }
 
 /* ---------- row interactions ---------- */
 function onRowClick(e) {
   const t = e.target;
+  // phone selection mode: a tap anywhere on a row toggles it — never a control inside it
+  if (tx.selectMode && ui.isPhone()) { const r = t.closest('tr[data-id]'); if (r && !t.closest('input[data-select]')) { e.stopPropagation(); e.preventDefault(); toggleSelect(Number(r.dataset.id)); } return; }
   const se = t.closest('[data-split-edit]'); if (se) { e.stopPropagation(); return openSplitEditor(Number(se.dataset.splitEdit)); }
   const pick = t.closest('[data-cat-pick]'); if (pick) { e.stopPropagation(); return openPickerFor(Number(pick.dataset.catPick), pick); }
   const acc = t.closest('[data-accept]'); if (acc) { e.stopPropagation(); return bulk([Number(acc.dataset.accept)], 'accept_suggestion'); }
@@ -752,8 +915,16 @@ function onBulkClick(e) {
     case 'set_transfer': return bulk(ids, 'set_transfer');
     case 'exclude': return bulk(ids, 'exclude');
     case 'tag': { let prev = new Set(); return tagPicker({ anchor: b, selected: new Set(), onChange: (set) => { const added = Array.from(set).filter((x) => !prev.has(x)); const removed = Array.from(prev).filter((x) => !set.has(x)); prev = new Set(set); if (added.length) bulk(ids, 'tag', { tag_ids: added }); if (removed.length) bulk(ids, 'untag', { tag_ids: removed }); } }); }
-    case 'clear': { tx.selection.clear(); paintSelection(); return; }
+    case 'clear': { tx.selection.clear(); tx.selectMode = false; paintSelection(); return; }
     case 'more': return ui.menu(b, [
+      // on phones the bar holds only Categorize; the rest of its actions live here
+      ...(ui.isPhone() ? [
+        ...(tx.selection.size < tx.items.length ? [{ label: `Select all ${fmtNumber(tx.items.length)} loaded`, icon: 'check-circle', onClick: () => { tx.items.forEach((i) => tx.selection.add(i.id)); paintSelection(); } }] : []),
+        { label: 'Mark as transfer', icon: 'arrow-left-right', onClick: () => bulk(ids, 'set_transfer') },
+        { label: 'Exclude from reports', icon: 'eye-off', onClick: () => bulk(ids, 'exclude') },
+        { label: 'Tags…', icon: 'tag', onClick: () => onBulkClick({ target: $('#tx-bulk [data-bulk="tag"]') }) },
+        { divider: true },
+      ] : []),
       { label: 'Accept suggestions', icon: 'check', onClick: () => bulk(ids, 'accept_suggestion') },
       { label: 'Reject suggestions', icon: 'x', onClick: () => bulk(ids, 'reject_suggestion') },
       { label: 'Not a transfer', icon: 'arrow-left-right', onClick: () => bulk(ids, 'unset_transfer') },

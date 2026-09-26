@@ -2627,9 +2627,9 @@ def test_f15_splits(page, qapi, browser):
             ui_login(p, QA, expect_path="/index.html")
             goto(p, "/transactions.html?q=QA%20SPLIT%20STORE&range=all", wait_sel=f"#tx-body tr[data-id='{tid}']", soft=F, label="phone split row")
             p.wait_for_timeout(300)
-            p.locator(f"#tx-body tr[data-id='{tid}'] [data-menu]").click()
-            p.wait_for_selector(".menu .menu-item", timeout=4000)
-            p.locator(".menu .menu-item", has_text="Edit split").first.click()
+            p.locator(f"#tx-body tr[data-id='{tid}'] .col-merchant").click()  # phones: a row opens its details
+            p.wait_for_selector(".drawer [data-dact='split']", timeout=6000)
+            p.locator(".drawer [data-dact='split']").click()
             p.wait_for_selector(".modal--sheet #split-lines .split-line", timeout=5000)
             p.wait_for_timeout(400)  # the sheet slides in: measuring mid-animation reports a scaled box
             box = p.locator(".modal--sheet").bounding_box()
@@ -2722,8 +2722,13 @@ def test_f12_mobile(browser, qapi):
     p.keyboard.press("Escape")
     p.wait_for_selector(".drawer", state="detached", timeout=5000)
     # floatbar vs bottom nav
-    p.locator("#tx-body tr[data-id] input[data-select]").first.check(force=True)
+    # phones select through ⋯ › Select transactions (or a long press), then a tap toggles a row
+    p.locator(".page-more").click()
+    p.locator(".menu .menu-item", has_text="Select transactions").click()
+    p.wait_for_selector("#tx-table.is-selecting", timeout=3000)
+    p.locator("#tx-body tr[data-id] .col-merchant").first.click()
     p.wait_for_selector("#tx-bulk", timeout=5000)
+    F.check(p.locator(".drawer").count() == 0 and p.locator("#tx-bulk .n").inner_text() == "1", "in selection mode a tap selects instead of opening the row")
     p.wait_for_timeout(800)  # let the toast-in animation finish before measuring
     fb = p.locator("#tx-bulk").bounding_box()
     F.note(f"floatbar computed transform: {p.evaluate("getComputedStyle(document.getElementById('tx-bulk')).transform")}")
