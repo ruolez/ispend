@@ -44,6 +44,17 @@ initNav('review').then(async () => {
   focusBtn.innerHTML = `${icon('eye', 'ico-sm')}<span class="label">Focus</span>`;
   focusBtn.addEventListener('click', () => setFocusMode(!rv.focusMode));
   $('#btn-accept-all').addEventListener('click', acceptAll);
+  // phones: the toolbar's buttons fold into one menu
+  $('#btn-rv-more').innerHTML = icon('more-horizontal');
+  $('#btn-rv-more').addEventListener('click', (e) => ui.menu(e.currentTarget, $$('.rv-toolbar-actions .btn').filter((b) => !b.hidden).map((b) => ({
+    label: b.id === 'btn-focus' ? (rv.focusMode ? 'Show all cards' : 'One card at a time') : b.textContent.trim(),
+    disabled: b.disabled, onClick: () => b.click(),
+  }))));
+  // phones: swipe a card right to accept its suggestion (or choose), left to skip; the buttons stay
+  ui.swipe($('#rv-list'), '.rv-card[data-key]', {
+    right: { label: 'Accept', icon: 'check', cls: 'is-ok', run: (el) => { const g = cardGroup(el); if (g) { swipeHintSeen(); accept(g); } } },
+    left: { label: 'Skip', icon: 'arrow-right', cls: 'is-muted', run: (el) => { const g = cardGroup(el); if (g) { swipeHintSeen(); skip(g); } } },
+  });
   const aiBtn = $('#btn-ai');
   if (rv.settings && rv.settings.ai_categorize_enabled) { aiBtn.hidden = false; aiBtn.innerHTML = `${icon('sparkles', 'ico-sm')}<span class="label">Ask AI</span>`; aiBtn.addEventListener('click', askAI); }
   const pairBtn = $('#btn-pair-all');
@@ -58,6 +69,8 @@ initNav('review').then(async () => {
     if (e.target.closest('[data-act="reload"]')) load();
     if (e.target.closest('[data-act="unskip"]')) { rv.skipped.clear(); saveSkipped(); load(); }
     if (e.target.closest('[data-act="more"]')) { rv.window += WINDOW; render(); }
+    const fn = e.target.closest('[data-act="focus-prev"], [data-act="focus-next"]');
+    if (fn) { setFocus(rv.focus + (fn.dataset.act === 'focus-next' ? 1 : -1)); paintFocusNav(); }
   });
   store.on('categories-changed', async () => { await loadRefs(); render(); });
   registerShortcuts();
@@ -241,7 +254,7 @@ function render() {
   }
   const shown = groups.slice(0, rv.window);
   const rest = groups.length - shown.length;
-  host.innerHTML = shown.map((g, i) => cardHtml(g, i)).join('') + (rest > 0 ? `<button type="button" class="btn btn-secondary btn-block rv-more" data-act="more">Show ${fmtNumber(Math.min(WINDOW, rest))} more merchant${Math.min(WINDOW, rest) === 1 ? '' : 's'} (${fmtNumber(rest)} left)</button>` : '');
+  host.innerHTML = swipeHintHtml() + shown.map((g, i) => cardHtml(g, i)).join('') + (rv.focusMode ? `<div class="rv-focus-nav"><button type="button" class="btn btn-secondary" data-act="focus-prev" ${rv.focus <= 0 ? 'disabled' : ''}>${icon('chevron-left', 'ico-sm')}Previous</button><button type="button" class="btn btn-secondary" data-act="focus-next" ${rv.focus >= shown.length - 1 ? 'disabled' : ''}>Next${icon('chevron-right', 'ico-sm')}</button></div>` : '') + (rest > 0 ? `<button type="button" class="btn btn-secondary btn-block rv-more" data-act="more">Show ${fmtNumber(Math.min(WINDOW, rest))} more merchant${Math.min(WINDOW, rest) === 1 ? '' : 's'} (${fmtNumber(rest)} left)</button>` : '');
   host.classList.toggle('has-focus', rv.focus >= 0);
 }
 /* Groups whose suggestion is confident enough for "Accept all" (never creates rules). */
@@ -270,6 +283,21 @@ async function acceptAll() {
     window.dispatchEvent(new Event('ispend:transactions-changed'));
     await load();
   });
+}
+/* Card element -> its group (swipes act on the card they started on). */
+function cardGroup(el) { return rv.mode === 'transfers' ? null : rv.groups.find((x) => groupKey(x) === el.dataset.key) || null; }
+const SWIPE_HINT_KEY = 'ispend.rvSwipeHint';
+function swipeHintHtml() {
+  if (rv.mode === 'transfers' || !ui.isCoarse()) return '';
+  try { if (localStorage.getItem(SWIPE_HINT_KEY)) return ''; } catch { return ''; }
+  return `<div class="rv-hint">${icon('arrow-left-right', 'ico-sm')}<span>Swipe a card right to accept, left to skip.</span></div>`;
+}
+function swipeHintSeen() { try { localStorage.setItem(SWIPE_HINT_KEY, '1'); } catch { /* ignore */ } const h = $('.rv-hint'); if (h) h.remove(); }
+function paintFocusNav() {
+  const n = $$('.rv-card').length;
+  const p = $('[data-act="focus-prev"]'), x = $('[data-act="focus-next"]');
+  if (p) p.disabled = rv.focus <= 0;
+  if (x) x.disabled = rv.focus >= n - 1;
 }
 function setFocusMode(on) {
   rv.focusMode = !!on;

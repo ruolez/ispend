@@ -56,3 +56,33 @@
   .rv-pair-rows { grid-template-columns: 1fr; }
   .rv-pair-arrow { transform: rotate(90deg); }
 }
+
+.rv-focus-nav { display: flex; justify-content: space-between; gap: var(--sp-2); }
+.rv-focus-nav .btn { flex: 1 1 0; }
+.rv-hint { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-3); padding: 0 var(--sp-1); }
+.rv-card.is-swiping { border-radius: var(--r-lg); }
+@media (max-width: 768px) {
+  .rv-toolbar { flex-wrap: nowrap; }
+  .rv-toolbar .seg { flex: 1 1 auto; display: flex; }
+  .rv-toolbar .seg { min-width: 0; }
+  .rv-toolbar .seg .seg-btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 6px; font-size: var(--fs-sm); }
+  .rv-toolbar-actions { display: none; }
+  #btn-rv-more { flex: 0 0 auto; }
+  .rv-progress { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: 10px 14px; }
+  .rv-progress .progress { order: 3; flex: 1 1 100%; }
+  .rv-progress .rp-text { font-size: var(--fs-sm); }
+  .rv-card { padding: var(--sp-4); }
+  .rv-name { font-size: var(--fs-lg); }
+  .rv-actions { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); }
+  .rv-actions > .btn { grid-column: span 2; }
+  .rv-actions > .btn-primary { grid-column: 1 / -1; height: 48px; font-size: var(--fs-md); }
+  .rv-actions > .btn-primary[data-cact="pick"] ~ .btn { grid-column: span 3; }
+  .rv-actions > .btn-ghost { border: 1px solid var(--border); }
+  .rv-actions .grow-sep { display: none; }
+  .rv-actions .rv-always { grid-column: 1 / -1; justify-content: space-between; border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+  .rv-always .btn-icon { width: var(--tap); height: var(--tap); }
+  .rv-pattern .input { max-width: none; flex: 1 1 100%; }
+  .rv-pattern .select { flex: 1 1 100%; }
+  .rv-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .rv-row .num { display: none; }
+}

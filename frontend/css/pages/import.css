@@ -82,7 +82,6 @@
 .commit-foot { position: sticky; bottom: 0; z-index: 5; margin-top: var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-2); flex-wrap: wrap; }
 .commit-foot .summary { color: var(--text-2); font-size: var(--fs-base); }
 .commit-foot .summary b { color: var(--text-1); }
-@media (max-width: 768px) { .commit-foot { bottom: 64px; } }
 
 .done-card { text-align: center; padding: var(--sp-8) var(--sp-5); }
 .done-icon { width: 56px; height: 56px; border-radius: var(--r-xl); background: var(--success-soft); color: var(--success); display: grid; place-items: center; margin: 0 auto var(--sp-4); }
@@ -98,3 +97,26 @@
 
 .chip-q { margin-left: 3px; color: var(--warning); font-weight: 700; }
 .catchip--suggested { border: 1px dashed var(--border-strong); background: var(--info-soft); }
+
+.dz-touch { display: none; }
+@media (pointer: coarse) {
+  .dz-mouse, .dropzone .dropzone-banks { display: none; }
+  .dz-touch { display: block; }
+  .dropzone-title .dz-touch { display: inline-flex; height: 48px; padding: 0 var(--sp-6); font-size: var(--fs-md); pointer-events: none; }
+  .dz-banks-short { margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--text-3); text-align: center; }
+  .dropzone { min-height: 0; padding: var(--sp-6) var(--sp-4); }
+}
+@media (max-width: 768px) {
+  .commit-foot { bottom: calc(76px + var(--safe-bottom)); margin-left: calc(-1 * var(--sp-2)); margin-right: calc(-1 * var(--sp-2)); }
+  .commit-foot > .row { flex: 1 1 100%; }
+  .commit-foot > .row .btn { flex: 1 1 0; }
+  .tbl-preview tr { grid-template-columns: 36px minmax(0, 1fr) auto; padding: 12px; }
+  .tbl-preview td.col-check { display: grid; place-items: center; }
+  .tbl-preview tbody tr { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+  .file-tab { height: 40px; }
+}
+@media (max-width: 480px) {
+  .stepper { gap: var(--sp-2); }
+  .stepper .step { gap: 6px; font-size: var(--fs-sm); }
+  .stepper .step-line { min-width: 8px; flex: 1 1 8px; }
+}
