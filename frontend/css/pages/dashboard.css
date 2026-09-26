@@ -15,7 +15,7 @@
 .recent .list-item a { color: inherit; text-decoration: none; }
 .recent .rt-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .recent .rt-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent .rt-meta { font-size: var(--fs-xs); color: var(--text-3); display: flex; gap: 6px; align-items: center; min-width: 0; }
+.recent .rt-meta { font-size: var(--fs-xs); color: var(--text-3); }
 .recent .rt-meta .truncate { max-width: 160px; }
 .recent .rt-amt { text-align: right; font-weight: 500; }
 .recent .rt-date { font-size: var(--fs-xs); color: var(--text-4); text-align: right; }
@@ -64,7 +64,6 @@
   .page-head .page-actions { width: 100%; justify-content: space-between; }
   .month-nav { flex: 1 1 auto; }
   .month-nav #month-btn { flex: 1 1 auto; }
-  .recent .rt-meta { flex-wrap: wrap; }
   .recent .rt-meta .truncate { max-width: none; }
   .inc-row--src { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name num" "sub sub"; }
   .inc-row--src .inc-name { grid-area: name; }

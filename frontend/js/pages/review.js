@@ -311,11 +311,12 @@ function cardHtml(g, idx) {
   const sug = g.suggestion && catOf(g.suggestion.category_id) ? { ...g.suggestion, cat: catOf(g.suggestion.category_id) } : null;
   const n = g.count - g.excluded.size;
   const single = rv.mode === 'single';
+  const spanYear = String(g.first).slice(0, 4) !== String(g.last).slice(0, 4) ? { year: true } : {};
   return `<article class="rv-card ${single ? 'rv-single' : ''} ${idx === rv.focus ? 'is-focused' : ''}" data-idx="${idx}" data-key="${esc(groupKey(g))}" tabindex="0" aria-label="${esc(g.display)}">
     <div class="rv-head">
       <div style="min-width:0">
         <div class="rv-name">${esc(g.display)}</div>
-        <div class="rv-meta">${single ? `<span>${esc(fmtDateLong(g.first))}</span>` : `<span>${plural(g.count, 'charge')}</span><span>·</span>`}<span class="amt">${fmtMoney(g.total, cur, { sign: 'always' })}</span>${!single && g.first !== g.last ? `<span>·</span><span>${fmtDate(g.first)} – ${fmtDate(g.last)}</span>` : !single ? `<span>·</span><span>${fmtDate(g.first)}</span>` : ''}</div>
+        <div class="rv-meta dots">${single ? `<span>${esc(fmtDateLong(g.first))}</span>` : `<span>${plural(g.count, 'charge')}</span>`}<span class="amt">${fmtMoney(g.total, cur, { sign: 'always' })}</span>${!single && g.first !== g.last ? `<span>${fmtDate(g.first, spanYear)} – ${fmtDate(g.last, spanYear)}</span>` : !single ? `<span>${fmtDate(g.first)}</span>` : ''}</div>
         ${g.sample_description ? `<div class="rv-raw" data-tip="${esc(g.sample_description)}">${esc(g.sample_description)}</div>` : ''}
       </div>
       ${!single ? `<button type="button" class="btn btn-ghost btn-xs" data-cact="expand" aria-expanded="${g.expanded}">${icon(g.expanded ? 'chevron-up' : 'chevron-down', 'ico-sm')}${g.expanded ? 'Hide' : 'Show'} charges</button>` : ''}

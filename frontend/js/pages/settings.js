@@ -191,7 +191,7 @@ function renderAIStatus() {
     <div class="row-between" style="gap:12px;flex-wrap:wrap">
       <div class="row gap-3"><span class="ai-status-mark">${icon('sparkles')}</span><div>
         <div class="fw-600">${on ? `AI is on · <span class="mono fs-sm">${esc(st.model || '')}</span>` : (st.configured || st.model ? 'AI is configured but switched off' : 'AI is off — add an OpenRouter key below')}</div>
-        <div class="text-3 fs-sm">${st.enabled ? 'Category suggestions on import' : 'Suggestions off'} · ${st.insights_enabled ? 'insights on' : 'insights off'}${last ? ` · last call ${fmtRelative(last.created_at)}${last.status === 'error' ? ` <span class="text-danger">(${esc(last.error_message || 'failed')})</span>` : ''}` : ''}</div>
+        <div class="text-3 fs-sm dots"><span>${st.enabled ? 'Category suggestions on import' : 'Suggestions off'}</span><span>${st.insights_enabled ? 'insights on' : 'insights off'}</span>${last ? `<span>last call ${fmtRelative(last.created_at)}${last.status === 'error' ? ` <span class="text-danger">(${esc(last.error_message || 'failed')})</span>` : ''}</span>` : ''}</div>
       </div></div>
       <div class="row gap-2"><button type="button" class="btn btn-ghost btn-sm" data-act="ai-refresh" data-tip="Refresh" aria-label="Refresh AI status">${icon('refresh', 'ico-sm')}</button>
         <button type="button" class="btn btn-secondary btn-sm" data-act="ai-suggest" ${st.enabled ? '' : 'disabled data-tip="Turn on suggestions and save first"'}>${icon('sparkles', 'ico-sm')}Suggest categories for uncategorized</button></div>

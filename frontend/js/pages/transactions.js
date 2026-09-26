@@ -37,6 +37,7 @@ initNav('transactions').then(async () => {
   $('#btn-add').addEventListener('click', openAddModal);
   $('.tx-search .ico-wrap').innerHTML = icon('search');
   $('#f-q').value = tx.filters.q;
+  if (ui.isPhone()) $('#f-q').placeholder = 'Search transactions';
   const searchDebounced = debounce(() => { tx.filters.q = $('#f-q').value.trim(); applyFilters(); }, 250);
   $('#f-q').addEventListener('input', searchDebounced);
   $('#f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { searchDebounced.cancel(); tx.filters.q = $('#f-q').value.trim(); applyFilters(); } if (e.key === 'Escape') { e.target.blur(); } });
@@ -1000,7 +1001,7 @@ function drawerHtml(it) {
   return `
     <div class="txd-head">
       <div class="txd-amount ${it.amount > 0 ? 'text-success' : ''}">${fmtMoney(it.amount, cur, { sign: 'always' })}</div>
-      <div class="meta"><span>${esc(fmtDateLong(it.txn_date))}</span>${it.posted_date && it.posted_date !== it.txn_date ? `<span class="text-4">· posted ${fmtDate(it.posted_date)}</span>` : ''}${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i>${esc(a.name)}</span>` : ''}</div>
+      <div class="meta dots"><span>${esc(fmtDateLong(it.txn_date))}</span>${it.posted_date && it.posted_date !== it.txn_date ? `<span class="text-4">posted ${fmtDate(it.posted_date)}</span>` : ''}${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i>${esc(a.name)}</span>` : ''}</div>
       ${it.category_status === 'suggested' ? `<div class="row mt-2" style="gap:6px"><span class="text-3 fs-sm">Suggested${it.category_confidence != null ? ` · ${Math.round(it.category_confidence * 100)}% confidence` : ''}</span><button type="button" class="btn btn-xs btn-secondary" data-dact="accept">${icon('check', 'ico-sm')}Accept</button><button type="button" class="btn btn-xs btn-ghost" data-dact="reject">Reject</button></div>` : ''}
     </div>
     <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button>${it.is_transfer ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-dact="split">${icon('split', 'ico-sm')}${(it.splits || []).length ? 'Edit split' : 'Split…'}</button>`}</div>${splitLinesHtml(it)}</div>

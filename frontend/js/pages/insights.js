@@ -74,7 +74,7 @@ function renderAnomalies() {
   if (!rows.length) { host.innerHTML = ui.emptyState({ icon: 'check-circle', title: 'Nothing unusual', body: 'No charges stood out in the last 45 days.' }); return; }
   host.innerHTML = `<div class="anom-list">${rows.map((a) => { const k = KIND[a.kind] || { label: a.kind, icon: 'alert-triangle' }; return `<div class="anom anom--${esc(a.kind)}" data-id="${a.transaction_id}">
     <span class="anom-ico">${icon(k.icon)}</span>
-    <div><div class="anom-title">${esc(a.merchant_name)}<span class="badge badge-neutral" aria-label="Anomaly type: ${esc(k.label)}">${esc(k.label)}</span></div><div class="anom-text">${esc(a.text || describe(a))}</div><div class="anom-meta">${fmtDate(a.txn_date, { year: true })}${a.delta != null && a.kind === 'unusual_amount' ? ` · ${fmtMoney(Math.abs(a.delta), cur)} above usual` : ''}</div></div>
+    <div><div class="anom-title">${esc(a.merchant_name)}<span class="badge badge-neutral" aria-label="Anomaly type: ${esc(k.label)}">${esc(k.label)}</span></div><div class="anom-text">${esc(a.text || describe(a))}</div><div class="anom-meta dots"><span>${fmtDate(a.txn_date, { year: true })}</span>${a.delta != null && a.kind === 'unusual_amount' ? `<span>${fmtMoney(Math.abs(a.delta), cur)} above usual</span>` : ''}</div></div>
     <div class="anom-actions"><span class="anom-amt">${fmtMoney(Math.abs(a.amount), cur)}</span><div class="row"><a class="btn btn-ghost btn-xs" href="/transactions.html${toQuery({ open: a.transaction_id, range: 'all' })}">View</a><button type="button" class="btn btn-ghost btn-xs" data-act="dismiss-anom" data-id="${a.transaction_id}">Looks fine</button></div></div></div>`; }).join('')}</div>`;
 }
 function describe(a) {

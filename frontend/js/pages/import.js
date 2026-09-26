@@ -113,7 +113,7 @@ function renderFileList() {
     return `<div class="file-row" data-lid="${f.lid}">
       <span class="file-icon ${esc(f.kind || '')}">${icon(KIND_ICON[f.kind] || 'file')}</span>
       <div style="min-width:0"><div class="file-name">${esc(f.name)}</div>
-        <div class="file-meta"><span>${fmtBytes(f.size)}</span>${f.kind === 'pdf' && f.statementId && !f.statement ? '<span>· text extraction, then OCR if the PDF is a scan</span>' : ''}${f.statement && f.statement.duplicate_of ? '<span class="text-warning">· same file was uploaded before</span>' : ''}</div>
+        <div class="file-meta dots"><span>${fmtBytes(f.size)}</span>${f.kind === 'pdf' && f.statementId && !f.statement ? '<span>text extraction, then OCR if the PDF is a scan</span>' : ''}${f.statement && f.statement.duplicate_of ? '<span class="text-warning">same file was uploaded before</span>' : ''}</div>
         ${!f.statementId && !f.error ? `<div class="progress progress-thin"><span style="width:${Math.round((f.progress || 0) * 100)}%"></span></div>` : ''}</div>
       <div class="file-status">${status}</div>
     </div>`;

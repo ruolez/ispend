@@ -14,8 +14,13 @@
 .tbl-statements .st-counts .muted { font-size: var(--fs-xs); }
 .tbl-statements .col-file { max-width: 360px; }
 .tbl-statements .col-actions { width: 84px; } /* room for Continue + menu so a hover never widens the table */
+/* the name link is a flex box so its inner .truncate can ellipsize (text-overflow never draws on a flex container) */
+.st-file-name.row-link { display: flex; min-width: 0; }
+.st-file-name.row-link > .truncate { min-width: 0; }
+@media (max-width: 960px) { .tbl-statements .hide-mobile, .tbl-statements .col-uploaded { display: none; } .tbl-statements .col-file { max-width: 180px; } }
 @media (max-width: 768px) {
   .tbl-statements .col-file { max-width: none; }
   .tbl-statements .col-actions { width: auto; }
 }
-@media (max-width: 960px) { .tbl-statements .hide-mobile, .tbl-statements .col-uploaded { display: none; } .tbl-statements .col-file { max-width: 180px; } }
+/* a 44px tap target that still sits on a 20px line */
+@media (pointer: coarse) { .st-file-name.row-link { margin-block: calc((var(--tap) - 1.5em) / -2); } }

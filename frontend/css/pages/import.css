@@ -9,7 +9,7 @@
 .file-row .file-icon.csv { background: var(--success-soft); color: var(--success); }
 .file-row .file-icon.xlsx, .file-row .file-icon.xls { background: var(--info-soft); color: var(--accent); }
 .file-row .file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-row .file-meta { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; display: flex; gap: 8px; align-items: center; }
+.file-row .file-meta { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
 .file-row .progress { margin-top: 6px; }
 .file-row .file-status { display: flex; align-items: center; gap: 8px; }
 

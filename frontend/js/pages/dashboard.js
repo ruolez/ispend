@@ -362,7 +362,7 @@ function renderRecent(data) {
     return `<div class="list-item is-clickable" data-open="${t.id}" role="link" tabindex="0">
       <span class="cat-icon" style="--c:${catColor(color)}">${icon(t.is_transfer ? 'arrow-left-right' : (t.category_icon || (t.category_id ? 'tag' : 'help')))}</span>
       <div class="rt-main"><span class="rt-name">${esc(t.merchant_name || t.description_clean)}</span>
-        <span class="rt-meta"><span class="truncate">${esc(t.is_transfer ? 'Transfer' : (t.category_name || 'Uncategorized'))}</span>${t.category_status === 'suggested' ? `<span class="badge badge-info">${icon('sparkles')}Suggested</span>` : ''}<span>·</span><span class="truncate">${esc(t.account_name)}</span></span></div>
+        <span class="rt-meta dots"><span class="dots-group"><span class="truncate">${esc(t.is_transfer ? 'Transfer' : (t.category_name || 'Uncategorized'))}</span>${t.category_status === 'suggested' ? `<span class="badge badge-info">${icon('sparkles')}Suggested</span>` : ''}</span><span class="truncate">${esc(t.account_name)}</span></span></div>
       <div><div class="rt-amt amt ${cls}">${fmtMoney(t.amount, t.currency || state.currency, { sign: 'always' })}</div><div class="rt-date">${fmtDate(t.txn_date)}</div></div>
     </div>`;
   }).join('')}</div>`;

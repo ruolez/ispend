@@ -47,10 +47,8 @@ TEXT_XFAIL = set()
 TITLE_XFAIL = set()
 # Visual probes (phone polish pass): text on text, hard-clipped text, "·" stranded at a line edge.
 OVERLAP_XFAIL = {("budgets", "se-320"), ("index", "390"), ("index", "se-320")}
-CLIP_XFAIL = {("budgets", "se-320"), ("statements", "390"), ("statements", "se-320"), ("transactions", "390"),
-              ("transactions", "se-320")}
-ORPHAN_XFAIL = {("index", "390"), ("index", "se-320"), ("review", "se-320"), ("settings", "390"), ("settings", "se-320"),
-                ("statements", "390"), ("statements", "se-320")}
+CLIP_XFAIL = {("budgets", "se-320")}
+ORPHAN_XFAIL = set()
 VISUAL_DEVICES = ["se-320", "390"]
 CLIP_ALLOW = [s for s in ALLOW_HSCROLL if s not in ("#tx-summary", ".tx-wrap")]
 
@@ -124,7 +122,12 @@ VISUAL_JS = r"""
   // a text rect clipped by every overflow ancestor; null when nothing of it is visible
   const clipRect = (el, r) => { let [l, t, rt, b] = [r.left, r.top, r.right, r.bottom];
     for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e);
-      if (clips(cs)) { const c = e.getBoundingClientRect(); l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom); }
+      if (clips(cs)) { const c = e.getBoundingClientRect(); // overflow clips at the padding box
+        l = Math.max(l, c.left + parseFloat(cs.borderLeftWidth)); t = Math.max(t, c.top + parseFloat(cs.borderTopWidth));
+        rt = Math.min(rt, c.right - parseFloat(cs.borderRightWidth)); b = Math.min(b, c.bottom - parseFloat(cs.borderBottomWidth)); }
+      const ins = /^inset\(([^)]*)\)/.exec(cs.clipPath);
+      if (ins) { const v = ins[1].trim().split(/\s+/).map(parseFloat); const [it, ir, ib, il] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+        const c = e.getBoundingClientRect(); l = Math.max(l, c.left + il); t = Math.max(t, c.top + it); rt = Math.min(rt, c.right - ir); b = Math.min(b, c.bottom - ib); }
       if (cs.position === 'fixed') break; }
     return rt - l > 1 && b - t > 1 ? { l, t, r: rt, b } : null; };
   const texts = []; const clip = []; const orphan = new Set();
