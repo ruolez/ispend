@@ -2058,7 +2058,7 @@ def test_f8_reports(page, qapi):
     first = page.locator("#merch-table tr.is-clickable").first
     F.eq(first.locator("td .name").inner_text(), top[0]["merchant_name"], "top merchant matches API")
     F.eq(money(first.locator("td.fw-500").inner_text()), round(top[0]["total"], 2), "top merchant total")
-    F.check(page.locator("#merch-table canvas").count() == len(top), "sparkline per merchant row")
+    F.check(page.locator("#merch-table svg.spark").count() == len(top), "sparkline per merchant row")
     F.check(not bad_text(page), f"bad text on merchants: {bad_text(page)}")
     shot(page, "F8-merchants", full=True)
 
