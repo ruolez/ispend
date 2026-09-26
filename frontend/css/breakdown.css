@@ -39,7 +39,7 @@
   .bd-table tr.bd-child { padding-left: 28px; }
   .bd-table tr:last-child { border-bottom: 0; }
   .bd-table td { display: block; padding: 0; border: 0; height: auto; }
-  .bd-table td.bd-name { grid-area: name; min-width: 0; }
+  .bd-table td.bd-name { grid-area: name; min-width: 0; display: flex; align-items: center; gap: 8px; } /* the phone reset above makes cells block; the name keeps its icon gap */
   .bd-table td.col-total { grid-area: total; white-space: nowrap; text-align: right; }
   .bd-table td.bd-share { grid-area: share; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .bd-table td.bd-share .share-bar { flex: 1 1 auto; width: auto; max-width: none; }

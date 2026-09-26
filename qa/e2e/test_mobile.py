@@ -190,6 +190,37 @@ VISUAL_JS = r"""
 }
 """
 
+GAP_JS = r"""
+(rootSel) => {
+  // An icon (svg.ico, category/account marks, dots, discs) must sit at least 4px from the text beside it.
+  const roots = [...document.querySelectorAll(rootSel)]; const out = new Set();
+  const vis = (el) => { if (el.closest('[hidden],.sr-only')) return false;
+    for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) return false; }
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const label = (el) => el.tagName.toLowerCase() + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : (el.className && el.className.baseVal ? '.' + el.className.baseVal.split(' ')[0] : ''));
+  for (const root of roots) {
+    const texts = [];
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) {
+      const s = n.textContent; if (!s.trim() || !n.parentElement || n.parentElement.closest('script,style') || !vis(n.parentElement)) continue;
+      const rg = document.createRange(); rg.setStart(n, s.length - s.trimStart().length); rg.setEnd(n, s.trimEnd().length); // the ink, not the spaces
+      for (const r of rg.getClientRects()) if (r.width > 1) texts.push({ el: n.parentElement, r, t: s.trim().slice(0, 20) });
+    }
+    const icons = [...root.querySelectorAll('svg.ico, .cat-icon, .dot, .acct-mark, .tx-disc, .avatar, .st-file-icon, .attn-ico, .anom-ico')].filter((el) => vis(el));
+    for (const ic of icons) {
+      const q = ic.getBoundingClientRect(); const scope = ic.parentElement.parentElement || ic.parentElement;
+      for (const t of texts) {
+        if (!scope.contains(t.el) || ic.contains(t.el)) continue;
+        if (Math.min(q.bottom, t.r.bottom) - Math.max(q.top, t.r.top) < Math.min(q.height, t.r.height) * 0.5) continue;
+        const gap = t.r.left >= q.left ? t.r.left - q.right : q.left - t.r.right;
+        if (gap > -2 && gap < 4) out.add(label(ic) + ' ~ "' + t.t + '" ' + Math.round(gap) + 'px in ' + label(scope));
+      }
+    }
+  }
+  return [...out].slice(0, 20);
+}
+"""
+
 SHELL_JS = r"""
 () => {
   const vis = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
@@ -262,7 +293,7 @@ def visual(device, page_key, dev):
         page = device(dev)
         page.goto(PAGES[page_key])
         wait_loaded(page)
-        _vcache[(page_key, dev)] = page.evaluate(VISUAL_JS, CLIP_ALLOW)
+        _vcache[(page_key, dev)] = {**page.evaluate(VISUAL_JS, CLIP_ALLOW), "tight": page.evaluate(GAP_JS, "#main")}
         page.context.close()
     return _vcache[(page_key, dev)]
 
@@ -319,6 +350,36 @@ def test_no_hard_clipped_text(device, page_key, dev):
 @pytest.mark.parametrize("page_key,dev", _mark(VISUAL_KEYS, ORPHAN_XFAIL, "fixed in the phone polish pass"))
 def test_no_stranded_separators(device, page_key, dev):
     assert visual(device, page_key, dev)["orphan"] == []
+
+
+@pytest.mark.parametrize("page_key,dev", VISUAL_KEYS)
+def test_icons_keep_a_gap_from_text(device, page_key, dev):
+    assert visual(device, page_key, dev)["tight"] == []
+
+
+SHEETS = [("index", "#bn-more"), ("index", "#tb-user"), ("index", "#month-btn"), ("transactions", "#f-range"),
+          ("transactions", "#f-sheet"), ("transactions", ".page-more"), ("budgets", ".page-more"), ("reports", "#range-btn")]
+
+
+@pytest.mark.parametrize("page_key,trigger", SHEETS)
+def test_sheet_icons_keep_a_gap_from_text(device, page_key, trigger):
+    page = device("390")
+    page.goto(PAGES[page_key])
+    wait_loaded(page)
+    page.locator(trigger).first.tap()
+    page.wait_for_selector(".sheet, .modal, .popover", timeout=3000)
+    page.wait_for_timeout(450)  # sheets slide in
+    assert page.evaluate(GAP_JS, ".modal, .popover") == []
+
+
+def test_expanded_breakdown_keeps_icon_gaps(device):
+    page = device("se-320")
+    page.goto(PAGES["index"])
+    wait_loaded(page)
+    page.locator("#breakdown [data-bd='toggle-all']").tap()
+    page.wait_for_timeout(300)
+    assert page.evaluate("() => [...document.querySelectorAll('#breakdown tr.bd-child')].filter((r) => r.getClientRects().length).length") > 0
+    assert page.evaluate(GAP_JS, "#main") == []
 
 
 def test_transactions_first_row_in_first_screen(device):
