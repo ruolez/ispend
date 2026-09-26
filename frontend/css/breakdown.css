@@ -49,3 +49,4 @@
 
 .bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-xs); color: inherit; cursor: pointer; }
 .bd-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (pointer: coarse) { .bd-link { display: inline-flex; align-items: center; min-height: 40px; } }

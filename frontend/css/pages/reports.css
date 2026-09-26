@@ -13,7 +13,6 @@
 .trend-chips .chip { cursor: pointer; }
 .trend-chips .chip .dot { margin-right: 2px; }
 .trend-chips .chip.active { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text-1); }
-.compare-row input[type="month"] { width: 170px; }
 .delta { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
 .delta--up { color: var(--danger); }
 .delta--down { color: var(--success); }
@@ -42,3 +41,18 @@
 #panel-cashflow .stat-grid { margin-bottom: var(--sp-4); }
 .rate--good { color: var(--success); }
 .rate--bad { color: var(--danger); }
+
+@media (pointer: coarse) {
+  .chart-legend .legend-item { min-height: 40px; }
+  .chart-toolbar .seg-btn { min-width: var(--tap); }
+}
+@media (max-width: 640px) {
+  .compare-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: var(--sp-2); }
+  .compare-row .cmp-quick, .compare-row .hint { grid-column: 1 / -1; }
+  .cmp-pick .row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .cmp-pick [data-act$="-prev"], .cmp-pick [data-act$="-next"] { display: none; }
+  .cmp-pick .cmp-month-btn { width: 100%; min-width: 0; justify-content: space-between; padding: 0 var(--sp-2); }
+  .cmp-pick .cmp-month-btn .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .report-tbl:not(.tbl--cards) .col-share, .report-tbl:not(.tbl--cards) th:nth-child(6), .report-tbl:not(.tbl--cards) td:nth-child(6) { display: none; }
+}
+.cmp-month-btn { min-width: 170px; gap: 6px; justify-content: space-between; }

@@ -27,16 +27,24 @@
 .bud-status { white-space: nowrap; }
 .bud-unb { gap: 12px; }
 @media (max-width: 768px) {
-  .bud-row { grid-template-columns: minmax(0, 1fr) auto 28px; grid-template-areas: "name status menu" "bar bar bar" "amounts left left"; gap: 6px 10px; padding: 12px var(--sp-4); }
+  .bud-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name status menu" "bar bar bar" "amounts left left"; gap: 6px 10px; padding: 14px var(--sp-4); }
+  .bud-sub { white-space: normal; }
+  .bud-amounts { font-size: var(--fs-base); }
+  .bud-left { font-size: var(--fs-sm); white-space: normal; min-width: 0; }
+  .bud-amounts .bud-edit { font-size: inherit; }
   .bud-name { grid-area: name; }
   .bud-bar { grid-area: bar; margin: 4px 0; }
   .bud-amounts { grid-area: amounts; }
   .bud-left { grid-area: left; align-items: flex-end; text-align: right; }
   .bud-status { grid-area: status; justify-self: end; }
   .bud-row > .btn-icon { grid-area: menu; }
-  .bud-edit { min-height: 32px; display: inline-flex; align-items: center; }
+  .bud-edit { min-height: 40px; display: inline-flex; align-items: center; }
 }
 @media (max-width: 640px) {
   .month-nav { flex: 1 1 auto; }
   .month-nav #month-btn { min-width: 0; flex: 1 1 auto; }
+}
+
+@media (max-width: 640px) {
+  #bud-stats .stat:nth-child(3) { grid-column: 1 / -1; }
 }

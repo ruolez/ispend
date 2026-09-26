@@ -102,4 +102,20 @@
 .inc-row .sub { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .inc-bar { display: block; height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
 .inc-bar > span { display: block; height: 100%; background: var(--c, var(--success)); border-radius: inherit; }
-@media (max-width: 768px) { .income-grid { grid-template-columns: 1fr; } .inc-row { grid-template-columns: 24px minmax(0, 1fr) 44px 96px; } .inc-row .inc-bar { display: none; } }
+@media (max-width: 768px) { .income-grid { grid-template-columns: 1fr; } .inc-row:not(.inc-row--src) { grid-template-columns: 24px minmax(0, 1fr) 44px 96px; } .inc-row .inc-bar { display: none; } }
+
+/* phones: one period row, touch-sized rows, a donut that doesn't eat the screen */
+@media (pointer: coarse) {
+  #monthly-hint { display: none; }
+  .bud-mini-row, .inc-row, .attn-row { min-height: var(--tap); }
+  .attn-head a, .card-actions > a.btn-xs { min-height: 40px; display: inline-flex; align-items: center; }
+}
+@media (max-width: 640px) {
+  .page-head .page-actions { flex-wrap: wrap; gap: var(--sp-2); }
+  #range-seg { flex: 1 1 100%; }
+  .donut-wrap .chart-body { --h: 180px !important; max-width: 220px; margin: 0 auto; width: 100%; }
+  #budget-card .card-head { flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+  #budget-card .card-head .card-actions { position: absolute; top: var(--sp-3); right: var(--sp-3); }
+  #budget-card { position: relative; }
+  .stat-value { font-weight: var(--fw-bold); }
+}

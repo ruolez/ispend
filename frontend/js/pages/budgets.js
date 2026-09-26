@@ -138,6 +138,7 @@ async function onAction(e) {
 }
 function startAmountEdit(btn) {
   const it = itemById(btn.dataset.id); if (!it) return;
+  if (ui.isPhone()) return openLimitSheet(it);
   const input = document.createElement('input');
   input.className = 'input input-sm num bud-amt-input'; input.type = 'number'; input.min = '0.01'; input.step = '0.01'; input.inputMode = 'decimal';
   input.value = it.budget.toFixed(2); input.dataset.id = String(it.budget_id); input.setAttribute('aria-label', `${it.name} budget`);
@@ -160,6 +161,27 @@ async function commitAmount(input) {
     await load();
     ui.undoable(`${it.name} budget set to ${fmtMoney(v, bud.currency)}`, async () => { await api(`/api/budgets/${it.budget_id}`, { method: 'PUT', body: { amount: prev } }); await load(); });
   } catch (err) { toast(err.message, { type: 'error' }); render(); }
+}
+/* Phones edit a limit in a sheet: a decimal keypad, and Cancel really cancels (inline, leaving the
+   field saved it). Same save + undo as the inline edit. */
+function openLimitSheet(it) {
+  const cur = bud.currency;
+  const m = ui.modal({
+    title: `${it.name} limit`,
+    html: `<form id="bl-form"><div class="field"><label for="bl-amount" data-required>Monthly limit</label><input id="bl-amount" class="input num bl-amount" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${it.budget.toFixed(2)}"><div class="hint">${esc(fmtMoney(it.spent, cur))} spent so far in ${esc(fmtMonth(bud.month, { long: true }))}.</div></div><button type="submit" hidden></button></form>`,
+    actions: [{ label: 'Cancel' }, { label: 'Save', primary: true, onClick: async () => {
+      const input = m.el.querySelector('#bl-amount');
+      const v = Number(String(input.value).replace(/[^0-9.]/g, ''));
+      if (!ui.validate(m.el, [{ sel: '#bl-amount', test: () => v > 0 || 'Enter an amount above zero' }])) return false;
+      if (Math.abs(v - it.budget) < 0.005) return undefined;
+      const prev = it.budget;
+      await api(`/api/budgets/${it.budget_id}`, { method: 'PUT', body: { amount: v } });
+      await load();
+      ui.undoable(`${it.name} budget set to ${fmtMoney(v, cur)}`, async () => { await api(`/api/budgets/${it.budget_id}`, { method: 'PUT', body: { amount: prev } }); await load(); });
+      return undefined;
+    } }],
+  });
+  m.el.querySelector('#bl-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
 }
 function openMenu(anchor, it) {
   if (!it) return;

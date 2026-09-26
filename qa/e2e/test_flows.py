@@ -1952,6 +1952,19 @@ def test_f7_categories(page, qapi):
 # ---------------------------------------------------------------------------------------------
 # F8 — reports
 # ---------------------------------------------------------------------------------------------
+def pick_month(page, trigger, ym):
+    """Choose a month through the shared month picker (year stepper + month grid)."""
+    page.locator(trigger).click()
+    page.wait_for_selector(".mp .mp-grid", timeout=4000)
+    for _ in range(30):
+        year = int(page.locator(".mp .mp-year").inner_text())
+        if year == int(ym[:4]):
+            break
+        page.locator(".mp [data-mp='prev']" if year > int(ym[:4]) else ".mp [data-mp='next']").click()
+    page.locator(f".mp [data-ym='{ym}']").click()
+    page.wait_for_selector(".mp", state="detached", timeout=3000)
+
+
 def test_f8_reports(page, qapi):
     F = Soft("F8", page, S["rec"])
     qapi.put("/api/auth/me/preferences", {"onboarding": {"reports_opened": False}})  # F4's `g p` shortcut already visited Reports
@@ -2056,8 +2069,7 @@ def test_f8_reports(page, qapi):
     page.wait_for_timeout(800)
     F.note(f"compare default: {page.locator('#panel-compare .empty').inner_text() if page.locator('#panel-compare .empty').count() else 'chart rendered'}")
     shot(page, "F8-compare-default")
-    page.locator("#cmp-month").fill("2024-08")
-    page.locator("#cmp-month").dispatch_event("change")
+    pick_month(page, "#cmp-month", "2024-08")
     page.wait_for_timeout(1200)
     txt = page.locator("#panel-compare").inner_text()
     F.check("August 2024 vs July 2024" in page.locator("#cmp-title").inner_text(), f"compare title: {page.locator('#cmp-title').inner_text()!r}")
@@ -2068,8 +2080,7 @@ def test_f8_reports(page, qapi):
     F.note(f"compare categories with previous=0: {[(r['name'], r['pct']) for r in rows_pct][:4]} (pct shown as: {[c.inner_text() for c in page.locator('#cmp-table .delta').all()][:4]})")
     F.check(canvas_ink(page, "#ch-compare") > 500, "compare chart drawn")
     shot(page, "F8-compare-aug", full=True)
-    page.locator("#cmp-vs").fill("2023-08")
-    page.locator("#cmp-vs").dispatch_event("change")
+    pick_month(page, "#cmp-vs", "2023-08")
     page.wait_for_timeout(1000)
     txt = page.locator("#panel-compare").inner_text()
     F.check("Infinity" not in txt and "NaN" not in txt, "vs an empty month: no Infinity/NaN")
