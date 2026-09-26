@@ -145,11 +145,11 @@
   .tbl-tx td.col-cat { grid-area: cat; min-width: 0; }
   .tbl-tx td.col-acct { grid-area: acct; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-3); font-size: var(--fs-sm); }
   .tbl-tx td.col-acct .acct-mark { display: none; }
-  /* category · account: the dot sits 6px from each word (the grid's column gap is pulled back) */
-  .tbl-tx td.col-acct { margin-left: calc(6px - var(--sp-3)); }
+  /* category · account: the dot sits 7px from each word (the grid's column gap is pulled back) */
+  .tbl-tx td.col-acct { margin-left: calc(7px - var(--sp-3)); }
   .tbl-tx td.col-acct .acct { display: flex; min-width: 0; }
   .tbl-tx td.col-acct .acct .truncate { min-width: 0; }
-  .tbl-tx td.col-acct .acct::before { content: '·'; margin-right: 6px; color: var(--text-4); }
+  .tbl-tx td.col-acct .acct::before { content: '·'; color: var(--text-4); } /* .acct's 7px gap spaces it from the name */
   .tbl-tx td.col-actions { display: none; }
   .tbl-tx .catcell .catchip { height: 28px; min-height: 28px; padding: 0; border: 0; background: transparent; font-size: var(--fs-sm); color: var(--text-2); }
   .tbl-tx .catcell .catchip .dot { display: none; }

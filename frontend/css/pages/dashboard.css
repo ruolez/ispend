@@ -1,5 +1,9 @@
 /* Dashboard */
-.stat .stat-spark { pointer-events: none; top: 14px; bottom: auto; right: 16px; width: 64px; height: 26px; opacity: 0.7; }
+.stat .stat-spark { pointer-events: none; top: 12px; bottom: auto; right: 16px; width: 64px; height: 26px; opacity: 0.7; }
+/* the sparkline lives in the label row: the row is as tall as the line and the label stops short of it */
+.stat[data-kpi] .stat-label { min-height: 22px; padding-right: 72px; }
+/* Chart.js writes an inline display:block on its canvas, so hiding one needs !important */
+@media (max-width: 480px) { .stat .stat-spark { display: none !important; } .stat[data-kpi] .stat-label { min-height: 0; padding-right: 0; } }
 .stat.is-loading .stat-spark { visibility: hidden; }
 .pt-0 { padding-top: 0 !important; }
 
@@ -34,6 +38,11 @@
 .attn-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-base); padding: 6px 0; border-bottom: 1px solid var(--border); }
 .attn-row:last-child { border-bottom: 0; }
 .attn-row .sub { font-size: var(--fs-xs); color: var(--text-3); }
+.attn-row > :first-child { flex: 1 1 auto; min-width: 0; }
+.attn-row > .row { flex: none; white-space: nowrap; }
+.attn-main { display: flex; flex-direction: column; min-width: 0; }
+.attn-row > .acct { display: flex; }
+.attn-row > .acct > .truncate { min-width: 0; }
 .attn-head { display: flex; align-items: center; justify-content: space-between; }
 .attn-head .section-label { margin-bottom: 2px; }
 .attn-head a { font-size: var(--fs-sm); }
@@ -65,7 +74,7 @@
   .month-nav { flex: 1 1 auto; }
   .month-nav #month-btn { flex: 1 1 auto; }
   .recent .rt-meta .truncate { max-width: none; }
-  .inc-row--src { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name num" "sub sub"; }
+  .inc-row.inc-row--src { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name num" "sub sub"; }
   .inc-row--src .inc-name { grid-area: name; }
   .inc-row--src .sub { grid-area: sub; white-space: normal; }
   .inc-row--src .num { grid-area: num; }
@@ -113,8 +122,11 @@
   .page-head .page-actions { flex-wrap: wrap; gap: var(--sp-2); }
   #range-seg { flex: 1 1 100%; }
   .donut-wrap .chart-body { --h: 180px !important; max-width: 220px; margin: 0 auto; width: 100%; }
-  #budget-card .card-head { flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
-  #budget-card .card-head .card-actions { position: absolute; top: var(--sp-3); right: var(--sp-3); }
-  #budget-card { position: relative; }
+  /* title and "All budgets" share the first line, the spent-of-budget summary runs underneath */
+  #budget-card .card-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title act" "hint hint"; align-items: center; row-gap: 2px; }
+  #budget-card .card-head > h2 { grid-area: title; }
+  #budget-card .card-head .card-actions { display: contents; }
+  #budget-card .card-head .card-actions > .hint { grid-area: hint; }
+  #budget-card .card-head .card-actions > .btn { grid-area: act; }
   .stat-value { font-weight: var(--fw-bold); }
 }

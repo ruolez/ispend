@@ -60,10 +60,16 @@ tr:focus-within .rec-dismiss { opacity: 1; }
   .rec-dismiss { opacity: 1; }
   .rec-table .col-merchant { min-width: 0; padding-right: 36px; }
   .rec-table .rec-amt, .rec-table .rec-next { flex-direction: row; align-items: center; gap: 6px; }
+  /* badge on the left, so every amount keeps the same right edge */
+  .rec-table .rec-amt { flex-direction: row-reverse; }
+  .rec-table .rec-amt .badge { margin-top: 0; }
   .rec-table th:last-child, .rec-table td:last-child { width: auto; }
 }
 
 @media (max-width: 640px) {
+  .page-head .page-actions { width: 100%; }
+  .month-nav { flex: 1 1 auto; }
+  .month-nav #month-btn { min-width: 0; flex: 1 1 auto; }
   .anom { grid-template-columns: 36px minmax(0, 1fr); }
   .anom-actions { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; }
 }
@@ -73,12 +79,12 @@ tr:focus-within .rec-dismiss { opacity: 1; }
   .rec-table.tbl--cards td[data-label]::before { display: none; }
   .rec-table.tbl--cards td.col-cadence, .rec-table.tbl--cards td.col-last { display: none; }
   .rec-table.tbl--cards td.col-merchant { grid-area: merchant; min-width: 0; margin: 0; padding-right: 0; font-size: var(--fs-md); }
-  .rec-table.tbl--cards td.col-amt { grid-area: amt; justify-content: flex-end; }
+  .rec-table.tbl--cards td.col-amt { grid-area: amt; justify-content: flex-end; align-self: start; padding-top: 9px; } /* on the name's line, not centred against name + count */
   .rec-table.tbl--cards td.col-cat { grid-area: cat; min-width: 0; }
   .rec-table.tbl--cards td.col-next { grid-area: next; justify-content: flex-end; }
   .rec-table.tbl--cards td.col-actions { top: 50%; transform: translateY(-50%); }
   .rec-table .rec-merchant a { display: block; padding: 9px 0; font-weight: var(--fw-medium); color: var(--text-1); }
   .rec-table .catchip { border: 0; background: transparent; padding-left: 0; height: auto; }
-  .rec-table .rec-next { align-items: flex-end; }
+  .rec-table .rec-next { align-items: baseline; }
 }
 @media (pointer: coarse) { .rec-dismiss { width: var(--tap); height: var(--tap); } }

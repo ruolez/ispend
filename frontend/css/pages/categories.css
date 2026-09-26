@@ -16,7 +16,8 @@
 .cat-col-count, .cat-col-total { text-align: right; }
 .cat-tree { padding: 4px 0; }
 .cat-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 120px 116px; gap: 8px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--border); min-height: 46px; transition: background var(--dur-1); cursor: pointer; }
-.cat-row:last-child { border-bottom: 0; }
+/* only the tree's very last row drops its rule; a group's last child still separates it from the next parent */
+.cat-tree > .cat-row:last-child, .cat-tree > [role="group"]:last-child > .cat-row:last-child { border-bottom: 0; }
 @media (hover: hover) { .cat-row:hover { background: var(--surface-2); } }
 .cat-row.is-selected { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .cat-row.is-dragging { opacity: 0.4; }
@@ -42,6 +43,7 @@
 @media (hover: hover) { .cat-chevron:hover { color: var(--text-1); background: var(--surface-3); } }
 .cat-chevron .ico { width: 14px; height: 14px; transition: transform var(--dur-2) var(--ease-out); }
 .cat-row[aria-expanded="false"] .cat-chevron .ico { transform: rotate(-90deg); }
+.cat-chevron--spacer { visibility: hidden; } /* a parent without children keeps its name in line with the ones that have them */
 .cat-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cat-kind { margin-left: 4px; }
 .cat-empty { padding: var(--sp-4); }

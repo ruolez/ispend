@@ -64,7 +64,7 @@ function rowHtml(c, isChild) {
   return `<div class="cat-row ${isChild ? 'cat-row--child' : 'cat-row--parent'} ${state.selected === c.id ? 'is-selected' : ''}" role="treeitem" tabindex="-1" data-id="${c.id}" data-parent="${c.parent_id || ''}" draggable="true" aria-selected="${state.selected === c.id}" aria-level="${isChild ? 2 : 1}" ${hasKids ? `aria-expanded="${expanded}" aria-owns="cat-group-${c.id}"` : ''}>
     <div class="cat-main">
       <span class="cat-grip" data-act="grip" title="Drag to reorder" aria-hidden="true">${icon('grip-vertical', 'ico-sm')}</span>
-      ${hasKids ? `<button type="button" class="cat-chevron" data-act="toggle" data-id="${c.id}" tabindex="-1" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(c.name)}" aria-expanded="${expanded}">${icon('chevron-down', 'ico-sm')}</button>` : ''}
+      ${hasKids ? `<button type="button" class="cat-chevron" data-act="toggle" data-id="${c.id}" tabindex="-1" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(c.name)}" aria-expanded="${expanded}">${icon('chevron-down', 'ico-sm')}</button>` : !isChild ? '<span class="cat-chevron cat-chevron--spacer" aria-hidden="true"></span>' : ''}
       <button type="button" class="cat-icon" data-act="color" data-id="${c.id}" style="--c:${catColor(c.color)}" data-tip="Change color or icon" aria-label="Change color">${icon(c.icon || 'tag')}</button>
       <span class="cat-name" data-name>${esc(c.name)}</span>
       ${!isChild && c.children && c.children.length ? `<span class="cat-sub-count">${c.children.length}</span>` : ''}

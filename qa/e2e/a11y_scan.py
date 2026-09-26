@@ -82,7 +82,7 @@ WALKER_JS = r"""
   out.innerOverflow = [];
   const main = document.getElementById('main') || document.body;
   main.querySelectorAll('*').forEach((el) => {
-    if (!visible(el) || el.closest('canvas, .tabs, .file-tabs, .settings-nav, .filter-row, .mapping-table, .tbl-toolbar .seg, .page-actions .seg, .rv-toolbar .seg, .menu-opts, .tx-wrap, .popover, .modal, .drawer')) return;
+    if (!visible(el) || el.closest('canvas, .tabs, .file-tabs, .settings-nav, .filter-row, .tx-chips, .mapping-table, .tbl-toolbar .seg, .page-actions .seg, .rv-toolbar .seg, .menu-opts, .tx-wrap, .popover, .modal, .drawer')) return;
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     const scrolls = (cs.overflowX === 'auto' || cs.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1;
     if ((scrolls || (cs.position !== 'fixed' && r.right > vw + 1)) && out.innerOverflow.length < 12) out.innerOverflow.push({ sel: sel(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, right: Math.round(r.right) });

@@ -46,8 +46,8 @@ TARGET_XFAIL = set()
 TEXT_XFAIL = set()
 TITLE_XFAIL = set()
 # Visual probes (phone polish pass): text on text, hard-clipped text, "·" stranded at a line edge.
-OVERLAP_XFAIL = {("budgets", "se-320"), ("index", "390"), ("index", "se-320")}
-CLIP_XFAIL = {("budgets", "se-320")}
+OVERLAP_XFAIL = set()
+CLIP_XFAIL = set()
 ORPHAN_XFAIL = set()
 VISUAL_DEVICES = ["se-320", "390"]
 CLIP_ALLOW = [s for s in ALLOW_HSCROLL if s not in ("#tx-summary", ".tx-wrap")]

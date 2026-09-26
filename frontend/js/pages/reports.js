@@ -125,7 +125,7 @@ function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme(
 async function loadCategory(force) {
   const host = $('#panel-category');
   if (!host.querySelector('#ch-stack')) {
-    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Look inside a category" style="margin-left:12px;max-width:220px"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">Click a category to isolate it</span><div class="seg" id="pct-seg" aria-label="Amounts or percentages"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-mode="pct">%</button></div></div></header>
+    host.innerHTML = `<section class="card chart-card"><header class="card-head"><h2 id="stack-title">${isInc() ? 'Income' : 'Spending'} by month</h2><select id="stack-parent" class="select select-sm" aria-label="Look inside a category"><option value="">All categories</option></select><div class="card-actions chart-toolbar"><span class="hint" id="stack-hint">${ui.isCoarse() ? 'Tap' : 'Click'} a category to isolate it</span><div class="seg" id="pct-seg" aria-label="Amounts or percentages"><button type="button" class="seg-btn ${state.pct ? '' : 'active'}" data-mode="amt">$</button><button type="button" class="seg-btn ${state.pct ? 'active' : ''}" data-mode="pct">%</button></div></div></header>
       <div class="chart-body is-loading" style="--h:320px"><canvas id="ch-stack"></canvas></div><footer class="chart-legend" id="ch-stack-legend"></footer></section>
       <section class="card mt-4"><header class="card-head"><h2>Categories · <span id="cat-range-label" class="text-3 fw-500"></span></h2><div class="card-actions"><a class="btn btn-ghost btn-xs" href="/categories.html">Manage categories</a></div></header><div id="cat-table"><div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div></div></section>`;
   }
@@ -303,7 +303,7 @@ function renderCompare(data) {
 async function loadCashflow(force) {
   const host = $('#panel-cashflow');
   if (!host.querySelector('#ch-cash')) host.innerHTML = `<div class="stat-grid" id="cash-kpis"></div>
-    <section class="card chart-card"><header class="card-head"><h2>Income vs spending</h2><div class="card-actions"><span class="hint">Click a month to see its transactions</span></div></header><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-cash"></canvas></div><footer class="chart-legend" id="ch-cash-legend"></footer></section>
+    <section class="card chart-card"><header class="card-head"><h2>Income vs spending</h2><div class="card-actions"><span class="hint">${ui.isCoarse() ? 'Tap' : 'Click'} a month to see its transactions</span></div></header><div class="chart-body is-loading" style="--h:320px"><canvas id="ch-cash"></canvas></div><footer class="chart-legend" id="ch-cash-legend"></footer></section>
     <section class="card mt-4"><div class="tbl-wrap tbl-wrap--flush"><table class="tbl report-tbl tbl--cards"><thead><tr><th>Month</th><th class="right">Income</th><th class="right">Spent</th><th class="right">Net</th><th class="right">Savings rate</th></tr></thead><tbody id="cash-table">${ui.skeletonRows(6, 5)}</tbody></table></div></section>`;
   const seq = ++state.seq;
   try {

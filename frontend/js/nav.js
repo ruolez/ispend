@@ -450,7 +450,7 @@ function openPalette() {
   const wrap = document.createElement('div');
   wrap.className = 'palette-backdrop';
   wrap.innerHTML = `<div class="palette" role="dialog" aria-label="Search">
-      <div class="palette-input">${icon('search')}<input type="text" placeholder="Search transactions, categories, pages…" aria-label="Search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palette-list" aria-haspopup="listbox" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
+      <div class="palette-input">${icon('search')}<input type="text" placeholder="${ui.isPhone() ? 'Search iSpend' : 'Search transactions, categories, pages…'}" aria-label="Search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palette-list" aria-haspopup="listbox" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
       <div class="palette-list" id="palette-list" role="listbox" aria-label="Results"></div>
       <div class="sr-only" id="palette-live" aria-live="polite"></div></div>`;
   host.appendChild(wrap);

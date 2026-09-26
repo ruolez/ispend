@@ -748,7 +748,7 @@ tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon
 }
 @media (max-width: 480px) {
   .stat { padding: 12px 14px; min-height: 84px; gap: 4px; }
-  .stat-value { font-size: var(--fs-xl); }
+  .stat-value { font-size: clamp(1.125rem, 6vw, var(--fs-xl)); } /* "+$4,170.93" fits a 320px half-width card */
   .stat-spark { display: none; }
   .stat-delta { font-size: var(--fs-xs); flex-wrap: wrap; row-gap: 0; }
 }

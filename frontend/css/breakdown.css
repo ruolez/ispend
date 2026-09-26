@@ -42,9 +42,9 @@
   .bd-table td.bd-name { grid-area: name; min-width: 0; }
   .bd-table td.col-total { grid-area: total; white-space: nowrap; text-align: right; }
   .bd-table td.bd-share { grid-area: share; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .bd-table td.bd-share .share-bar { flex: 1 1 auto; width: auto; }
+  .bd-table td.bd-share .share-bar { flex: 1 1 auto; width: auto; max-width: none; }
   .bd-table td.col-count, .bd-table td.col-delta, .bd-table td.col-budget, .bd-table tr.totals-row td.bd-share { display: none; }
-  .bd-table tr.totals-row td { font-weight: 600; }
+  .bd-table tr.totals-row td { font-weight: 600; background: none; }
 }
 
 .bd-toggle { background: none; border: 0; padding: 0; margin: 0; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-xs); color: inherit; cursor: pointer; }

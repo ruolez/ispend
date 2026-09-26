@@ -77,7 +77,8 @@
   .rv-actions > .btn { grid-column: span 2; }
   .rv-actions > .btn-primary { grid-column: 1 / -1; height: 48px; font-size: var(--fs-md); }
   .rv-actions > .btn-primary[data-cact="pick"] ~ .btn { grid-column: span 3; }
-  .rv-actions > .btn-ghost { border: 1px solid var(--border); }
+  /* Choose, Transfer and Skip are peers: one outlined style, so none of them reads as selected */
+  .rv-actions > .btn:not(.btn-primary) { background: var(--surface); border: 1px solid var(--border-control); color: var(--text-1); }
   .rv-actions .grow-sep { display: none; }
   .rv-actions .rv-always { grid-column: 1 / -1; justify-content: space-between; border-top: 1px solid var(--border); padding-top: var(--sp-2); }
   .rv-always .btn-icon { width: var(--tap); height: var(--tap); }
@@ -85,4 +86,8 @@
   .rv-pattern .select { flex: 1 1 100%; }
   .rv-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .rv-row .num { display: none; }
+}
+@media (max-width: 480px) {
+  /* three labels in ~260px: let each take its own width and wrap onto two lines rather than touch */
+  .rv-toolbar .seg .seg-btn { flex: 1 1 auto; padding: 0 8px; white-space: normal; line-height: 1.15; text-align: center; }
 }

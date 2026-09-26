@@ -394,11 +394,11 @@ function renderAttention(data) {
     : `<div class="attn-cta attn-cta--ok"><span class="attn-ico">${icon('check-circle')}</span><div class="grow"><div class="attn-title">All caught up</div><div class="attn-sub">Every charge has a category.</div></div></div>`);
   parts.push(`<div class="attn-block"><div class="attn-head"><span class="section-label">Recurring</span><a href="/insights.html">Details</a></div>
     ${rec.count ? `<div class="attn-row"><span>${plural(rec.count, 'active subscription')}</span><b>${fmtMoney(rec.monthly_total, cur)}<span class="text-4 fw-500"> / mo</span></b></div>
-      ${rec.next.map((n) => `<div class="attn-row"><span><span class="fw-500">${esc(n.merchant_name)}</span> <span class="sub">${esc(n.cadence)}</span></span><span class="row gap-2"><span class="sub">${esc(dueLabel(n.next_expected))}</span><b class="num">${fmtMoney(n.amount, cur)}</b></span></div>`).join('')}`
+      ${rec.next.map((n) => `<div class="attn-row"><span class="attn-main"><span class="fw-500 truncate">${esc(n.merchant_name)}</span><span class="sub">${esc(n.cadence)}</span></span><span class="row gap-2"><span class="sub">${esc(dueLabel(n.next_expected))}</span><b class="num">${fmtMoney(n.amount, cur)}</b></span></div>`).join('')}`
       : '<div class="hint">No recurring charges detected yet. They appear after a few months of statements.</div>'}</div>`);
   if (data.accounts.length) {
     parts.push(`<div class="attn-block"><div class="attn-head"><span class="section-label">Accounts</span><a href="/settings.html#accounts">Manage</a></div>
-      ${data.accounts.map((a) => `<div class="attn-row"><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1">${esc(a.name)}</span></span>
+      ${data.accounts.map((a) => `<div class="attn-row"><span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="text-1 truncate">${esc(a.name)}</span></span>
         <span class="row gap-2">${a.last_txn_date ? `<span class="sub">${esc(fmtDate(a.last_txn_date, { year: true }))}</span>` : ''}${a.balance != null ? `<b class="num">${fmtMoney(a.balance, a.currency)}</b>` : '<span class="sub">—</span>'}</span></div>`).join('')}</div>`);
   }
   $('#attention').innerHTML = `<div class="attn">${parts.join('')}</div>`;
