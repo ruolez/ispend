@@ -44,8 +44,8 @@
 .rule-preview { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-base); display: flex; align-items: center; gap: 8px; min-height: 40px; }
 .rule-preview .ico { color: var(--accent); }
 .rule-preview.is-empty { color: var(--text-3); }
-.rule-preview.is-error { background: var(--danger-soft); color: var(--danger); }
-.rule-preview.is-error .ico { color: var(--danger); }
+.rule-preview.is-error { background: var(--danger-soft); color: var(--danger-text); }
+.rule-preview.is-error .ico { color: var(--danger-text); }
 .rule-sample { margin-top: 8px; }
 .rule-sample .list-item { padding: 6px 0; font-size: var(--fs-sm); gap: 8px; }
 .rule-sample .list-item .amt { margin-left: auto; }

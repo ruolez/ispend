@@ -14,7 +14,7 @@
 .file-row .file-status { display: flex; align-items: center; gap: 8px; }
 
 .file-tabs { display: flex; gap: 4px; overflow-x: auto; margin-bottom: var(--sp-4); padding-bottom: 2px; }
-.file-tab { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); font-size: var(--fs-base); color: var(--text-2); white-space: nowrap; }
+.file-tab { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid var(--border-control); background: var(--surface); font-size: var(--fs-base); color: var(--text-2); white-space: nowrap; }
 .file-tab.active { border-color: var(--accent); color: var(--text-1); background: var(--accent-soft); }
 .file-tab .badge { margin-left: 2px; }
 
@@ -96,7 +96,7 @@
 .chip-src { margin-left: 4px; color: var(--text-4); }
 
 .chip-q { margin-left: 3px; color: var(--warning); font-weight: 700; }
-.catchip--suggested { border: 1px dashed var(--border-strong); background: var(--info-soft); }
+.catchip--suggested { border: 1px dashed var(--border-control); background: var(--info-soft); }
 
 .dz-touch { display: none; }
 @media (pointer: coarse) {

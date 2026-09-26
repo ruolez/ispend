@@ -21,11 +21,11 @@
 .bd-share .share-bar.is-sub { width: 90px; height: 4px; }
 .bd-share .pct { font-size: var(--fs-sm); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .bd-delta { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; }
-.bd-delta.is-bad { color: var(--danger); }
+.bd-delta.is-bad { color: var(--danger-text); }
 .bd-delta.is-good { color: var(--success); }
 .bd-foot { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid var(--border); }
 .bd-budget { display: inline-flex; align-items: center; gap: 8px; }
-.bd-budget .share-bar > span { background: var(--accent); }
+.bd-budget .share-bar > span { background: var(--accent-solid); }
 .bd-budget.is-ahead .share-bar > span { background: var(--warning); }
 .bd-budget.is-over .share-bar > span { background: var(--danger); }
 .bd-budget.is-over .pct { color: var(--danger-text); }

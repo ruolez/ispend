@@ -41,8 +41,8 @@
 }
 
 /* transfers mode */
-.seg-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-fg); font-size: var(--fs-xs); font-weight: 600; line-height: 18px; text-align: center; }
-.seg-btn.active .seg-count { background: var(--accent); color: var(--accent-fg); }
+.seg-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: var(--r-pill); background: var(--accent-solid); color: var(--accent-solid-fg); font-size: var(--fs-xs); font-weight: 600; line-height: 18px; text-align: center; }
+.seg-btn.active .seg-count { background: var(--accent-solid); color: var(--accent-solid-fg); }
 .rv-pair-rows { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 12px; }
 .rv-pair-side { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; background: var(--surface-2); min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .rv-pair-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }

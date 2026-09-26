@@ -119,28 +119,28 @@ PAIRS = [  # (label, fg token, bg token, size class: 'text' 4.5 | 'large' 3 | 'u
     ('.text-4 on --surface-2', 'text-4', 'surface-2', 'text'),
     ('link / .text-accent / .tab.active on --surface', 'accent', 'surface', 'text'),
     ('link on --bg', 'accent', 'bg', 'text'),
-    ('.btn-primary text (--accent-fg on --accent)', 'accent-fg', 'accent', 'text'),
-    ('.btn-primary:hover text', 'accent-fg', 'accent-hover', 'text'),
+    ('.btn-primary text (--accent-solid-fg on --accent-solid)', 'accent-solid-fg', 'accent-solid', 'text'),
+    ('.btn-primary:hover text', 'accent-solid-fg', 'accent-solid-hover', 'text'),
     ('.badge-accent / .pill-soft / nav-item current (--accent on --accent-soft)', 'accent', 'accent-soft', 'text'),
     ('.badge-info / .catchip--suggested (--accent on --info-soft)', 'accent', 'info-soft', 'text'),
     ('.amt--income / .badge-success (--success on --surface)', 'success', 'surface', 'text'),
     ('.badge-success / .chip-ok (--success on --success-soft)', 'success', 'success-soft', 'text'),
     ('.badge-danger / .error-box (--danger-text on --danger-soft)', 'danger-text', 'danger-soft', 'text'),
-    ('.text-danger / .btn-danger (--danger on --surface)', 'danger', 'surface', 'text'),
+    ('.text-danger / .btn-danger (--danger-text on --surface)', 'danger-text', 'surface', 'text'),
     ('.badge-warning / .pill-warning (--warning on --warning-soft)', 'warning', 'warning-soft', 'text'),
     ('.text-warning / .chip-q (--warning on --surface)', 'warning', 'surface', 'text'),
     ('.badge default / .badge-neutral (--text-2 on --surface-3)', 'text-2', 'surface-3', 'text'),
     ('kbd (--text-3 on --surface-3)', 'text-3', 'surface-3', 'text'),
     ('.step-num (--text-3 on --surface-3)', 'text-3', 'surface-3', 'text'),
-    ('.pill (--accent-fg on --accent)', 'accent-fg', 'accent', 'text'),
+    ('.pill (--accent-solid-fg on --accent-solid)', 'accent-solid-fg', 'accent-solid', 'text'),
     ('.floatbar text (--bg on --text-1)', 'bg', 'text-1', 'text'),
     ('rail tooltip (--bg on --text-1)', 'bg', 'text-1', 'text'),
     ('focus ring --accent vs --surface', 'accent', 'surface', 'ui'),
     ('focus ring --accent vs --bg', 'accent', 'bg', 'ui'),
-    ('input border --border-strong vs --surface', 'border-strong', 'surface', 'ui'),
+    ('input border --border-control vs --surface', 'border-control', 'surface', 'ui'),
     ('card border --border vs --surface', 'border', 'surface', 'ui'),
     ('card border --border vs --bg', 'border', 'bg', 'ui'),
-    ('switch off track --border-strong vs --surface', 'border-strong', 'surface', 'ui'),
+    ('switch off track --switch-off vs --surface', 'switch-off', 'surface', 'ui'),
     ('.tbl th sort caret (text-3 @35% opacity) on surface-2', None, None, 'ui'),
     ('.sb-group-label / .menu-label / .palette-group (--text-4 on --surface)', 'text-4', 'surface', 'text'),
     ('.bn-item label 10px (--text-3 on --surface)', 'text-3', 'surface', 'text'),
@@ -159,7 +159,7 @@ def contrast_table():
                 if 'caret' in label:
                     fgc = blend(rgb(T, 'text-3') + (0.35,), rgb(T, 'surface-2')); bgc = rgb(T, 'surface-2')
                 elif 'acct-mark' in label:
-                    fgc = (255, 255, 255); bgc = rgb(T, 'chart-muted')
+                    fgc = (255, 255, 255); bgc = mix(rgb(T, 'chart-muted'), (0, 0, 0), 0.75)
             else:
                 fgc = rgb(T, fg)
                 if len(fgc) == 4: fgc = blend(fgc, bgc)
@@ -169,7 +169,7 @@ def contrast_table():
     # disabled buttons: opacity .5 -> blend text over surface
     for tname, T in (('light', LIGHT), ('dark', DARK)):
         s = rgb(T, 'surface')
-        for lbl, fg, bgt in (('.btn:disabled .btn-secondary text (text-1 @50%)', 'text-1', 'surface'), ('.btn-primary:disabled text (accent-fg @50% on accent @50%)', 'accent-fg', 'accent'), ('.input:disabled text (text-1 @60%)', 'text-1', 'surface')):
+        for lbl, fg, bgt in (('.btn:disabled .btn-secondary text (text-1 @50%)', 'text-1', 'surface'), ('.btn-primary:disabled text (accent-solid-fg @50% on accent-solid @50%)', 'accent-solid-fg', 'accent-solid'), ('.input:disabled text (text-1 @60%)', 'text-1', 'surface')):
             a = 0.6 if 'input' in lbl else 0.5
             bgc = blend(rgb(T, bgt) + (a,), s)
             fgc = blend(rgb(T, fg) + (a,), s)
@@ -248,6 +248,13 @@ def contrast_checks():
                 fails.append(f'{tname}: {label}: token {e} missing'); continue
             if lc < need:
                 fails.append(f'{tname}: {label} {T[fg]} on {T[bg]} = APCA Lc {lc:.0f} < {need}')
+        for fill in ('accent-solid', 'accent-solid-hover', 'danger-solid'):
+            try:
+                r = ratio((255, 255, 255), c(fill))
+            except KeyError as e:
+                fails.append(f'{tname}: white on --{fill}: token {e} missing'); continue
+            if r < 4.5:
+                fails.append(f'{tname}: white on --{fill} {T[fill]} = {r:.2f}:1 < 4.5')
         # account initials: white on the category colour darkened as .acct-mark paints it
         for i in range(1, 13):
             mark = mix(c(f'c{i}'), (0, 0, 0), 0.75)
@@ -327,7 +334,7 @@ def touch_checks():
 
 if __name__ == '__main__':
     if '--check' in sys.argv:
-        problems = static_checks()
+        problems = static_checks() + contrast_checks()
         for p in problems:
             print(p)
         print(f"{len(problems)} static rule violation(s)")

@@ -52,7 +52,7 @@
 @media (hover: hover) { .bud-mini-row:hover { background: var(--surface-2); text-decoration: none; } }
 .bud-mini-name { font-weight: 500; }
 .bud-mini-bar { display: block; height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
-.bud-mini-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.bud-mini-bar > span { display: block; height: 100%; background: var(--accent-solid); border-radius: inherit; }
 .bud-mini-row.is-ahead .bud-mini-bar > span { background: var(--warning); }
 .bud-mini-row.is-over .bud-mini-bar > span { background: var(--danger); }
 .bud-mini-row.is-over .bud-mini-val { color: var(--danger-text); }

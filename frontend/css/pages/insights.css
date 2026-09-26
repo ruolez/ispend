@@ -15,7 +15,7 @@
 .rec-next { display: flex; flex-direction: column; align-items: flex-end; }
 .rec-next .when { font-weight: 500; }
 .rec-next .when.is-soon { color: var(--warning); }
-.rec-next .when.is-over { color: var(--danger); }
+.rec-next .when.is-over { color: var(--danger-text); }
 .rec-next .date { font-size: var(--fs-xs); color: var(--text-4); }
 .rec-amt { display: flex; flex-direction: column; align-items: flex-end; }
 .rec-amt .badge { margin-top: 2px; }
@@ -37,7 +37,7 @@ tr:focus-within .rec-dismiss { opacity: 1; }
 
 .ai-card { position: sticky; top: 72px; }
 @media (max-width: 960px) { .ai-card { position: static; } }
-.ai-mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: linear-gradient(135deg, var(--accent), var(--ai-accent)); color: #fff; display: grid; place-items: center; }
+.ai-mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: linear-gradient(135deg, var(--accent-solid), var(--ai-accent)); color: #fff; display: grid; place-items: center; }
 .ai-mark .ico { width: 13px; height: 13px; }
 .ai-summary { font-size: var(--fs-md); line-height: 1.55; color: var(--text-1); margin-bottom: var(--sp-4); }
 .ai-list { display: flex; flex-direction: column; gap: 10px; }

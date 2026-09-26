@@ -11,7 +11,7 @@
 .bud-title { font-weight: 500; }
 .bud-sub { font-size: var(--fs-xs); color: var(--text-3); }
 .bud-bar { position: relative; height: 8px; border-radius: var(--r-pill); background: var(--surface-3); overflow: visible; }
-.bud-bar .fill { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--dur-3) var(--ease-out); }
+.bud-bar .fill { display: block; height: 100%; border-radius: inherit; background: var(--accent-solid); transition: width var(--dur-3) var(--ease-out); }
 .bud-row.is-ahead .bud-bar .fill { background: var(--warning); }
 .bud-row.is-over .bud-bar .fill { background: var(--danger); }
 .bud-bar .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text-3); }

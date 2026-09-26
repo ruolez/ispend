@@ -14,7 +14,7 @@
 .trend-chips .chip .dot { margin-right: 2px; }
 .trend-chips .chip.active { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text-1); }
 .delta { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
-.delta--up { color: var(--danger); }
+.delta--up { color: var(--danger-text); }
 .delta--down { color: var(--success); }
 .delta--flat { color: var(--text-4); }
 .delta .ico { width: 12px; height: 12px; }
@@ -40,7 +40,7 @@
 /* cash flow tab */
 #panel-cashflow .stat-grid { margin-bottom: var(--sp-4); }
 .rate--good { color: var(--success); }
-.rate--bad { color: var(--danger); }
+.rate--bad { color: var(--danger-text); }
 
 @media (pointer: coarse) {
   .chart-legend .legend-item { min-height: 40px; }
