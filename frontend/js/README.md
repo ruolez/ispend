@@ -151,7 +151,7 @@ const chart = makeChart(canvas, (t) => ({ type:'bar', data:{…}, options: chart
 // registry re-runs the builder and chart.update('none') on ispend:theme, so resolve colors INSIDE the builder.
 catColor('c4') / catColor(category) → hex for the current theme (fallback --chart-muted)
 charts.withAlpha(hex, .2) · charts.gradientFill(ctx, hex, {from,to}) · charts.currencyTicks(cur) · charts.currencyTooltip(cur)
-charts.barOptions(t, {currency, stacked, horizontal}) · charts.lineOptions(t, {currency}) · charts.sparkline(canvas, values, hex)
+charts.barOptions(t, {currency, stacked, horizontal}) · charts.lineOptions(t, {currency}) · charts.sparkSvg(values, color, {width, height, fill, cls}) → inline SVG markup (use `var(--token)` colours; far cheaper than a chart)
 charts.htmlLegend(containerEl, chart, { values, currency, list:true, onClick(item) })   // .legend-item buttons; default toggles visibility
 plugins: [charts.donutCenterPlugin(() => '$2,418', 'this month')]
 ```
@@ -163,7 +163,7 @@ Built-in legend is disabled globally; use HTML legends (`.chart-legend` or `.leg
 - Inputs: `.input`, `.select`, `.textarea`, `.input-sm`, `.input-group` (leading `.ico`, `.trailing` button + `.has-trailing`), `.field` (`label[data-required]` + control + `.hint` + `.field-error`, `.is-invalid`), `.field-row`, `.check`, `.radio-list > .radio-item.is-checked`, `.switch` (`input` + `.switch-track`, `.switch-sm`), `kbd`/`.kbd`.
 - Badges/chips: `.badge.badge-success|danger|warning|info|neutral|accent`, `.pill` (`.pill-soft`, `.pill-warning`), `.chip` (`.active`, `.chip-ok|err|warn`), `.dot` (color via `style="--c:var(--c4)"`), `.catchip` (+ `.catchip--empty`, `.catchip--suggested`), `.cat-icon` (`.cat-icon-lg`), `.acct` + `.acct-mark`, amounts `.amt.amt--expense|income|transfer`.
 - Tables: `.tbl-wrap > table.tbl` (sticky `th`, `th.sortable[aria-sort]`, `.col-check`, `.col-actions` + `.row-actions`, `tr.is-focused`, `tr[aria-selected=true]`, `tr.is-clickable`), `.tbl-toolbar`, `.tbl-summary`, `.tbl-sentinel`, `.tbl-wrap--flush` (inside a card), `.merchant > .merchant-name + .merchant-raw`. Density via `html[data-density=compact]`.
-- Stats/charts: `.stat-grid > .stat` (`.stat-label`, `.stat-value`, `.stat-delta.stat-delta--good|bad` + `.stat-delta-vs`, `canvas.stat-spark`, `.is-loading`), `.card.chart-card > .chart-body[style=--h] > canvas` + `.chart-legend`/`.legend-list`, `.seg > .seg-btn.active`.
+- Stats/charts: `.stat-grid > .stat` (`.stat-label`, `.stat-value`, `.stat-delta.stat-delta--good|bad` + `.stat-delta-vs`, `svg.spark.stat-spark` (from `charts.sparkSvg`), `.is-loading`), `.card.chart-card > .chart-body[style=--h] > canvas` + `.chart-legend`/`.legend-list`, `.seg > .seg-btn.active`.
 - Navigation: `.tabs > .tab.active` + `.tab-panel.active`, `.stepper > .step.active|done` (`.step-num`, `.step-line`).
 - Layers (created by ui.js): `.modal`, `.drawer`, `.popover`, `.menu > .menu-item`, `.palette`, `.toast`, `.floatbar` (bulk/save bars: dark pill fixed bottom-center; put `.btn-ghost`/`.btn-primary` inside, `.sep` between groups).
 - States: `.skel`, `.empty` (`.empty-icon`, `.empty-title`, `.empty-body`), `.error-box`, `.notice.notice-warning|info`, `.spinner`, `.progress > span[style=width]`.

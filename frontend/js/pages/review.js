@@ -75,6 +75,7 @@ initNav('review').then(async () => {
   store.on('categories-changed', async () => { await loadRefs(); render(); });
   registerShortcuts();
   paintMode();
+  window.addEventListener('ispend:resume', () => { if (rv.mode !== 'transfers' && store.pageStale(`review:${rv.mode}`)) load(); });
   await load();
 }).catch((err) => { $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); });
 
@@ -118,24 +119,35 @@ async function load() {
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-2">${ui.skeleton('60%', 12)}</div><div class="mt-3">${ui.skeleton('100%', 32)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-2">${ui.skeleton('55%', 12)}</div></div>`;
   const pending = rv.prefetch; rv.prefetch = null;
   try {
-    const r = await (pending || api(reviewUrl()));
+    // The last copy of this queue paints at once; the refresh repaints only if it changed.
+    await store.page(`review:${rv.mode}`, () => pending || api(reviewUrl()), (r) => { if (seq === rv.seq) showQueue(r); });
+  } catch (err) {
     if (seq !== rv.seq) return;
-    rv.window = WINDOW;
-    if (rv.mode === 'merchant') {
-      rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
-      rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
-      if (r.groups.length >= r.remaining) pruneSkips('merchant', new Set(r.groups.map((g) => g.key)));
-    } else {
-      rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
-      rv.remaining = r.remaining; rv.remainingItems = r.remaining;
-      if (r.items.length >= r.remaining) pruneSkips('single', new Set(r.items.map((t) => `t${t.id}`)));
-    }
-  } catch (err) { if (seq !== rv.seq) return; $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); rv.loading = false; return; }
+    rv.loading = false;
+    if (err.shown) toast(err.message, { type: 'error' });
+    else $('#rv-list').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
+  }
+}
+function showQueue(r) {
+  rv.window = WINDOW;
+  if (rv.mode === 'merchant') {
+    rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
+    rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
+    if (r.groups.length >= r.remaining) pruneSkips('merchant', new Set(r.groups.map((g) => g.key)));
+  } else {
+    rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
+    rv.remaining = r.remaining; rv.remainingItems = r.remaining;
+    if (r.items.length >= r.remaining) pruneSkips('single', new Set(r.items.map((t) => `t${t.id}`)));
+  }
   rv.loading = false;
   rv.focus = -1;
   render();
+  // A queue (re)painted while the user is on a control — the mode switch, say — marks the first card
+  // but leaves keyboard focus where it is.
+  const a = document.activeElement;
+  const onControl = a && a !== document.body && !$('#rv-list').contains(a);
   const first = visibleGroups()[0];
-  if (first) setFocus(0, { scroll: false });
+  if (first) setFocus(0, { scroll: false, move: !onControl });
 }
 function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.key; }
 
@@ -347,7 +359,7 @@ function rerenderCard(g) {
 }
 
 /* ---------- focus ---------- */
-function setFocus(idx, { scroll = true } = {}) {
+function setFocus(idx, { scroll = true, move = true } = {}) {
   if (rv.mode !== 'transfers' && idx >= rv.window && idx < visibleGroups().length) { rv.window = idx + WINDOW; render(); }
   const cards = $$('.rv-card');
   const pos = $('#rv-pos');
@@ -358,7 +370,7 @@ function setFocus(idx, { scroll = true } = {}) {
   const card = cards[rv.focus];
   if (card) {
     if (scroll && !rv.focusMode) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    if (document.activeElement && !card.contains(document.activeElement)) card.focus({ preventScroll: true });
+    if (move && document.activeElement && !card.contains(document.activeElement)) card.focus({ preventScroll: true });
     if (rv.mode === 'transfers') { const p = focusedPair(); if (p) announce(card.getAttribute('aria-label') + `, ${Math.round(p.confidence * 100)} percent likely`); return; }
     const g = focusedGroup();
     if (g) announce(`${g.display}, ${plural(g.count, 'charge')}, ${fmtMoney(g.total, g.currency || rv.currency || 'USD')}${g.suggestion && catOf(g.suggestion.category_id) ? `, suggested ${catOf(g.suggestion.category_id).name}` : ''}`);

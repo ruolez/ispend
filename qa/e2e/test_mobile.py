@@ -152,7 +152,7 @@ VISUAL_JS = r"""
       }
     }
   }
-  // text on text, and text under a canvas (a sparkline over a label); absolute overlays on charts are by design
+  // text on text, and text under a canvas or SVG sparkline (a sparkline over a label); absolute overlays on charts are by design
   const overlap = new Set();
   const inter = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 2 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 2;
   texts.sort((a, b) => a.v.t - b.v.t);
@@ -160,7 +160,7 @@ VISUAL_JS = r"""
     const a = texts[i], b = texts[j]; if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
     if (inter(a.v, b.v)) overlap.add(label(a.el) + ' "' + a.el.textContent.trim().slice(0, 24) + '" x ' + label(b.el) + ' "' + b.el.textContent.trim().slice(0, 24) + '"');
   }
-  main.querySelectorAll('canvas').forEach((c) => { const cs = getComputedStyle(c); if (!c.getClientRects().length || cs.visibility === 'hidden' || c.closest('[hidden]')) return; const cr = c.getBoundingClientRect(); const v = { l: cr.left, t: cr.top, r: cr.right, b: cr.bottom };
+  main.querySelectorAll('canvas, svg.spark').forEach((c) => { const cs = getComputedStyle(c); if (!c.getClientRects().length || cs.visibility === 'hidden' || c.closest('[hidden]')) return; const cr = c.getBoundingClientRect(); const v = { l: cr.left, t: cr.top, r: cr.right, b: cr.bottom };
     for (const t of texts) if (!t.abs && inter(t.v, v)) overlap.add(label(c) + ' x ' + label(t.el) + ' "' + t.el.textContent.trim().slice(0, 24) + '"'); });
   // a separator dot drawn by a ::before must be invisible when its item starts a line, and must never be
   // left alone at the end of a line (an inline item that breaks right after its dot)

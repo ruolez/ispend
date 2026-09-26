@@ -9,7 +9,7 @@ async function api(path, options = {}) {
   try {
     res = await fetch(path, opts);
   } catch (err) {
-    throw new Error('Couldn’t reach the server — check your connection and try again.');
+    throw new Error(navigator.onLine === false ? 'You’re offline — iSpend needs a connection for this. Try again once you’re back online.' : 'Couldn’t reach the server — check your connection and try again.');
   }
   if (res.status === 401 && !location.pathname.endsWith('/login.html')) {
     loginRedirect();

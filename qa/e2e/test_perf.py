@@ -50,7 +50,6 @@ def test_no_screen_chains_api_requests(walk):
     assert {n["path"]: n["api"] for n in walk["navs"] if n["depth"] > 1} == {}
 
 
-@pytest.mark.xfail(strict=True, reason="phase 3: bottom tabs render the last-seen data at once")
 def test_warm_bottom_tabs_show_content_fast(walk):
     second_round = walk["navs"][len(perf_probe.TABS):2 * len(perf_probe.TABS)]
     assert {n["path"]: n["content"] for n in second_round if n["content"] > WARM_TABS_MS} == {}

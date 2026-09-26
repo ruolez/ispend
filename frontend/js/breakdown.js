@@ -59,15 +59,15 @@
     const [y, m] = from.split('-').map(Number);
     return to === `${from.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` ? from.slice(0, 7) : null;
   }
-  /* GET /api/budgets/progress for a period that is exactly one calendar month, as a Map(category_id → item); null otherwise. */
-  async function budgetsForPeriod(period, extraQuery = {}) {
+  /* GET /api/budgets/progress for a period that is exactly one calendar month (the raw payload, null
+     otherwise or on failure); budgetMap() turns it into the Map(category_id → item) renderBreakdown takes. */
+  function budgetProgressForPeriod(period, extraQuery = {}) {
     const ym = wholeMonth(period);
-    if (!ym) return null;
-    try {
-      const p = await apiShared(`/api/budgets/progress${toQuery({ month: ym, ...extraQuery })}`);
-      return p && p.items && p.items.length ? new Map(p.items.map((i) => [i.category_id, i])) : null;
-    } catch { return null; }
+    if (!ym) return Promise.resolve(null);
+    return apiShared(`/api/budgets/progress${toQuery({ month: ym, ...extraQuery })}`).catch(() => null);
   }
+  function budgetMap(p) { return p && p.items && p.items.length ? new Map(p.items.map((i) => [i.category_id, i])) : null; }
+  async function budgetsForPeriod(period, extraQuery = {}) { return budgetMap(await budgetProgressForPeriod(period, extraQuery)); }
   function budgetCell(budgets, id, currency) {
     const it = budgets && id != null ? budgets.get(id) : null;
     if (!it) return '<span class="text-4">—</span>';
@@ -124,4 +124,6 @@
 
   window.renderBreakdown = renderBreakdown;
   window.budgetsForPeriod = budgetsForPeriod;
+  window.budgetProgressForPeriod = budgetProgressForPeriod;
+  window.budgetMap = budgetMap;
 })();

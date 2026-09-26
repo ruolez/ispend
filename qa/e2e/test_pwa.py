@@ -263,8 +263,9 @@ def test_stamped_worker_serves_the_shell_from_its_cache(sw_context, stamp):
     try:
         page.goto("/review.html")
         page.wait_for_selector("#main .error-box")
-        assert (page.locator("#tb-title").inner_text(), page.locator("#main .error-box").inner_text().strip()) == (
-            "Review", "You’re offline. iSpend needs a connection to show your accounts.\nRetry")
+        # This tab already knows the user, so the page gets past the auth gate; its own request then says why it failed.
+        assert (page.locator("#tb-title").inner_text(), page.locator("#main .error-box").first.inner_text().strip()) == (
+            "Review", "You’re offline — iSpend needs a connection for this. Try again once you’re back online.\nRetry")
     finally:
         ctx.set_offline(False)
     offline_fetch = "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"  # the page's own /api/auth/me

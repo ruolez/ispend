@@ -71,6 +71,9 @@ initNav('transactions').then(async () => {
   window.addEventListener('resize', debounce(() => { setupObserver(); syncSegScroll(); }, 200));
   registerShortcuts();
   paintToolbar();
+  // Back/forward restored the list where it was left (scroll, loaded pages): keep it unless a write
+  // somewhere dropped this query's kept copy, i.e. the rows may have changed.
+  window.addEventListener('ispend:resume', () => { if (store.pageStale(`tx${toQuery(queryParams({ limit: 100, cursor: null }))}`)) reload(); });
   await reload();
   const q = qs();
   if (q.open) openDrawer(Number(q.open));
@@ -389,28 +392,39 @@ async function loadMore(first = false) {
   tx.loading = true;
   const seq = ++tx.seq;
   const params = queryParams({ limit: 100, cursor: tx.cursor });
+  const url = '/api/transactions' + toQuery(params);
   const pending = first ? tx.prefetch : null;
   tx.prefetch = null;
   try {
-    const r = await (pending || api('/api/transactions' + toQuery(params)));
-    if (seq !== tx.seq) return;
-    tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
-    tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
-    const startIdx = tx.items.length;
-    r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
-    if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); tx.renderedAt = performance.now(); }
-    if (!tx.items.length) {
-      $('#tx-body').innerHTML = `<tr><td colspan="8">${emptyListHtml()}</td></tr>`;
-    } else {
-      $('#tx-body').insertAdjacentHTML('beforeend', r.items.map((it, i) => rowHtml(it, startIdx + i)).join(''));
-      paintDays();
+    if (!first) {
+      const r = await api(url);
+      if (seq === tx.seq) showPage(r, false);
+      return;
     }
-    $('#tx-foot').innerHTML = tx.done ? (tx.items.length ? `<div class="tx-foot-msg">${fmtNumber(tx.items.length)} of ${fmtNumber(tx.total)} shown</div>` : '') : `<div class="tx-foot-msg"><span class="spinner"></span> Loading more…</div>`;
+    // The first page paints from this tab's last copy of the same query, then again only if the
+    // refresh differs; tx.loading holds infinite scroll until the fresh page is in.
+    await store.page(`tx${toQuery(params)}`, () => pending || api(url), (r) => { if (seq === tx.seq) showPage(r, true); });
   } catch (err) {
     if (seq !== tx.seq) return;
-    if (first) $('#tx-body').innerHTML = `<tr><td colspan="8">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`;
+    if (err.shown) toast(err.message, { type: 'error' });
+    else if (first) $('#tx-body').innerHTML = `<tr><td colspan="8">${ui.errorBox(err.message, { retry: 'reload' })}</td></tr>`;
     else $('#tx-foot').innerHTML = `<div class="tx-foot-msg">${ui.errorBox(err.message, { retry: 'reload' })}</div>`;
   } finally { if (seq === tx.seq) tx.loading = false; }
+}
+function showPage(r, first) {
+  if (first) { tx.items = []; tx.byId.clear(); }
+  tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
+  tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
+  const startIdx = tx.items.length;
+  r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });
+  if (first) { $('#tx-body').innerHTML = ''; paintToolbar(); paintSummary(); tx.renderedAt = performance.now(); }
+  if (!tx.items.length) {
+    $('#tx-body').innerHTML = `<tr><td colspan="8">${emptyListHtml()}</td></tr>`;
+  } else {
+    $('#tx-body').insertAdjacentHTML('beforeend', r.items.map((it, i) => rowHtml(it, startIdx + i)).join(''));
+    paintDays();
+  }
+  $('#tx-foot').innerHTML = tx.done ? (tx.items.length ? `<div class="tx-foot-msg">${fmtNumber(tx.items.length)} of ${fmtNumber(tx.total)} shown</div>` : '') : `<div class="tx-foot-msg"><span class="spinner"></span> Loading more…</div>`;
 }
 /* Totals and facets for the current filters without re-rendering the list (after edits that move money). */
 async function refreshTotals() {

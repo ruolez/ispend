@@ -2,9 +2,28 @@
    change, category color binding, HTML legends, donut center plugin. */
 const charts = (() => {
   const registry = new Map(); // canvas -> {chart, build}
+  let still = false; // set by quietly(): charts drawn from a cached copy appear at once, without the grow-in
 
-  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  /* Token reads are memoised per theme: each getComputedStyle read right after DOM writes forces a
+     style recalculation, and a dashboard builds six charts of ~25 reads each. data-theme (and the
+     reduced-motion setting) is the whole key — tokens change with nothing else. */
+  let memo = { key: null, vars: new Map(), theme: null };
+  function memoFor() {
+    const key = `${document.documentElement.getAttribute('data-theme')}|${window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches}`;
+    if (memo.key !== key) memo = { key, vars: new Map(), theme: null };
+    return memo;
+  }
+  function css(name) {
+    const m = memoFor();
+    if (!m.vars.has(name)) m.vars.set(name, getComputedStyle(document.documentElement).getPropertyValue(name).trim());
+    return m.vars.get(name);
+  }
   function theme() {
+    const m = memoFor();
+    if (!m.theme) m.theme = readTheme();
+    return m.theme;
+  }
+  function readTheme() {
     return {
       text: css('--text-3'), text1: css('--text-1'), text2: css('--text-2'), grid: css('--chart-grid'), axis: css('--chart-axis'),
       surface: css('--surface'), tipBg: css('--surface-overlay'), tipBorder: css('--border-strong'), accent: css('--accent'),
@@ -17,7 +36,7 @@ const charts = (() => {
     if (typeof Chart === 'undefined') return;
     const t = theme(); const d = Chart.defaults;
     d.font.family = "'Inter', system-ui, sans-serif"; d.font.size = 12; d.color = t.text;
-    d.animation.duration = t.reduced ? 0 : 400;
+    d.animation.duration = t.reduced || still ? 0 : 400;
     d.plugins.legend.display = false;
     Object.assign(d.plugins.tooltip, {
       backgroundColor: t.tipBg, titleColor: t.text1, bodyColor: t.text2, borderColor: t.tipBorder, borderWidth: 1,
@@ -96,6 +115,12 @@ const charts = (() => {
     registry.set(canvas, { chart, build });
     return chart;
   }
+  /* Run fn with chart animation off: a screen restored from its cached copy (or refreshed over one)
+     should look like it never left, not replay its entrance. */
+  function quietly(fn) {
+    const was = still; still = true;
+    try { return fn(); } finally { still = was; }
+  }
   function destroyChart(canvas) {
     const r = registry.get(canvas);
     if (r) { r.chart.destroy(); registry.delete(canvas); }
@@ -170,14 +195,34 @@ const charts = (() => {
       },
     };
   }
-  function sparkline(canvas, values, hex) {
-    return makeChart(canvas, () => ({
-      type: 'line',
-      data: { labels: values.map((_, i) => i), datasets: [{ data: values, borderColor: hex, borderWidth: 1.5, fill: true, backgroundColor: (c) => gradientFill(c.chart.ctx, hex, { from: 0.25 }), pointRadius: 0, tension: 0.35 }] },
-      options: { responsive: false, animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
-    }));
+  /* Inline SVG sparkline: Chart.js's tension-0.35 curve over a fading area, as markup. A Chart.js
+     instance per 64×26 glyph cost ~10 ms each on a phone; this is a string. `color` is any CSS colour,
+     normally var(--token), so the line follows the theme without a redraw. */
+  let sparkSeq = 0;
+  function sparkSvg(values, color, { width = 64, height = 26, fill = 0.22, stroke = 1.5, cls = '' } = {}) {
+    const n = (values || []).length;
+    const id = `spark-g${++sparkSeq}`;
+    const open = `<svg class="spark ${cls}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true" focusable="false">`;
+    if (!n) return `${open}</svg>`;
+    const pad = stroke;
+    const min = Math.min(...values), max = Math.max(...values), span = max - min;
+    const pts = values.map((v, i) => [n === 1 ? width / 2 : (i / (n - 1)) * width, span ? pad + (1 - (v - min) / span) * (height - 2 * pad) : height / 2]);
+    const f = (x) => Math.round(x * 100) / 100;
+    // Chart.js splineCurve: each point's control points lie along the neighbours' chord, scaled by tension.
+    const ctrl = pts.map((p, i) => {
+      const a = pts[i - 1] || p, c = pts[i + 1] || p;
+      const d01 = Math.hypot(p[0] - a[0], p[1] - a[1]), d12 = Math.hypot(c[0] - p[0], c[1] - p[1]);
+      const fa = d01 + d12 ? 0.35 * d01 / (d01 + d12) : 0, fb = d01 + d12 ? 0.35 * d12 / (d01 + d12) : 0;
+      const cap = (y) => Math.min(Math.max(y, pad), height - pad); // like Chart.js capBezierPoints: no overshoot past the box
+      return { prev: [p[0] - fa * (c[0] - a[0]), cap(p[1] - fa * (c[1] - a[1]))], next: [p[0] + fb * (c[0] - a[0]), cap(p[1] + fb * (c[1] - a[1]))] };
+    });
+    let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+    for (let i = 1; i < n; i++) d += `C${f(ctrl[i - 1].next[0])},${f(ctrl[i - 1].next[1])} ${f(ctrl[i].prev[0])},${f(ctrl[i].prev[1])} ${f(pts[i][0])},${f(pts[i][1])}`;
+    return `${open}<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${color};stop-opacity:${fill}"/><stop offset="1" style="stop-color:${color};stop-opacity:0"/></linearGradient></defs>`
+      + `<path d="${d}L${width},${height}L0,${height}Z" fill="url(#${id})"/>`
+      + `<path d="${d}" fill="none" style="stroke:${color}" stroke-width="${stroke}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
 
-  return { theme, applyChartDefaults, tapToDrill, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions, sparkline };
+  return { theme, css, sparkSvg, applyChartDefaults, tapToDrill, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, quietly, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions };
 })();
 const { makeChart, destroyChart, catColor } = charts;

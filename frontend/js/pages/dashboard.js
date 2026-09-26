@@ -42,6 +42,8 @@ initNav('dashboard').then(async (me) => {
     if (a.dataset.act === 'drill-up') { state.drill = null; setQs({ drill: null }); renderDonut(state.data); }
     if (a.dataset.act === 'setup-dismiss') dismissSetup();
   });
+  // Back/forward restored the page as it was left: repaint from the kept copy and refresh.
+  window.addEventListener('ispend:resume', () => load());
   load();
 });
 
@@ -87,15 +89,27 @@ async function load() {
   // soon as their own data lands.
   loadBreakdown();
   loadBudgetCard(periodMonth(state.period));
-  let data, flat;
+  let flat;
   try {
-    [data, flat, state.currency] = await Promise.all([api(`/api/reports/dashboard${dashboardQuery()}`), store.categoriesFlat(), state.currencyP]);
+    [flat, state.currency] = await Promise.all([store.categoriesFlat(), state.currencyP]);
+    if (seq !== state.seq) return;
+    const q = dashboardQuery();
+    // The last copy of this period paints at once (no chart grow-in); the refresh repaints only if it changed.
+    let painted = false;
+    await store.page(`dashboard${q}`, `/api/reports/dashboard${q}`, (data, { cached }) => {
+      if (seq !== state.seq) return;
+      const quiet = cached || painted;
+      painted = true;
+      if (quiet) charts.quietly(() => renderDashboard(data, flat)); else renderDashboard(data, flat);
+    });
   } catch (err) {
     if (seq !== state.seq) return;
-    $('#dash-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
-    return;
+    if (err.shown) toast(err.message, { type: 'error' });
+    else $('#dash-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
   }
-  if (seq !== state.seq) return;
+}
+
+function renderDashboard(data, flat) {
   state.data = data;
   state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
   if (state.drill && !(state.subCounts.get(state.drill) > 0)) { state.drill = null; setQs({ drill: null }); }
@@ -129,10 +143,12 @@ async function load() {
 async function loadBudgetCard(ym) {
   const host = $('#budget-card'); if (!host) return;
   const seq = state.seq;
-  let p;
-  try { [p, state.currency] = await Promise.all([apiShared(`/api/budgets/progress${toQuery({ month: ym })}`), state.currencyP]); } catch { host.hidden = true; return; }
-  if (seq !== state.seq) return;
-  const cur = state.currency;
+  try {
+    const cur = await state.currencyP;
+    await store.page(`budget-card:${ym}`, `/api/budgets/progress${toQuery({ month: ym })}`, (p) => { if (seq === state.seq) paintBudgetCard(host, p, ym, cur); });
+  } catch (err) { if (!err.shown && seq === state.seq) host.hidden = true; }
+}
+function paintBudgetCard(host, p, ym, cur) {
   const label = fmtMonth(ym, { long: true });
   host.hidden = false;
   if (!p.items.length && !p.overall) {
@@ -182,7 +198,7 @@ async function dismissSetup() {
 function renderKpis(data) {
   const k = data.kpis;
   const cur = state.currency;
-  const spark = {
+  const sparks = {
     spent: data.monthly.map((m) => m.spent),
     income: data.monthly.map((m) => m.income),
     net: data.monthly.map((m) => m.net),
@@ -210,20 +226,8 @@ function renderKpis(data) {
       deltaEl.className = `stat-delta ${good ? 'stat-delta--good' : 'stat-delta--bad'}`;
       deltaEl.innerHTML = `${icon(d.delta.dir === 'up' ? 'arrow-up' : 'arrow-down')} ${esc(d.delta.text || fmtPct(Math.abs(d.delta.pct)))} <span class="stat-delta-vs">vs previous</span>`;
     }
-    const canvas = el.querySelector('.stat-spark');
-    if (canvas && spark[d.key]) {
-      const values = spark[d.key];
-      const color = d.color;
-      canvas.width = 64; canvas.height = 26; // fixed-size sparkline: Chart.js must not grow it to the card
-      charts.makeChart(canvas, (t) => {
-        const hex = getComputedStyle(document.documentElement).getPropertyValue(color).trim() || t.accent;
-        return {
-          type: 'line',
-          data: { labels: values.map((_, i) => i), datasets: [{ data: values, borderColor: hex, borderWidth: 1.5, fill: true, backgroundColor: (c) => charts.gradientFill(c.chart.ctx, hex, { from: 0.22 }), pointRadius: 0, tension: 0.35 }] },
-          options: { responsive: false, animation: false, plugins: { tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { hitRadius: 0 } } },
-        };
-      });
-    }
+    const spark = el.querySelector('.stat-spark');
+    if (spark && sparks[d.key]) spark.outerHTML = charts.sparkSvg(sparks[d.key], `var(${d.color})`, { cls: 'stat-spark' });
     el.classList.remove('is-loading');
   });
 }
@@ -414,12 +418,14 @@ async function loadBreakdown() {
   const q = rangeToQuery(state.period);
   const byCat = (extra) => api(`/api/reports/by-category${toQuery({ range: q.range, from: q.from, to: q.to, level: 'sub', ...extra })}`);
   try {
-    const [cur, prev, categories, budgets, currency] = await Promise.all([
-      byCat({}), byCat({ prev: 1 }), store.categoriesFlat(), budgetsForPeriod(state.period), state.currencyP,
-    ]);
+    const [categories, currency] = await Promise.all([store.categoriesFlat(), state.currencyP]);
     if (seq !== state.seq) return;
-    const range = { ...cur.range, label: cur.range.name === 'custom' ? rangeLabel(state.period) : cur.range.label };
-    $('#bd-label').textContent = range.label;
-    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency, range, categories, storageKey: 'ispend.breakdown.dashboard', budgets });
-  } catch (err) { if (seq === state.seq) host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
+    const key = `breakdown${toQuery({ range: q.range, from: q.from, to: q.to })}`;
+    await store.page(key, () => Promise.all([byCat({}), byCat({ prev: 1 }), budgetProgressForPeriod(state.period)]), ([cur, prev, progress]) => {
+      if (seq !== state.seq) return;
+      const range = { ...cur.range, label: cur.range.name === 'custom' ? rangeLabel(state.period) : cur.range.label };
+      $('#bd-label').textContent = range.label;
+      renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency, range, categories, storageKey: 'ispend.breakdown.dashboard', budgets: budgetMap(progress) });
+    });
+  } catch (err) { if (seq === state.seq && !err.shown) host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

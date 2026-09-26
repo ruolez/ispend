@@ -118,6 +118,7 @@ function exportCsv() {
   };
   const a = document.createElement('a'); a.href = urls[state.tab]; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
 }
+function sparkColor(c) { const slot = c && (c.color || c.parent_color); return slot && slot !== 'muted' ? `var(--${slot})` : 'var(--accent)'; }
 function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme().muted : catColor(s.color); }
 
 /* ---------- By category ---------- */
@@ -244,8 +245,7 @@ function renderMerchants(res, cats) {
     <td>${c ? `<span class="catchip"><i class="dot" style="--c:var(--${esc(color)})"></i><span class="catchip-label">${esc(c.name)}</span></span>` : '<span class="text-4">—</span>'}</td>
     <td class="right num col-count">${fmtNumber(m.count)}</td><td class="right num col-avg">${fmtMoney(m.avg, cur)}</td><td class="right num fw-500">${fmtMoney(m.total, cur)}</td>
     <td><span class="share-cell"><span class="share-bar" style="--c:${color ? catColor(color) : (isInc() ? 'var(--success)' : 'var(--accent)')}"><span style="width:${max ? (m.total / max * 100).toFixed(1) : 0}%"></span></span><span class="pct">${fmtPct(m.pct / 100)}</span></span></td>
-    <td class="spark-cell"><canvas data-spark="${i}" width="96" height="28"></canvas></td></tr>`; }).join('');
-  rows.forEach((m, i) => { const cv = tb.querySelector(`canvas[data-spark="${i}"]`); const c = cats.get(m.category_id); charts.sparkline(cv, m.sparkline, c ? catColor(c.color || c.parent_color) : charts.theme().accent); });
+    <td class="spark-cell">${charts.sparkSvg(m.sparkline, sparkColor(cats.get(m.category_id)), { width: 96, height: 28, fill: 0.25 })}</td></tr>`; }).join('');
   wireRowLinks(tb);
 }
 

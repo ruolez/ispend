@@ -36,6 +36,7 @@ initNav('budgets').then(async () => {
   ui.shortcuts.register('ArrowLeft', () => setMonth(shiftYm(bud.month, -1)), { description: 'Previous month' });
   ui.shortcuts.register('ArrowRight', () => setMonth(shiftYm(bud.month, 1)), { description: 'Next month' });
   window.PAGE_SHORTCUTS = [{ title: 'Budgets', items: [['n', 'Add budget'], ['c', 'Copy last month'], ['← / →', 'Previous / next month']] }];
+  window.addEventListener('ispend:resume', () => { if (store.pageStale(`budgets:${bud.month}`)) load(); });
   await load();
 });
 
@@ -69,15 +70,17 @@ async function load() {
   setPageTitle(fmtMonth(bud.month, { long: true }));
   const pending = load.prefetch; load.prefetch = null;
   try {
-    const [list, progress] = await (pending || fetchMonth());
-    if (seq !== bud.seq) return;
-    bud.list = list; bud.progress = progress; bud.months = list.months_with_budgets || [];
+    // The last copy of this month paints at once; the refresh repaints only if it changed.
+    await store.page(`budgets:${bud.month}`, () => pending || fetchMonth(), ([list, progress]) => {
+      if (seq !== bud.seq) return;
+      bud.list = list; bud.progress = progress; bud.months = list.months_with_budgets || [];
+      render();
+    });
   } catch (err) {
     if (seq !== bud.seq) return;
-    $('#bud-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
-    return;
+    if (err.shown) toast(err.message, { type: 'error' });
+    else $('#bud-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
   }
-  render();
 }
 
 /* ---------- render ---------- */

@@ -8,7 +8,7 @@
 .share-cell .pct { font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; width: 42px; text-align: right; }
 .cat-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cat-cell .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spark-cell canvas { width: 96px; height: 28px; display: block; }
+.spark-cell .spark { width: 96px; height: 28px; display: block; }
 .trend-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .trend-chips .chip { cursor: pointer; }
 .trend-chips .chip .dot { margin-right: 2px; }
