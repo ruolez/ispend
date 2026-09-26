@@ -76,6 +76,19 @@ def test_shell_pages_register_and_cover_the_viewport():
     assert by_page == expected
 
 
+def test_stylesheets_come_before_head_scripts():
+    """A page revealed while a <head> script is still loading, before its stylesheets are parsed, has no
+    @view-transition opt-in yet: Chromium aborts the screen change's transition and the rejection lands in
+    a page that never saw it (it reached the error toast). Stylesheets first makes them render-blocking."""
+    late = {}
+    for p in pages():
+        head = p.read_text().split("</head>")[0]
+        first_script, last_css = head.find("<script"), head.rfind('rel="stylesheet"')
+        if first_script >= 0 and last_css > first_script:
+            late[p.stem] = "stylesheet after a script"
+    assert late == {}
+
+
 def test_manifest_shape_and_icons():
     m = json.loads(MANIFEST.read_text())
     assert (m["id"], m["start_url"], m["scope"], m["display"]) == ("/index.html", "/index.html", "/", "standalone")

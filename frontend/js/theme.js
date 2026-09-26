@@ -1,5 +1,7 @@
-/* Theme + density bootstrap. Loaded synchronously in <head> BEFORE the
-   stylesheets so the first paint is already the right theme. */
+/* Theme + density bootstrap. Loaded synchronously in <head>, so data-theme is set before <body> is
+   parsed and the first paint is already the right theme. The stylesheets come first on purpose: they
+   are then render-blocking from the first bytes, so a screen change's view transition always sees the
+   @view-transition opt-in in app.css (revealed while this script was still loading, it was aborted). */
 (function () {
   var THEME_KEY = 'ispend.theme';
   var DENSITY_KEY = 'ispend.density';

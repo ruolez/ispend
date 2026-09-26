@@ -129,3 +129,17 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
   `--danger-text`. Dark layers (`.modal/.popover/.palette/.toast/.drawer`) remap `--surface-2` to `--surface-3`.
 - `.dots` (app.css) is the separator-list pattern; `.tbl--list` rows use the same clip trick without a wrapper.
   `ui.edgeFade(selector)` fades whichever edge of a sideways strip still hides content (mounted in nav.js).
+
+## Added 2026-09-26 (screen-switch performance)
+- `qa/e2e/perf_probe.py` + `test_perf.py`: an iPhone-13-sized chromium (4x CPU throttle, 80 ms RTT) walks the
+  bottom tabs twice and five More pages. Budgets: no shell file (HTML/CSS/JS/fonts) from the network, API chain
+  depth 1 on every screen, the topbar + bottom nav present at first paint, revisited bottom tabs showing content
+  ≤ 200 ms, Back restored from the bfcache. `python qa/e2e/perf_probe.py` prints the table. Results:
+  `qa/reports/perf-2026-09.md`. Uses `channel="chromium"` (new headless): the old headless shell never bfcaches.
+- The service worker is stamped by nginx at container start (`nginx/40-ispend-sw.sh`); the dev overlay stamps
+  "dev" (no caching). `test_perf.py` and `test_pwa.py` re-stamp with caching on via `perf_probe.stamp_worker("on")`
+  and restore afterwards. Editing the single-file-mounted stamper with `sed -i` swaps its inode: recreate nginx.
+- `test_store_page.py`: the `store.page()` contract (cached paint, repaint only on change, a write wins over an
+  in-flight refresh, errors say whether a copy is on screen). Responses carry `Server-Timing: db;dur=…, app;dur=…`.
+- WebKit for Playwright is installed (`playwright install webkit`) for Safari-engine checks (view transitions,
+  first paint); no suite depends on it yet.
