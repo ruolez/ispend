@@ -189,6 +189,74 @@ def contrast_table():
         # bd-child bg mix
     return rows
 
+def apca_lc(fg, bg):
+    """APCA 0.0.98G lightness contrast |Lc| of text colour fg on bg (sRGB 0-255 tuples)."""
+    def y(c):
+        r, g, b = ((v / 255) ** 2.4 for v in c)
+        v = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b
+        return v if v > 0.022 else v + (0.022 - v) ** 1.414
+    t, b = y(fg), y(bg)
+    if b > t:
+        s = (b ** 0.56 - t ** 0.57) * 1.14
+        return 0.0 if s < 0.1 else (s - 0.027) * 100
+    s = (b ** 0.65 - t ** 0.62) * 1.14
+    return 0.0 if s > -0.1 else -(s + 0.027) * 100
+
+
+# Enforced by test_css_audit.test_contrast_tokens. Text needs WCAG 2.2 AA 4.5:1 on every surface it sits
+# on; control boundaries need 3:1 (1.4.11). APCA floors follow the Bronze Simple Mode levels: Lc 75 for
+# body text, 60 for other content text, 45 for large/heavy or tertiary labels.
+TEXT_SURFACES = ['bg', 'surface', 'surface-2', 'surface-3', 'surface-overlay', 'accent-soft']
+CONTRAST_RULES = (
+    [(f'--{fg} on --{bg}', fg, bg, 4.5) for fg in ('text-1', 'text-2', 'text-3', 'text-4') for bg in TEXT_SURFACES]
+    + [(f'--accent text on --{bg}', 'accent', bg, 4.5) for bg in ('bg', 'surface', 'surface-2', 'surface-overlay', 'accent-soft', 'info-soft')]
+    + [(f'--success on --{bg}', 'success', bg, 4.5) for bg in ('surface', 'surface-2', 'success-soft')]
+    + [(f'--warning on --{bg}', 'warning', bg, 4.5) for bg in ('surface', 'surface-2', 'warning-soft')]
+    + [(f'--danger-text on --{bg}', 'danger-text', bg, 4.5) for bg in ('surface', 'surface-2', 'surface-overlay', 'danger-soft')]
+    + [('filled button text', 'accent-solid-fg', 'accent-solid', 4.5), ('filled button text, hover', 'accent-solid-fg', 'accent-solid-hover', 4.5)]
+    + [(f'control border vs --{bg}', 'border-control', bg, 3.0) for bg in ('bg', 'surface', 'surface-overlay')]
+    + [(f'switch off track vs --{bg}', 'switch-off', bg, 3.0) for bg in ('surface', 'surface-overlay')]
+    + [(f'focus ring vs --{bg}', 'accent', bg, 3.0) for bg in ('bg', 'surface', 'surface-overlay')]
+)
+APCA_RULES = (
+    [(f'--text-1 on --{bg}', 'text-1', bg, 90) for bg in ('bg', 'surface')]
+    + [(f'--text-2 on --{bg}', 'text-2', bg, 75) for bg in ('bg', 'surface')]
+    + [(f'--text-3 on --{bg}', 'text-3', bg, 60) for bg in ('bg', 'surface', 'surface-2')]
+    + [(f'--text-4 on --{bg}', 'text-4', bg, 45) for bg in ('bg', 'surface', 'surface-2')]
+    + [(f'--{fg} on --surface', fg, 'surface', 50) for fg in ('accent', 'danger-text', 'success', 'warning')]
+)
+
+
+def contrast_checks():
+    """Return failing colour pairs for both themes; empty when every rule holds."""
+    fails = []
+    for tname, T in (('light', LIGHT), ('dark', DARK)):
+        def c(name):
+            v = rgb(T, name)
+            return v[:3]
+        for label, fg, bg, need in CONTRAST_RULES:
+            try:
+                r = ratio(c(fg), c(bg))
+            except KeyError as e:
+                fails.append(f'{tname}: {label}: token {e} missing'); continue
+            if r < need:
+                fails.append(f'{tname}: {label} {T[fg]} on {T[bg]} = {r:.2f}:1 < {need}')
+        for label, fg, bg, need in APCA_RULES:
+            try:
+                lc = apca_lc(c(fg), c(bg))
+            except KeyError as e:
+                fails.append(f'{tname}: {label}: token {e} missing'); continue
+            if lc < need:
+                fails.append(f'{tname}: {label} {T[fg]} on {T[bg]} = APCA Lc {lc:.0f} < {need}')
+        # account initials: white on the category colour darkened as .acct-mark paints it
+        for i in range(1, 13):
+            mark = mix(c(f'c{i}'), (0, 0, 0), 0.75)
+            r = ratio((255, 255, 255), mark)
+            if r < 4.5:
+                fails.append(f'{tname}: .acct-mark white on --c{i} (75% mix with black) = {r:.2f}:1 < 4.5')
+    return fails
+
+
 # ---------- static design-system rules (python css_audit.py --check) ----------
 BREAKPOINTS = {'1280', '960', '768', '640', '480'}
 HEX_ALLOW = {'#fff', '#ffffff'}   # solid white on accent/danger fills

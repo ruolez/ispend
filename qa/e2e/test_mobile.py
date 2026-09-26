@@ -45,6 +45,14 @@ INPUT_XFAIL = set()
 TARGET_XFAIL = set()
 TEXT_XFAIL = set()
 TITLE_XFAIL = set()
+# Visual probes (phone polish pass): text on text, hard-clipped text, "·" stranded at a line edge.
+OVERLAP_XFAIL = {("budgets", "se-320"), ("index", "390"), ("index", "se-320")}
+CLIP_XFAIL = {("budgets", "se-320"), ("statements", "390"), ("statements", "se-320"), ("transactions", "390"),
+              ("transactions", "se-320")}
+ORPHAN_XFAIL = {("index", "390"), ("index", "se-320"), ("review", "se-320"), ("settings", "390"), ("settings", "se-320"),
+                ("statements", "390"), ("statements", "se-320")}
+VISUAL_DEVICES = ["se-320", "390"]
+CLIP_ALLOW = [s for s in ALLOW_HSCROLL if s not in ("#tx-summary", ".tx-wrap")]
 
 
 MEASURE_JS = r"""
@@ -101,6 +109,81 @@ MEASURE_JS = r"""
   window.scrollTo(0, y0);
   const doc = { sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
   return { smallInputs, smallText: Array.from(smallText.keys()), titled, small, doc };
+}
+"""
+
+VISUAL_JS = r"""
+(allowScroll) => {
+  const main = document.getElementById('main'); if (!main) return { overlap: [], clip: [], orphan: [] };
+  const hidden = (el) => { if (el.closest('[hidden],[inert],[aria-hidden="true"],.sr-only,.visually-hidden')) return true;
+    for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e);
+      if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) === 0) return true; } return false; };
+  const label = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+  const scrolls = (el) => allowScroll.some((s) => el.closest(s));
+  const clips = (cs) => /hidden|clip|auto|scroll/.test(cs.overflowX + cs.overflowY);
+  // a text rect clipped by every overflow ancestor; null when nothing of it is visible
+  const clipRect = (el, r) => { let [l, t, rt, b] = [r.left, r.top, r.right, r.bottom];
+    for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e);
+      if (clips(cs)) { const c = e.getBoundingClientRect(); l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom); }
+      if (cs.position === 'fixed') break; }
+    return rt - l > 1 && b - t > 1 ? { l, t, r: rt, b } : null; };
+  const texts = []; const clip = []; const orphan = new Set();
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT); let n;
+  while ((n = walker.nextNode())) {
+    const s = n.textContent; if (!s.trim()) continue;
+    const el = n.parentElement; if (!el || el.closest('script,style,template,svg,canvas') || hidden(el)) continue;
+    const rg = document.createRange(); rg.selectNodeContents(n);
+    let abs = false; for (let e = el; e && e !== main; e = e.parentElement) if (getComputedStyle(e).position === 'absolute') { abs = true; break; }
+    for (const r of rg.getClientRects()) {
+      if (r.width < 1 || r.height < 1) continue;
+      const v = clipRect(el, r); if (v) texts.push({ el, v, abs });
+      // hard clip: the text runs past a clipping box that shows no ellipsis for it
+      if (!scrolls(el)) {
+        for (let e = el; e && e !== main; e = e.parentElement) { const cs = getComputedStyle(e); if (!clips(cs)) continue;
+          const c = e.getBoundingClientRect(); if (r.right <= c.right + 1 && r.left >= c.left - 1) continue;
+          // text-overflow only draws on a block container's own inline content, never through a flex/grid box
+          let inlinePath = /^(block|inline-block|table-cell|list-item|flow-root)$/.test(cs.display);
+          for (let p = el; p && p !== e; p = p.parentElement) if (getComputedStyle(p).display !== 'inline') inlinePath = false;
+          const ellipsis = cs.textOverflow === 'ellipsis' && inlinePath && cs.whiteSpace.startsWith('nowrap');
+          if (!ellipsis) clip.push(label(e) + ' clips "' + s.trim().slice(0, 30) + '"'); break; }
+      }
+    }
+  }
+  // text on text, and text under a canvas (a sparkline over a label); absolute overlays on charts are by design
+  const overlap = new Set();
+  const inter = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 2 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 2;
+  texts.sort((a, b) => a.v.t - b.v.t);
+  for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length && texts[j].v.t < texts[i].v.b; j++) {
+    const a = texts[i], b = texts[j]; if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+    if (inter(a.v, b.v)) overlap.add(label(a.el) + ' "' + a.el.textContent.trim().slice(0, 24) + '" x ' + label(b.el) + ' "' + b.el.textContent.trim().slice(0, 24) + '"');
+  }
+  main.querySelectorAll('canvas').forEach((c) => { const cs = getComputedStyle(c); if (!c.getClientRects().length || cs.visibility === 'hidden' || c.closest('[hidden]')) return; const cr = c.getBoundingClientRect(); const v = { l: cr.left, t: cr.top, r: cr.right, b: cr.bottom };
+    for (const t of texts) if (!t.abs && inter(t.v, v)) overlap.add(label(c) + ' x ' + label(t.el) + ' "' + t.el.textContent.trim().slice(0, 24) + '"'); });
+  // a separator dot drawn by a ::before must be invisible when its item starts a line, and must never be
+  // left alone at the end of a line (an inline item that breaks right after its dot)
+  const vband = (a, b) => Math.min(a.b, b.b) - Math.max(a.t, b.t) > 4;
+  main.querySelectorAll('*').forEach((el) => {
+    const c = getComputedStyle(el, '::before').content; if (!c || !c.includes('·') || hidden(el)) return;
+    const rs = [...el.getClientRects()].filter((r) => r.width > 0); if (!rs.length) return;
+    const fs = parseFloat(getComputedStyle(el).fontSize);
+    if (rs.length > 1 && rs[0].width < fs * 1.5) { orphan.add(label(el) + '::before at a line end'); return; }
+    const r = rs[0]; const dot = { left: r.left, right: r.left + fs * 0.9, top: r.top, bottom: r.bottom };
+    if (!clipRect(el, dot)) return; // clipped away
+    const cont = el.closest('.dots, tr, li') || (el.parentElement && el.parentElement.parentElement) || main;
+    const box = { l: r.left, r: r.right, t: r.top, b: r.bottom };
+    const marks = [...cont.querySelectorAll('button, .btn, svg, img, .catchip, .dot')].filter((m) => !el.contains(m) && !m.contains(el) && !hidden(m))
+      .map((m) => { const q = m.getBoundingClientRect(); return { el: m, v: { l: q.left, r: q.right, t: q.top, b: q.bottom } }; });
+    const before = texts.concat(marks).some((t) => cont.contains(t.el) && !el.contains(t.el) && vband(t.v, box) && t.v.r <= dot.left + 1);
+    if (!before) orphan.add(label(el) + '::before starts a line in "' + cont.textContent.trim().replace(/\s+/g, ' ').slice(0, 40) + '"');
+  });
+  const lines = new Map();
+  for (const t of texts) { const blk = t.el.closest('div,li,td,p,section,header,a,button') || main; if (!lines.has(blk)) lines.set(blk, []); lines.get(blk).push(t); }
+  for (const [blk, ts] of lines) for (const t of ts) {
+    if (t.el.textContent.trim() !== '·') continue;
+    const row = ts.filter((o) => o !== t && Math.abs((o.v.t + o.v.b) / 2 - (t.v.t + t.v.b) / 2) < 6);
+    if (!row.some((o) => o.v.r <= t.v.l + 1) || !row.some((o) => o.v.l >= t.v.r - 1)) orphan.add(label(blk) + ' stranded "·"');
+  }
+  return { overlap: [...overlap].slice(0, 20), clip: [...new Set(clip)].slice(0, 20), orphan: [...orphan].slice(0, 20) };
 }
 """
 
@@ -168,6 +251,19 @@ def measure(device, page_key, dev=PHONE):
     return _cache[(page_key, dev)]
 
 
+_vcache = {}
+
+
+def visual(device, page_key, dev):
+    if (page_key, dev) not in _vcache:
+        page = device(dev)
+        page.goto(PAGES[page_key])
+        wait_loaded(page)
+        _vcache[(page_key, dev)] = page.evaluate(VISUAL_JS, CLIP_ALLOW)
+        page.context.close()
+    return _vcache[(page_key, dev)]
+
+
 def _mark(keys, xfail, reason):
     return [pytest.param(*k if isinstance(k, tuple) else (k,), marks=pytest.mark.xfail(strict=True, reason=reason))
             if k in xfail else (pytest.param(*k) if isinstance(k, tuple) else k) for k in keys]
@@ -202,6 +298,24 @@ def test_no_text_below_12px(device, page_key):
 @pytest.mark.parametrize("page_key", _mark(sorted(PAGES), TITLE_XFAIL, "title tooltips replaced in Phase 2"))
 def test_no_title_tooltips(device, page_key):
     assert measure(device, page_key)["titled"] == []
+
+
+VISUAL_KEYS = [(p, d) for p in sorted(PAGES) for d in VISUAL_DEVICES]
+
+
+@pytest.mark.parametrize("page_key,dev", _mark(VISUAL_KEYS, OVERLAP_XFAIL, "fixed in the phone polish pass"))
+def test_no_text_overlap(device, page_key, dev):
+    assert visual(device, page_key, dev)["overlap"] == []
+
+
+@pytest.mark.parametrize("page_key,dev", _mark(VISUAL_KEYS, CLIP_XFAIL, "fixed in the phone polish pass"))
+def test_no_hard_clipped_text(device, page_key, dev):
+    assert visual(device, page_key, dev)["clip"] == []
+
+
+@pytest.mark.parametrize("page_key,dev", _mark(VISUAL_KEYS, ORPHAN_XFAIL, "fixed in the phone polish pass"))
+def test_no_stranded_separators(device, page_key, dev):
+    assert visual(device, page_key, dev)["orphan"] == []
 
 
 def test_transactions_first_row_in_first_screen(device):
