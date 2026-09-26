@@ -46,17 +46,16 @@ initNav('dashboard').then(async (me) => {
 });
 
 function openMonthMenu(anchor) {
-  const items = [{ label: 'Custom range…', icon: 'calendar', onClick: () => dateRangePicker({ anchor, value: state.period, onChange: (v) => setPeriod(v) }) }, { divider: true }];
-  let ym = currentYm();
-  for (let i = 0; i < MONTHS_BACK; i++) {
-    const value = i === 0 ? 'this-month' : `month:${ym}`;
-    const selected = presetOf() === value;
-    if (ym.endsWith('-12') || i === 0) items.push({ label: ym.slice(0, 4), header: true });
-    items.push({ label: fmtMonth(ym, { long: true }).replace(/ \d{4}$/, ''), checked: selected, onClick: ((v) => () => setPeriod({ preset: v }))(value) });
-    ym = shiftYm(ym, -1);
-  }
+  const now = currentYm();
+  const p = presetOf();
+  const value = p === 'this-month' ? now : (p && p.startsWith('month:') ? p.slice(6) : null);
   anchor.setAttribute('aria-expanded', 'true');
-  ui.menu(anchor, items, { placement: 'bottom-end', onClose: () => anchor.setAttribute('aria-expanded', 'false') });
+  const pop = monthPicker({
+    anchor, value, min: shiftYm(now, -(MONTHS_BACK - 1)), max: now,
+    onPick: (ym) => setPeriod({ preset: ym === now ? 'this-month' : `month:${ym}` }),
+    extra: [{ label: 'Custom range…', icon: 'calendar', onClick: () => dateRangePicker({ anchor, value: state.period, onChange: (v) => setPeriod(v) }) }],
+  });
+  const done = pop.close; pop.close = (r) => { anchor.setAttribute('aria-expanded', 'false'); done(r); };
 }
 
 function renderSeg() {
@@ -275,12 +274,12 @@ function renderMonthly(data) {
     },
     options: {
       ...charts.barOptions(t, { currency: cur }),
-      onClick: (_evt, els) => {
+      onClick: charts.tapToDrill((_evt, els) => {
         if (!els.length) return;
         const m = data.monthly[els[0].index];
         const { from, to } = monthBounds(m.month);
         location.href = `/transactions.html${toQuery({ from, to })}`;
-      },
+      }),
       onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
     },
   }));
@@ -330,7 +329,7 @@ async function renderDonut(data) {
   const chart = charts.makeChart($('#ch-donut'), (t) => ({
     type: 'doughnut',
     data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.total), backgroundColor: cats.map((c) => colorOf(c)), hoverOffset: 6, spacing: 2 }] },
-    options: { cutout: '72%', plugins: { tooltip: { callbacks: { label: (c) => `${c.label}: ${fmtMoney(c.parsed, cur)} (${fmtPct(c.parsed / total)})` } } }, onClick: (_e, els) => { if (els.length) pickCategory(cats[els[0].index]); } },
+    options: { cutout: '72%', plugins: { tooltip: { callbacks: { label: (c) => `${c.label}: ${fmtMoney(c.parsed, cur)} (${fmtPct(c.parsed / total)})` } } }, onClick: charts.tapToDrill((_e, els) => { if (els.length) pickCategory(cats[els[0].index]); }) },
     plugins: [charts.donutCenterPlugin(() => fmtMoney(total, cur, { compact: total >= 100000 }), state.drill ? parent.name : data.range.label.toLowerCase())],
   }));
   const canDrill = (c) => !state.drill && c.id != null && (state.subCounts.get(c.id) || 0) > 0;

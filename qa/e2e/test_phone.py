@@ -317,6 +317,7 @@ def test_bottom_sheet_pickers_390(make_context):
     wait_loaded(page)
     page.click("#f-range")
     page.wait_for_selector(".popover--sheet [data-preset]", timeout=5000)
+    page.wait_for_timeout(400)  # sheets slide in; measure where they settle
     box = page.evaluate("() => { const p = document.querySelector('.popover--sheet'); const r = p.getBoundingClientRect(); return { x: r.x, right: r.right, bottom: r.bottom, vw: innerWidth, vh: innerHeight, apply: !!p.querySelector('[data-act=apply]') && p.querySelector('[data-act=apply]').getBoundingClientRect().height > 0 }; }")
     assert box["x"] >= 0 and box["right"] <= box["vw"] + 1 and box["bottom"] <= box["vh"] + 1 and box["apply"], box
     page.keyboard.press("Escape")

@@ -358,7 +358,7 @@ async function setTags(it, tagIds, d) {
     return before;
   } catch (err) { toast(err.message, { type: 'error' }); return null; }
 }
-function paintDensity() { const t = Theme.density() === 'compact' ? 'Comfortable rows' : 'Compact rows'; $('#btn-density').innerHTML = icon(Theme.density() === 'compact' ? 'list' : 'menu'); $('#btn-density').title = t; $('#btn-density').setAttribute('aria-label', t); }
+function paintDensity() { const t = Theme.density() === 'compact' ? 'Comfortable rows' : 'Compact rows'; $('#btn-density').innerHTML = icon(Theme.density() === 'compact' ? 'list' : 'menu'); $('#btn-density').setAttribute('data-tip', t); $('#btn-density').setAttribute('aria-label', t); }
 
 /* ---------- loading ---------- */
 async function reload() {
@@ -410,7 +410,7 @@ function paintSummary() {
   const cur = curs.length === 1 ? curs[0] : (tx.displayCurrency || curs[0] || 'USD');
   const mixed = curs.length > 1;
   setPageTitle(`${fmtNumber(tx.total)} transaction${tx.total === 1 ? '' : 's'} · ${rangeLabel(tx.filters.range)}`);
-  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span>${tx.filters.flow !== 'in' ? `<span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span>` : ''}${tx.filters.flow !== 'out' ? `<span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span>` : ''}${!tx.filters.flow ? `<span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>` : ''}${tx.skipped.count ? `<span class="text-3" title="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" title="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
+  $('#tx-summary').innerHTML = `<span><b>${fmtNumber(tx.total)}</b> transaction${tx.total === 1 ? '' : 's'}</span>${tx.filters.flow !== 'in' ? `<span>Spent <b>${fmtMoney(Math.abs(tx.sumOut), cur)}</b></span>` : ''}${tx.filters.flow !== 'out' ? `<span>Received <b>${fmtMoney(tx.sumIn, cur)}</b></span>` : ''}${!tx.filters.flow ? `<span>Net <b class="${tx.sumIn + tx.sumOut >= 0 ? 'text-success' : ''}">${fmtMoney(tx.sumIn + tx.sumOut, cur, { sign: 'always' })}</b></span>` : ''}${tx.skipped.count ? `<span class="text-3" data-tip="Transfers between your own accounts and excluded transactions are not counted as spent or received">${plural(tx.skipped.count, 'transfer/excluded row')} · ${fmtMoney(tx.skipped.sum, cur)} not counted</span>` : ''}${mixed ? `<span class="badge badge-warning" data-tip="Totals add up ${esc(curs.join(' and '))} amounts without conversion">${icon('alert-triangle', 'ico-sm')}Mixed currencies (${esc(curs.join(', '))})</span>` : ''}`;
 }
 $('#tx-body') && $('#tx-body').addEventListener('click', (e) => { if (e.target.closest('[data-act="clear-filters"]')) clearFilters(); if (e.target.closest('[data-act="show-all"]')) { tx.filters.range = { preset: 'all' }; periodSet(tx.filters.range); applyFilters(); } });
 
@@ -434,7 +434,7 @@ function rowHtml(it, idx) {
   return `<tr class="tx-row ${it.is_transfer ? 'is-transfer' : ''} ${it.is_excluded ? 'is-excluded' : ''} ${idx === tx.focus ? 'is-focused' : ''}" data-id="${it.id}" data-idx="${idx}" aria-selected="${tx.selection.has(it.id)}" tabindex="-1">
     <td class="col-check"><input type="checkbox" class="check" data-select="${it.id}" ${tx.selection.has(it.id) ? 'checked' : ''} aria-label="Select"></td>
     <td class="col-date num">${fmtDate(it.txn_date)}</td>
-    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}${tagChipsHtml(it)}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" title="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
+    <td class="col-merchant"><div class="merchant"><span class="merchant-name">${esc(it.merchant_name)}${it.is_transfer ? '<span class="badge badge-neutral badge-mini">Transfer</span>' : ''}${it.is_excluded && !it.is_transfer ? '<span class="badge badge-neutral badge-mini">Excluded</span>' : ''}${it.notes ? `<span class="badge badge-mini badge-neutral" data-note data-tip="${esc(it.notes)}" role="img" aria-label="Has a note">${icon('pencil', 'ico-sm')}</span>` : ''}${tagChipsHtml(it)}</span><span class="merchant-raw" data-date="${esc(fmtDate(it.txn_date))}" data-tip="${esc(it.description_raw)}">${esc(it.description_raw)}</span></div></td>
     <td class="col-cat">${catCellHtml(it)}</td>
     <td class="col-acct">${a ? `<span class="acct"><i class="acct-mark" style="--c:var(--${esc(a.color || 'c1')})">${esc(initials(a.name).slice(0, 1))}</i><span class="truncate">${esc(a.name)}</span></span>` : ''}</td>
     <td class="col-amt right"><span class="amt ${amtCls}">${fmtMoney(it.amount, cur, { sign: 'always' })}</span></td>
@@ -834,7 +834,7 @@ function drawerHtml(it) {
     </div>
     <div class="txd-section"><div class="section-label">Category</div><div class="row" style="gap:8px;flex-wrap:wrap">${catBtn}<button type="button" class="btn btn-ghost btn-sm" data-dact="rule">${icon('sliders', 'ico-sm')}Create rule from this</button>${it.is_transfer ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-dact="split">${icon('split', 'ico-sm')}${(it.splits || []).length ? 'Edit split' : 'Split…'}</button>`}</div>${splitLinesHtml(it)}</div>
     <div class="txd-section"><div class="section-label">Merchant</div><div class="txd-merchant-edit"><input class="input input-sm" id="txd-merchant" value="${esc(it.merchant_name)}" aria-label="Merchant name"><button type="button" class="btn btn-sm btn-secondary" data-dact="rename" data-tip="Rename this merchant everywhere">Rename all</button></div>
-      <div class="txd-raw mt-2" title="Original statement text">${esc(it.description_raw)}</div></div>
+      <div class="txd-raw mt-2" data-tip="Original statement text">${esc(it.description_raw)}</div></div>
     <div class="txd-section"><div class="section-label">Tags</div><div class="row gap-2 wrap" id="txd-tags">${tagChipsHtml(it, { removable: true })}<button type="button" class="btn btn-ghost btn-sm" data-dact="tags" aria-haspopup="true">${icon('tag', 'ico-sm')}${(it.tag_ids || []).length ? 'Edit tags' : 'Add tag'}</button></div></div>
     <div class="txd-section"><div class="section-label">Notes</div><textarea class="textarea" id="txd-notes" rows="2" aria-label="Notes" placeholder="Add a note…">${esc(it.notes || '')}</textarea></div>
     <div class="txd-section txd-flags">
@@ -1059,7 +1059,7 @@ function attachDescriptionSuggest(root, { onPick }) {
     input.setAttribute('aria-controls', 'sug-list');
     list.addEventListener('mousedown', (e) => e.preventDefault());
     list.addEventListener('click', (e) => { const o = e.target.closest('.sug-opt'); if (o) pick(Number(o.dataset.i)); });
-    pop = ui.popover(input, list, { placement: 'bottom-start', matchWidth: true, closeOnOutside: true, onClose: () => { pop = null; } });
+    pop = ui.popover(input, list, { placement: 'bottom-start', matchWidth: true, closeOnOutside: true, noSheet: true, onClose: () => { pop = null; } });
     pop.allowShortcuts = true;
     input.setAttribute('aria-expanded', 'true');
     paint();

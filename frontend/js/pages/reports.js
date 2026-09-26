@@ -170,7 +170,7 @@ function renderStack(data) {
       ...charts.barOptions(t, { currency: cur, stacked: true }),
       plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${state.pct ? fmtPct(c.parsed.y / 100) : fmtMoney(c.parsed.y, cur)}`, footer: (items) => state.pct ? '' : `Total: ${fmtMoney(items.reduce((s, it) => s + it.parsed.y, 0), cur)}` } } },
       scales: { x: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true } }, y: { stacked: true, beginAtZero: true, border: { display: false }, max: state.pct ? 100 : undefined, ticks: state.pct ? { callback: (v) => `${v}%`, maxTicksLimit: 5 } : charts.currencyTicks(cur) } },
-      onClick: (_e, els) => { if (!els.length) return; const s = data.series[els[0].datasetIndex]; const [y, m] = data.months[els[0].index].split('-').map(Number); const to = `${data.months[els[0].index]}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; location.href = `/transactions.html${toQuery({ cat: s.category_id == null ? (s.other_category_ids && s.other_category_ids.length ? s.other_category_ids : (s.name === 'Other' ? null : 'none')) : s.category_id, from: `${data.months[els[0].index]}-01`, to })}`; },
+      onClick: charts.tapToDrill((_e, els) => { if (!els.length) return; const s = data.series[els[0].datasetIndex]; const [y, m] = data.months[els[0].index].split('-').map(Number); const to = `${data.months[els[0].index]}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; location.href = `/transactions.html${toQuery({ cat: s.category_id == null ? (s.other_category_ids && s.other_category_ids.length ? s.other_category_ids : (s.name === 'Other' ? null : 'none')) : s.category_id, from: `${data.months[els[0].index]}-01`, to })}`; }),
     },
   }));
   legend.innerHTML = data.series.map((s, i) => `<button type="button" class="legend-item ${isolated != null && isolated !== i ? 'is-off' : ''}" data-i="${i}"><span class="legend-name"><i class="dot" style="--c:${seriesColor(s)}"></i>${esc(s.name)}</span><span class="legend-val">${fmtMoney(s.total, cur)}</span></button>`).join('');
@@ -339,7 +339,7 @@ function renderCashflow(rows) {
     options: {
       ...charts.barOptions(t, { currency: cur }),
       scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true } }, y: { border: { display: false }, ticks: charts.currencyTicks(cur) } },
-      onClick: (_e, els) => { if (!els.length) return; const m = rows[els[0].index].month; location.href = `/transactions.html${toQuery({ from: `${m}-01`, to: monthEnd(m) })}`; },
+      onClick: charts.tapToDrill((_e, els) => { if (!els.length) return; const m = rows[els[0].index].month; location.href = `/transactions.html${toQuery({ from: `${m}-01`, to: monthEnd(m) })}`; }),
     },
   }));
   charts.htmlLegend($('#ch-cash-legend'), chart, { currency: cur });

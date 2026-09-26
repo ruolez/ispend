@@ -161,7 +161,7 @@ function pairSideHtml(t) {
   const cur = (a && a.currency) || rv.currency || 'USD';
   return `<div class="rv-pair-side">
     <div class="rv-pair-top"><span class="acct"><i class="acct-mark" style="--c:var(--${esc((a && a.color) || 'c1')})">${esc(((a && a.name) || '?').slice(0, 1))}</i>${esc(a ? a.name : 'Account')}</span><span class="text-3 fs-sm num">${fmtDateLong(t.txn_date)}</span></div>
-    <div class="rv-pair-desc" title="${esc(t.description)}"><span class="fw-500">${esc(t.merchant_name || t.description)}</span><small>${esc(t.description)}</small></div>
+    <div class="rv-pair-desc" data-tip="${esc(t.description)}"><span class="fw-500">${esc(t.merchant_name || t.description)}</span><small>${esc(t.description)}</small></div>
     <div class="amt ${t.amount > 0 ? 'amt--income' : ''}">${fmtMoney(t.amount, cur, { sign: 'always' })}</div>
   </div>`;
 }
@@ -172,7 +172,7 @@ function pairHtml(p, idx) {
   return `<article class="rv-card rv-pair ${idx === rv.focus ? 'is-focused' : ''}" data-idx="${idx}" data-key="${esc(pairKey(p))}" tabindex="0" aria-label="Transfer of ${esc(fmtMoney(Math.abs(p.a.amount), cur))}">
     <div class="rv-head">
       <div><div class="rv-name">${fmtMoney(Math.abs(p.a.amount), cur)} transfer</div><div class="rv-meta"><span>${days === 0 ? 'Same day' : `${days} day${days === 1 ? '' : 's'} apart`}</span></div></div>
-      <span class="badge ${p.confidence >= 0.9 ? 'badge-success' : 'badge-warning'}" title="How sure iSpend is that these two are the same transfer">${pct}% likely</span>
+      <span class="badge ${p.confidence >= 0.9 ? 'badge-success' : 'badge-warning'}" data-tip="How sure iSpend is that these two are the same transfer">${pct}% likely</span>
     </div>
     <div class="rv-pair-rows">${pairSideHtml(p.a)}<span class="rv-pair-arrow">${icon('arrow-left-right')}</span>${pairSideHtml(p.b)}</div>
     <div class="rv-actions">
@@ -288,7 +288,7 @@ function cardHtml(g, idx) {
       <div style="min-width:0">
         <div class="rv-name">${esc(g.display)}</div>
         <div class="rv-meta">${single ? `<span>${esc(fmtDateLong(g.first))}</span>` : `<span>${plural(g.count, 'charge')}</span><span>·</span>`}<span class="amt">${fmtMoney(g.total, cur, { sign: 'always' })}</span>${!single && g.first !== g.last ? `<span>·</span><span>${fmtDate(g.first)} – ${fmtDate(g.last)}</span>` : !single ? `<span>·</span><span>${fmtDate(g.first)}</span>` : ''}</div>
-        ${g.sample_description ? `<div class="rv-raw" title="${esc(g.sample_description)}">${esc(g.sample_description)}</div>` : ''}
+        ${g.sample_description ? `<div class="rv-raw" data-tip="${esc(g.sample_description)}">${esc(g.sample_description)}</div>` : ''}
       </div>
       ${!single ? `<button type="button" class="btn btn-ghost btn-xs" data-cact="expand" aria-expanded="${g.expanded}">${icon(g.expanded ? 'chevron-up' : 'chevron-down', 'ico-sm')}${g.expanded ? 'Hide' : 'Show'} charges</button>` : ''}
     </div>

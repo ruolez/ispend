@@ -6,10 +6,14 @@ initNav('insights').then(async (me) => {
   state.me = me;
   state.currency = await store.displayCurrency();
   state.month = qs().month || periodMonth(periodGet()) || currentMonth();
-  $('#month').value = state.month;
+  paintMonth();
   $('[data-act="prev-month"]').innerHTML = icon('chevron-left'); $('[data-act="next-month"]').innerHTML = icon('chevron-right');
   $('.ai-mark').innerHTML = icon('sparkles');
-  $('#month').addEventListener('change', (e) => { state.month = e.target.value || currentMonth(); sync(); load(); });
+  $('#month-btn').addEventListener('click', (e) => {
+    const btn = e.currentTarget; btn.setAttribute('aria-expanded', 'true');
+    const pop = monthPicker({ anchor: btn, value: state.month, max: currentMonth(), onPick: (ym) => { state.month = ym; sync(); load(); } });
+    const done = pop.close; pop.close = (r) => { btn.setAttribute('aria-expanded', 'false'); done(r); };
+  });
   document.body.addEventListener('click', onAction);
   await store.categoriesFlat().then((f) => { state.cats = new Map(f.map((c) => [c.id, c])); }).catch(() => {});
   load();
@@ -17,7 +21,8 @@ initNav('insights').then(async (me) => {
 
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function shiftMonth(ym, delta) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-function sync() { $('#month').value = state.month; periodSet({ preset: state.month === currentMonth() ? 'this-month' : `month:${state.month}` }); setQs({ month: state.month === currentMonth() ? null : state.month }, { replace: true }); }
+function paintMonth() { $('#month-btn').innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${esc(fmtMonth(state.month, { long: true }))}</span>${icon('chevron-down', 'ico-sm')}`; }
+function sync() { paintMonth(); periodSet({ preset: state.month === currentMonth() ? 'this-month' : `month:${state.month}` }); setQs({ month: state.month === currentMonth() ? null : state.month }, { replace: true }); }
 
 async function load() {
   $('#ins-error').innerHTML = '';

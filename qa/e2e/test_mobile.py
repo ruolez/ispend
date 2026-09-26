@@ -45,7 +45,7 @@ INPUT_XFAIL = set()
 TARGET_XFAIL = {"budgets", "categories", "index", "insights", "reports", "settings", "statements", "transactions",
                 "forgot", "login", "signup"}
 TEXT_XFAIL = set()
-TITLE_XFAIL = {"index", "reports", "review", "settings", "statements", "transactions"}
+TITLE_XFAIL = set()
 
 
 MEASURE_JS = r"""
@@ -236,13 +236,13 @@ def test_single_page_title(device):
     assert shell["h1"] and not shell["topTitle"], shell
 
 
-@pytest.mark.xfail(strict=True, reason="ui.sheet lands in Phase 2")
 def test_date_sheet_fits_visual_viewport(device):
     page = device("se-320")
     page.goto(PAGES["transactions"])
     wait_loaded(page)
     page.locator("#f-range").tap()
     page.wait_for_selector(".sheet [data-preset]", timeout=3000)
+    page.wait_for_timeout(400)  # let the slide-in finish before measuring
     box = page.evaluate("""() => { const s = document.querySelector('.sheet'); const r = s.getBoundingClientRect(); const a = s.querySelector('[data-act=apply]').getBoundingClientRect();
       const vv = window.visualViewport; return { top: r.top, bottom: r.bottom, vh: vv.height, applyBottom: a.bottom, applyH: a.height }; }""")
     assert box["top"] >= 0 and box["bottom"] <= box["vh"] + 1 and box["applyBottom"] <= box["vh"] and box["applyH"] >= 44, box

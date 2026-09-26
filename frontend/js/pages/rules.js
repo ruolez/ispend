@@ -59,7 +59,7 @@ function catChip(id, r) {
 }
 function extrasHtml(r) {
   const out = [];
-  if (r.amount_min != null || r.amount_max != null) out.push(`<span class="badge badge-neutral" title="Amount range">${r.amount_min != null ? fmtMoney(r.amount_min, state.currency) : '…'} → ${r.amount_max != null ? fmtMoney(r.amount_max, state.currency) : '…'}</span>`);
+  if (r.amount_min != null || r.amount_max != null) out.push(`<span class="badge badge-neutral" data-tip="Amount range">${r.amount_min != null ? fmtMoney(r.amount_min, state.currency) : '…'} → ${r.amount_max != null ? fmtMoney(r.amount_max, state.currency) : '…'}</span>`);
   if (r.account_id) { const a = state.accounts.find((x) => x.id === r.account_id); out.push(`<span class="badge badge-neutral">${esc(a ? a.name : 'Account')}</span>`); }
   if (r.case_sensitive) out.push('<span class="badge badge-neutral">Aa</span>');
   if (r.category_id != null && r.set_transfer) out.push('<span class="badge badge-neutral">transfer</span>');
@@ -68,7 +68,7 @@ function extrasHtml(r) {
 }
 function ruleHtml(r, i) {
   return `<li class="rule ${r.is_active ? '' : 'is-off'}" data-id="${r.id}" draggable="true" tabindex="0" aria-label="Rule ${i + 1}">
-    <span class="rule-grip" title="Drag to reorder" aria-hidden="true">${icon('grip-vertical', 'ico-sm')}</span>
+    <span class="rule-grip" data-tip="Drag to reorder" aria-hidden="true">${icon('grip-vertical', 'ico-sm')}</span>
     <span class="rule-prio">${i + 1}</span>
     <div class="rule-cond">
       <select class="select" data-field="match_field" aria-label="Field">${MATCH_FIELDS.map(([v, l]) => `<option value="${v}" ${r.match_field === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -79,7 +79,7 @@ function ruleHtml(r, i) {
     </div>
     <span class="rule-arrow">${icon('arrow-right', 'ico-sm')}</span>
     <div class="rule-then">${catChip(r.category_id, r)}</div>
-    <span class="rule-hits ${r.hit_count ? '' : 'is-zero'}" title="${r.last_hit_at ? `Last hit ${fmtRelative(r.last_hit_at)}` : 'Never matched'}">${fmtNumber(r.hit_count || 0)}</span>
+    <span class="rule-hits ${r.hit_count ? '' : 'is-zero'}" data-tip="${r.last_hit_at ? `Last hit ${fmtRelative(r.last_hit_at)}` : 'Never matched'}">${fmtNumber(r.hit_count || 0)}</span>
     <span class="rule-on"><label class="switch switch-sm" data-tip="${r.is_active ? 'Enabled' : 'Disabled'}"><input type="checkbox" data-field="is_active" ${r.is_active ? 'checked' : ''} aria-label="Enabled"><span class="switch-track"></span></label></span>
     <div class="rule-actions">
       <button type="button" class="btn btn-ghost btn-xs" data-act="test" data-id="${r.id}" data-tip="Show matching transactions">Test</button>

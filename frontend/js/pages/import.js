@@ -53,12 +53,12 @@ function accountName(id) { const a = imp.accounts.find((x) => x.id === Number(id
 const SOURCE_LABEL = { rule: 'from one of your rules', merchant: 'remembered from a previous statement', builtin: 'built-in suggestion' };
 function catChip(id, source, rowId) {
   const c = imp.cats.get(Number(id));
-  const act = rowId != null ? ` data-act="pick-cat" data-row="${rowId}" title="Click to change the category"` : '';
+  const act = rowId != null ? ` data-act="pick-cat" data-row="${rowId}" data-tip="Click to change the category"` : '';
   const tag = rowId != null ? 'button type="button"' : 'span';
   const close = rowId != null ? 'button' : 'span';
   if (!c) return `<${tag} class="catchip catchip--empty"${act}><i class="dot"></i><span class="catchip-label">Uncategorized</span></${close}>`;
   const why = source === 'builtin' ? ' · a suggestion — confirm it here, or later in Review' : SOURCE_LABEL[source] ? ` · ${SOURCE_LABEL[source]}` : source === 'manual' ? ' · set by you' : '';
-  return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} title="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}${source === 'builtin' ? '<span class="chip-q">?</span>' : ''}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
+  return `<${tag} class="catchip ${source === 'builtin' ? 'catchip--suggested' : ''}"${rowId != null ? ` data-act="pick-cat" data-row="${rowId}"` : ''} data-tip="${esc(c.path + why)}${rowId != null ? ' · click to change' : ''}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.name)}${source === 'builtin' ? '<span class="chip-q">?</span>' : ''}</span>${source === 'merchant' ? icon('sparkles', 'ico-sm chip-src') : source === 'rule' ? icon('sliders', 'ico-sm chip-src') : source === 'manual' ? icon('check', 'ico-sm chip-src') : ''}</${close}>`;
 }
 
 /* ---------- Step 1: upload ---------- */
@@ -326,8 +326,8 @@ function mappingEditor(s) {
         <div class="field"><label for="map-skip-rows">Skip rows above header</label><input type="number" id="map-skip-rows" min="0" max="50" class="input input-sm" style="width:90px" data-map="skip_rows" value="${Number(m.skip_rows || 0)}"></div>
         <label class="switch" style="margin-bottom:6px"><input type="checkbox" data-map="has_header" ${m.has_header !== false ? 'checked' : ''}><span class="switch-track"></span>First row is a header</label>
       </div>
-      <div class="mapping-table"><table><thead><tr>${cols.map((i) => `<th class="${roleOf(i) ? 'is-mapped' : ''}"><select class="select input-sm" data-col="${i}" aria-label="Role for column ${i + 1}">${ROLE_OPTIONS.map(([v, l]) => `<option value="${v}" ${roleOf(i) === v ? 'selected' : ''}>${l}</option>`).join('')}</select><div class="colname" title="${esc(header[i] || '')}">${esc(header[i] || `Column ${i + 1}`)}</div></th>`).join('')}</tr></thead>
-        <tbody>${sample.slice(0, 5).map((r) => `<tr>${cols.map((i) => `<td title="${esc(r[i] || '')}">${esc(r[i] || '')}</td>`).join('')}</tr>`).join('') || '<tr><td class="text-3">No sample rows</td></tr>'}</tbody></table></div>
+      <div class="mapping-table"><table><thead><tr>${cols.map((i) => `<th class="${roleOf(i) ? 'is-mapped' : ''}"><select class="select input-sm" data-col="${i}" aria-label="Role for column ${i + 1}">${ROLE_OPTIONS.map(([v, l]) => `<option value="${v}" ${roleOf(i) === v ? 'selected' : ''}>${l}</option>`).join('')}</select><div class="colname" data-tip="${esc(header[i] || '')}">${esc(header[i] || `Column ${i + 1}`)}</div></th>`).join('')}</tr></thead>
+        <tbody>${sample.slice(0, 5).map((r) => `<tr>${cols.map((i) => `<td data-tip="${esc(r[i] || '')}">${esc(r[i] || '')}</td>`).join('')}</tr>`).join('') || '<tr><td class="text-3">No sample rows</td></tr>'}</tbody></table></div>
       <div class="hint mt-2">Changes re-parse the file immediately. Mark two columns as Description to join them; use Debit and Credit when amounts are in separate columns. Once you import, the mapping is remembered for files with the same columns.</div>
     </div></details></div>`;
 }
@@ -344,7 +344,7 @@ function previewTable(s) {
     if (r.in_file_duplicate) badges.push('<span class="badge badge-neutral" tabindex="0" data-tip="The same line appears more than once in this file">In file</span>');
     (r.problems || []).forEach((p) => badges.push(`<span class="badge badge-danger" tabindex="0" data-tip="${esc(p)}">${esc(p.length > 24 ? p.slice(0, 22) + '…' : p)}</span>`));
     return `<tr data-row="${r.id}" class="${excluded ? 'is-excluded' : ''}">
-      <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid && !r.duplicate_of ? 'checked' : ''} ${!r.is_valid || r.duplicate_of ? 'disabled' : ''} ${r.duplicate_of ? 'title="Already imported: duplicates are always skipped"' : ''} aria-label="Include row"></td>
+      <td class="col-check"><input type="checkbox" class="check" data-row-include="${r.id}" ${r.include && r.is_valid && !r.duplicate_of ? 'checked' : ''} ${!r.is_valid || r.duplicate_of ? 'disabled' : ''} ${r.duplicate_of ? 'data-tip="Already imported: duplicates are always skipped"' : ''} aria-label="Include row"></td>
       <td class="num nowrap col-date">${r.txn_date ? fmtDate(r.txn_date, { year: true }) : '<span class="text-danger">—</span>'}</td>
       <td class="col-desc"><div class="merchant"><span class="merchant-name">${esc(r.merchant_name || r.description || '')}</span><span class="merchant-raw" data-date="${r.txn_date ? esc(fmtDate(r.txn_date)) : ''}">${esc(r.description || '')}</span></div>${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}</td>
       <td class="col-cat">${r.is_valid ? catChip(r.category_id, r.category_source, r.id) : ''}</td>
@@ -352,7 +352,7 @@ function previewTable(s) {
     </tr>`;
   }).join('');
   return `<div class="preview-head">
-      <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span title="Rows already imported into this account are skipped automatically"><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'} skipped</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
+      <div class="tbl-summary" style="margin:0"><span><b>${fmtNumber(sm.included || 0)}</b> to import</span>${dupCount ? `<span data-tip="Rows already imported into this account are skipped automatically"><b>${fmtNumber(dupCount)}</b> duplicate${dupCount === 1 ? '' : 's'} skipped</span>` : ''}${sm.invalid ? `<span class="text-danger"><b>${fmtNumber(sm.invalid)}</b> unreadable</span>` : ''}${sm.uncategorized ? `<span><b>${fmtNumber(sm.uncategorized)}</b> without a category yet</span>` : ''}</div>
       <div class="row" style="gap:12px">${s.file_kind === 'pdf' && imp.aiReady ? `<button type="button" class="btn btn-secondary btn-xs" data-act="ai-extract" data-tip="Ask the AI to read the pages and pick up anything that was missed">${icon('sparkles', 'ico-sm')}Read with AI</button>` : ''}<button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="1">Include all</button><button type="button" class="btn btn-ghost btn-xs" data-act="rows-all" data-include="0">Exclude all</button></div>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-preview"><thead><tr><th class="col-check"></th><th>Date</th><th>Description</th><th>Category</th><th class="right">Amount</th></tr></thead>

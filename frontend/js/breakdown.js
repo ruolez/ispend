@@ -45,7 +45,7 @@
     const dir = Math.abs(pct) < 0.005 ? 'flat' : pct > 0 ? 'up' : 'down';
     const cls = dir === 'flat' ? '' : ((dir === 'up') === upIsGood ? 'is-good' : 'is-bad');
     const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '–';
-    return `<span class="bd-delta ${cls}" title="Previous period: ${esc(fmtMoney(prev, currency))}">${arrow} ${esc(fmtPct(Math.abs(pct)))}</span>`;
+    return `<span class="bd-delta ${cls}" data-tip="Previous period: ${esc(fmtMoney(prev, currency))}">${arrow} ${esc(fmtPct(Math.abs(pct)))}</span>`;
   }
 
   /* GET /api/budgets/progress for a range that is exactly one calendar month, as a Map(category_id → item); null otherwise. */

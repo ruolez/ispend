@@ -118,7 +118,7 @@ async function categoryPicker({ anchor, value = null, onPick, allowCreate = true
     pickRow(rows[i]);
   });
   list.addEventListener('mousemove', (e) => { const li = e.target.closest('.cp-opt'); if (!li) return; const i = $$('.cp-opt', list).indexOf(li); if (i !== active) { active = i; highlight(); } });
-  requestAnimationFrame(() => input.focus());
+  requestAnimationFrame(() => focusSearch(el, input));
   return pop;
 }
 
@@ -182,6 +182,13 @@ function rangeFromQuery(q, fallback = { preset: 'this-month' }) {
   return fallback;
 }
 
+/* Pickers open with the search box focused, except on a touch phone where that would throw the
+   keyboard over the sheet before the list is seen: there the sheet itself takes focus. */
+function focusSearch(sheetEl, input) {
+  if (ui.isPhone() && ui.isCoarse()) { sheetEl.setAttribute('tabindex', '-1'); sheetEl.focus({ preventScroll: true }); }
+  else if (input) input.focus();
+}
+
 function dateRangePicker({ anchor, value = { preset: 'this-month' }, onChange, allowAll = true } = {}) {
   const el = document.createElement('div');
   el.className = 'menu';
@@ -209,6 +216,54 @@ function dateRangePicker({ anchor, value = { preset: 'this-month' }, onChange, a
     }
   });
   requestAnimationFrame(() => { const f = el.querySelector('[data-preset][aria-checked="true"]') || el.querySelector('[data-preset]'); f && f.focus(); });
+  return pop;
+}
+
+/* Month picker: a year stepper over a 12-month grid (a bottom sheet on phones), the one month
+   control every page uses. value/min/max are 'YYYY-MM'; months outside min..max are disabled.
+   extra: [{ label, icon, onClick }] buttons under the grid (e.g. "Custom range…"). */
+function monthPicker({ anchor, value, min = null, max = null, onPick, extra = [] } = {}) {
+  const ymOf = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+  const now = new Date();
+  const sel = value || ymOf(now.getFullYear(), now.getMonth() + 1);
+  let year = Number(sel.slice(0, 4));
+  const names = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleString('en-US', { month: 'short' }));
+  const el = document.createElement('div');
+  el.className = 'menu mp';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Choose a month');
+  const minY = min ? Number(min.slice(0, 4)) : -Infinity, maxY = max ? Number(max.slice(0, 4)) : Infinity;
+  const paint = () => {
+    el.innerHTML = `
+      <div class="mp-head"><button type="button" class="btn btn-icon btn-ghost btn-sm" data-mp="prev" aria-label="Previous year" ${year <= minY ? 'disabled' : ''}>${icon('chevron-left')}</button>
+        <span class="mp-year" aria-live="polite">${year}</span>
+        <button type="button" class="btn btn-icon btn-ghost btn-sm" data-mp="next" aria-label="Next year" ${year >= maxY ? 'disabled' : ''}>${icon('chevron-right')}</button></div>
+      <div class="mp-grid" role="radiogroup" aria-label="${year}">${names.map((n, i) => {
+        const ym = ymOf(year, i + 1);
+        const off = (min && ym < min) || (max && ym > max);
+        return `<button type="button" class="mp-month${ym === sel ? ' active' : ''}" role="radio" aria-checked="${ym === sel}" data-ym="${ym}" ${off ? 'disabled' : ''} aria-label="${esc(new Date(year, i, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }))}">${esc(n)}</button>`;
+      }).join('')}</div>
+      ${extra.length ? `<div class="menu-divider"></div>${extra.map((x, i) => `<button type="button" class="menu-item" data-mp-extra="${i}">${x.icon ? icon(x.icon) : ''}<span class="grow">${esc(x.label)}</span></button>`).join('')}` : ''}`;
+  };
+  paint();
+  const pop = ui.popover(anchor, el, { placement: 'bottom-end', onClose: () => { if (anchor && anchor.isConnected && anchor.focus) anchor.focus(); } });
+  const focusSel = () => { const f = el.querySelector('.mp-month.active:not([disabled])') || el.querySelector('.mp-month:not([disabled])'); if (f) f.focus(); };
+  el.addEventListener('click', (e) => {
+    const step = e.target.closest('[data-mp]');
+    if (step) { year += step.dataset.mp === 'next' ? 1 : -1; paint(); const b = el.querySelector(`[data-mp="${step.dataset.mp}"]`); (b && !b.disabled ? b : el.querySelector('.mp-month:not([disabled])')).focus(); pop.position(); return; }
+    const m = e.target.closest('[data-ym]');
+    if (m && !m.disabled) { pop.close('pick'); onPick && onPick(m.dataset.ym); return; }
+    const x = e.target.closest('[data-mp-extra]');
+    if (x) { pop.close('pick'); extra[Number(x.dataset.mpExtra)].onClick(); }
+  });
+  el.addEventListener('keydown', (e) => {
+    const btns = $$('.mp-month:not([disabled])', el);
+    const i = btns.indexOf(document.activeElement);
+    if (i < 0) return;
+    const move = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 3, ArrowUp: -3 }[e.key];
+    if (move) { e.preventDefault(); const t = btns[i + move]; if (t) t.focus(); }
+  });
+  requestAnimationFrame(focusSel);
   return pop;
 }
 
@@ -253,7 +308,7 @@ async function tagPicker({ anchor, selected = new Set(), onChange, allowCreate =
     if (e.key === 'ArrowDown') { e.preventDefault(); (opts[i + 1] || opts[0]).focus(); }
     if (e.key === 'ArrowUp') { e.preventDefault(); if (i <= 0) input.focus(); else opts[i - 1].focus(); }
   });
-  requestAnimationFrame(() => el.querySelector('input').focus());
+  requestAnimationFrame(() => focusSearch(el, el.querySelector('input')));
   return pop;
 }
 

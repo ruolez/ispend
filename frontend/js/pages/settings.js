@@ -76,7 +76,7 @@ async function loadLayouts() {
   const columns = (l) => (Array.isArray(l.header) && l.header.length ? l.header.join(' · ') : 'No header row');
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards"><thead><tr><th>Columns</th><th>Bank</th><th>Account</th><th>Last used</th><th class="right">Used</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${state.layouts.map((l) => `<tr data-id="${l.id}">
-      <td><div class="text-1 fw-500 truncate" style="max-width:360px" title="${esc(columns(l))}">${esc(columns(l))}</div>${l.sample_filename ? `<div class="text-3 fs-sm">${esc(l.sample_filename)}</div>` : ''}</td>
+      <td><div class="text-1 fw-500 truncate" style="max-width:360px" data-tip="${esc(columns(l))}">${esc(columns(l))}</div>${l.sample_filename ? `<div class="text-3 fs-sm">${esc(l.sample_filename)}</div>` : ''}</td>
       <td data-label="Bank">${esc(l.bank_profile ? instLabel(l.bank_profile) : 'Generic')}</td>
       <td data-label="Account">${esc(l.account_name || 'Any account')}</td>
       <td class="text-3" data-label="Last used">${fmtRelative(l.last_used_at)}</td>
@@ -251,14 +251,14 @@ async function openModelList() {
   const exact = rows.findIndex((m) => m.id.toLowerCase() === q);
   state.modelIdx = exact >= 0 ? exact : (rows.length ? 0 : -1);
   const html = `<div class="menu model-list" role="listbox" id="or-model-list">${rows.length ? rows.map((m, i) => `<div class="model-item ${i === state.modelIdx ? 'is-active' : ''}" role="option" id="mi-${i}" aria-selected="${i === state.modelIdx}" data-id="${esc(m.id)}">
-      <div class="name">${esc(m.name)}${m.structured ? '<span class="badge badge-info" title="Can return structured answers">JSON</span>' : ''}</div>
+      <div class="name">${esc(m.name)}${m.structured ? '<span class="badge badge-info" data-tip="Can return structured answers">JSON</span>' : ''}</div>
       <div class="meta"><span>${esc(m.id)}</span><span>${m.context_length ? fmtNumber(m.context_length, { compact: true }) + ' ctx' : ''}</span><span>${m.prompt_price != null ? `$${m.prompt_price.toFixed(2)} / $${(m.completion_price || 0).toFixed(2)} per 1M` : ''}</span></div>
     </div>`).join('') : '<div class="palette-empty">No models match</div>'}
     <div class="menu-divider"></div><div class="row" style="padding:2px 4px 4px"><span class="hint">${fmtNumber(state.models.length)} models</span><button type="button" class="btn btn-ghost btn-xs ml-auto" data-act="refresh-models">${icon('refresh', 'ico-sm')}Refresh</button></div></div>`;
   if (modelPop) { modelPop.el.innerHTML = html; modelPop.position(); setModelActive(state.modelIdx, { scroll: false }); }
   else {
     const el = document.createElement('div'); el.innerHTML = html; el.style.width = `${input.getBoundingClientRect().width}px`;
-    modelPop = ui.popover(input.parentElement, el, { onClose: () => { modelPop = null; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); } });
+    modelPop = ui.popover(input.parentElement, el, { noSheet: true, onClose: () => { modelPop = null; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); } });
     modelPop.onEsc = true;
     input.setAttribute('aria-expanded', 'true');
     setModelActive(state.modelIdx, { scroll: false });
@@ -277,7 +277,7 @@ async function testAI() {
   try {
     const r = await api('/api/settings/openrouter/test', { method: 'POST', body: { api_key: $('#or-key').value, model: $('#or-model').value.trim() } });
     out.innerHTML = `<span class="chip chip-ok">${icon('check')}Connected · ${fmtNumber(r.latency_ms)} ms</span>`;
-  } catch (err) { out.innerHTML = `<span class="chip chip-err" title="${esc(err.message)}">${icon('alert-circle')}${esc(err.message)}</span>`; }
+  } catch (err) { out.innerHTML = `<span class="chip chip-err" data-tip="${esc(err.message)}">${icon('alert-circle')}${esc(err.message)}</span>`; }
 }
 async function saveAI() {
   const body = { openrouter_api_key: $('#or-key').value.trim(), openrouter_model: $('#or-model').value.trim(), ai_categorize_enabled: $('#or-cat').checked, ai_insights_enabled: $('#or-ins').checked };

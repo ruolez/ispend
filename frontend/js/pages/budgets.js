@@ -48,15 +48,10 @@ function setMonth(ym) {
   load();
 }
 function openMonthMenu(anchor) {
-  const items = [];
-  let ym = shiftYm(currentYm(), 1);
-  for (let i = 0; i < 25; i++) {
-    if (ym.endsWith('-12') || i === 0) items.push({ label: ym.slice(0, 4), header: true });
-    items.push({ label: fmtMonth(ym, { long: true }).replace(/ \d{4}$/, ''), checked: ym === bud.month, onClick: ((v) => () => setMonth(v))(ym) });
-    ym = shiftYm(ym, -1);
-  }
+  const now = currentYm();
   anchor.setAttribute('aria-expanded', 'true');
-  ui.menu(anchor, items, { placement: 'bottom-end', onClose: () => anchor.setAttribute('aria-expanded', 'false') });
+  const pop = monthPicker({ anchor, value: bud.month, min: shiftYm(now, -23), max: shiftYm(now, 1), onPick: (ym) => setMonth(ym) });
+  const done = pop.close; pop.close = (r) => { anchor.setAttribute('aria-expanded', 'false'); done(r); };
 }
 
 /* ---------- data ---------- */

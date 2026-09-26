@@ -30,6 +30,31 @@ const charts = (() => {
     d.elements.point.radius = 0; d.elements.point.hoverRadius = 5; d.elements.point.hitRadius = 12;
     d.elements.arc.borderWidth = 0;
     d.maintainAspectRatio = false; d.responsive = true;
+    // on touch, charts built with tapToDrill say that a second tap opens what the first one shows
+    d.plugins.tooltip.callbacks.footer = function footer() {
+      const click = this.chart && this.chart.options.onClick;
+      return click && click.isDrill && coarse() ? 'Tap again to open' : '';
+    };
+    d.plugins.tooltip.footerColor = t.text; d.plugins.tooltip.footerFont = { weight: '500', size: 11 };
+    // phones: fewer, larger-spaced axis labels
+    if (window.matchMedia('(max-width: 768px)').matches) d.scale.ticks.maxTicksLimit = 6;
+  }
+
+  const coarse = () => window.matchMedia('(pointer: coarse)').matches;
+  /* tapToDrill(fn): a chart onClick for charts whose click navigates. With a mouse it navigates at
+     once; on touch the first tap only shows the tooltip and a second tap on the same bar/slice
+     navigates, so the numbers can be read before leaving the page. */
+  function tapToDrill(fn) {
+    let last = null;
+    const handler = (evt, els, chart) => {
+      if (!coarse()) return fn(evt, els, chart);
+      const key = els && els.length ? `${els[0].datasetIndex}:${els[0].index}` : null;
+      if (key && key === last) { last = null; return fn(evt, els, chart); }
+      last = key;
+      return undefined;
+    };
+    handler.isDrill = true;
+    return handler;
   }
 
   /* catColor('c4') or catColor({color:'c4'}) -> hex for the current theme. */
@@ -153,6 +178,6 @@ const charts = (() => {
     }));
   }
 
-  return { theme, applyChartDefaults, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions, sparkline };
+  return { theme, applyChartDefaults, tapToDrill, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions, sparkline };
 })();
 const { makeChart, destroyChart, catColor } = charts;

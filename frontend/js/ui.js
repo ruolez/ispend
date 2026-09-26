@@ -75,14 +75,47 @@ const ui = (() => {
   function setInert(on) {
     ['sidebar', 'shell', 'bottomnav'].forEach((cls) => { const el = document.querySelector(`.${cls}`); if (el) el.inert = on; });
   }
+  const isPhone = () => window.matchMedia('(max-width: 768px)').matches;
+  const isCoarse = () => window.matchMedia('(pointer: coarse)').matches;
+
+  /* Bottom sheets follow a finger: dragging down from the grab zone (the top strip, or `zone`) moves
+     the panel, and letting go past 80px (or with a flick) dismisses it; anything less springs back.
+     Every sheet also has a visible Close, so the gesture is never the only way out. */
+  function dragToDismiss(panel, onDismiss, { zone = null, strip = 28 } = {}) {
+    let startY = 0, startT = 0, dy = 0, pid = null;
+    const inZone = (e) => (zone && zone.contains(e.target) && !e.target.closest('button, a, input, select, textarea'))
+      || (e.clientY - panel.getBoundingClientRect().top <= strip);
+    panel.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || !inZone(e)) return;
+      pid = e.pointerId; startY = e.clientY; startT = e.timeStamp; dy = 0;
+      panel.style.transition = 'none';
+    });
+    panel.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pid) return;
+      dy = Math.max(0, e.clientY - startY);
+      if (dy > 4) { e.preventDefault(); panel.style.transform = `translateY(${dy}px)`; }
+    });
+    const end = (e) => {
+      if (e.pointerId !== pid) return;
+      pid = null;
+      const v = dy / Math.max(1, e.timeStamp - startT);
+      panel.style.transition = '';
+      if (dy > 80 || (dy > 24 && v > 0.6)) { panel.style.transform = `translateY(${panel.offsetHeight}px)`; setTimeout(onDismiss, 120); }
+      else panel.style.transform = '';
+    };
+    panel.addEventListener('pointerup', end);
+    panel.addEventListener('pointercancel', end);
+  }
 
   /* ---------- Modal ---------- */
-  /* sheet: on phones (≤768px) the dialog docks to the bottom with a sticky footer and 44px targets. */
-  function modal({ title = '', html = '', actions = [], onClose, width, size, closeOnBackdrop = true, dismissible = true, sheet = false } = {}) {
+  /* sheet (default): on phones (≤768px) the dialog docks to the bottom as a sheet with a grab handle,
+     swipe-down to dismiss and a sticky footer; desktop is unaffected. history: the browser/OS Back
+     gesture closes it (ui.sheet sets this). */
+  function modal({ title = '', html = '', actions = [], onClose, width, size, closeOnBackdrop = true, dismissible = true, sheet = true, className = '', history: useHistory = false } = {}) {
     const host = root('modal-root');
     const backdrop = document.createElement('div');
     backdrop.className = `modal-backdrop${sheet ? ' is-sheet' : ''}`;
-    const sizeCls = (size === 'lg' ? ' modal-lg' : size === 'xl' ? ' modal-xl' : '') + (sheet ? ' modal--sheet' : '');
+    const sizeCls = (size === 'lg' ? ' modal-lg' : size === 'xl' ? ' modal-xl' : '') + (sheet ? ' modal--sheet' : '') + (className ? ` ${className}` : '');
     const titleId = `modal-title-${uid()}`;
     backdrop.innerHTML = `
       <div class="modal${sizeCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" ${width ? `style="max-width:${width}px"` : ''}>
@@ -103,6 +136,7 @@ const ui = (() => {
         if (closed) return; closed = true;
         popLayer(handle); untrap(); backdrop.remove();
         if (!layers.length) setInert(false);
+        if (histId) { window.removeEventListener('popstate', onPop); if (history.state && history.state.uiSheet === histId) history.back(); }
         if (onClose) onClose(result);
         if (prevFocus && prevFocus.focus) prevFocus.focus();
       },
@@ -126,6 +160,12 @@ const ui = (() => {
     }
     const closeBtn = el.querySelector('.modal-close');
     if (closeBtn) closeBtn.addEventListener('click', () => handle.close());
+    if (sheet && dismissible && isPhone()) dragToDismiss(el, () => handle.close(), { zone: el.querySelector('.modal-head') });
+    // Back closes the sheet: one history entry while it is open, marked so a close that did not come
+    // from Back removes it again (unless setQs replaced it meanwhile, which drops the mark).
+    const histId = useHistory && isPhone() ? uid() : null;
+    function onPop() { if (!history.state || history.state.uiSheet !== histId) handle.close(); }
+    if (histId) { history.pushState({ uiSheet: histId }, ''); window.addEventListener('popstate', onPop); }
     backdrop.addEventListener('mousedown', (e) => { if (closeOnBackdrop && dismissible && e.target === backdrop) handle.close(); });
     handle.onEsc = dismissible;
     handle.lock = true;
@@ -133,8 +173,17 @@ const ui = (() => {
     setInert(true);
     const untrap = trapFocus(el);
     pushLayer(handle);
-    requestAnimationFrame(() => focusFirst(el, 'input,select,textarea,.btn-primary'));
+    requestAnimationFrame(() => {
+      // on a touch phone, focusing a field would throw the keyboard over the sheet before it is read
+      if (sheet && isPhone() && isCoarse()) { el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true }); }
+      else focusFirst(el, 'input,select,textarea,.btn-primary');
+    });
     return handle;
+  }
+
+  /* A bottom sheet on phones (a centred dialog elsewhere) that Back closes. Same options as modal(). */
+  function sheet(opts = {}) {
+    return modal({ ...opts, sheet: true, history: true, className: `sheet ${opts.className || ''}`.trim() });
   }
 
   /* `body` is plain text (escaped); pass `html` instead for markup you built with esc() yourself. */
@@ -212,11 +261,19 @@ const ui = (() => {
   }
 
   /* ---------- Popover ---------- */
-  /* On phones (≤640px) every popover becomes a bottom sheet unless noSheet is set. */
+  /* On phones (≤768px) every popover becomes a bottom sheet over a backdrop (grab strip, swipe down
+     to dismiss) unless noSheet is set. */
   function popover(anchor, el, { placement = 'bottom-start', offset = 6, onClose, closeOnOutside = true, matchWidth = false, noSheet = false } = {}) {
-    const sheet = !noSheet && window.matchMedia('(max-width: 640px)').matches;
+    const sheet = !noSheet && isPhone();
     el.classList.add('popover');
-    if (sheet) el.classList.add('popover--sheet');
+    let backdrop = null;
+    if (sheet) {
+      el.classList.add('popover--sheet', 'sheet');
+      backdrop = document.createElement('div');
+      backdrop.className = 'sheet-backdrop';
+      root('popover-root').appendChild(backdrop);
+      if (!layers.length) setInert(true);
+    }
     root('popover-root').appendChild(el);
     if (matchWidth && !sheet) el.style.minWidth = `${anchor.getBoundingClientRect().width}px`;
     function position() {
@@ -244,9 +301,11 @@ const ui = (() => {
         window.removeEventListener('resize', position);
         document.removeEventListener('scroll', onScroll, true);
         el.remove();
+        if (backdrop) { backdrop.remove(); if (!layers.length) setInert(false); }
         if (onClose) onClose(reason);
       },
     };
+    if (sheet) dragToDismiss(el, () => handle.close('swipe'));
     function onDown(e) { if (closeOnOutside && !el.contains(e.target) && !anchor.contains(e.target)) handle.close('outside'); }
     function onScroll(e) { if (!el.contains(e.target)) position(); }
     setTimeout(() => {
@@ -341,7 +400,10 @@ const ui = (() => {
       if ((e.key === 'ArrowUp') && opts.indexOf(document.activeElement) === 0 && el.querySelector('input.input')) { e.preventDefault(); el.querySelector('input.input').focus(); return; }
       menuKeys(e, opts, (b) => (b.querySelector('.grow') || b).textContent);
     });
-    requestAnimationFrame(() => { const f = el.querySelector('input.input') || el.querySelector('[data-v]'); if (f) f.focus(); });
+    requestAnimationFrame(() => {
+      if (isPhone() && isCoarse()) { el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true }); return; }
+      const f = el.querySelector('input.input') || el.querySelector('[data-v]'); if (f) f.focus();
+    });
     el.addEventListener('input', (e) => { if (e.target.matches('input.input')) { const v = e.target.value; el.innerHTML = render(v); const inp = el.querySelector('input.input'); inp.focus(); inp.setSelectionRange(v.length, v.length); } });
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-v]');
@@ -560,7 +622,7 @@ const ui = (() => {
     });
   }
   /* Tooltips: any element with data-tip shows a shared role=tooltip bubble on hover and focus
-     (Escape hides; coarse pointers get 1.5 s after a tap). Keyboard/touch friendly, unlike title="". */
+     (Escape hides; coarse pointers get 2.5 s after a tap, and tapping a non-control element with data-tip shows it). Keyboard/touch friendly, unlike title="". */
   const tooltip = (() => {
     let tip = null, target = null, showTimer = null, hideTimer = null;
     function ensure() {
@@ -586,7 +648,7 @@ const ui = (() => {
       if (target && target !== el) describedBy(target, 'ui-tip', false);
       tip.textContent = text; tip.hidden = false; target = el; place(el);
       describedBy(el, 'ui-tip', true);
-      if (matchMedia('(pointer: coarse)').matches) hideTimer = setTimeout(hide, 1500);
+      if (isCoarse()) hideTimer = setTimeout(hide, 2500);
     }
     function hide() {
       clearTimeout(showTimer); clearTimeout(hideTimer);
@@ -601,9 +663,82 @@ const ui = (() => {
     document.addEventListener('focusout', (e) => { const el = owner(e); if (el && target === el) hide(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && target) hide(); }, true);
     document.addEventListener('mousedown', () => { if (target) hide(); }, true);
+    // touch: tapping an informational element (not a control) with data-tip shows its text
+    document.addEventListener('click', (e) => {
+      if (!isCoarse()) return;
+      const el = owner(e);
+      if (el && !el.closest('button, a, input, select, textarea, label, [role="button"], [data-act]')) show(el);
+    });
     document.addEventListener('scroll', () => { if (target) place(target); }, true);
     return { show, hide };
   })();
+
+  /* ---------- Touch gestures (always paired with a visible control that does the same) ---------- */
+  /* longPress(root, selector, fn(el, e)): a 450ms press without moving; the click that follows is
+     swallowed so the press does not also open the row. */
+  function longPress(rootEl, selector, fn, { delay = 450 } = {}) {
+    let timer = null, start = null, fired = false;
+    rootEl.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      const el = e.target.closest(selector);
+      if (!el || !rootEl.contains(el)) return;
+      fired = false; start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => { fired = true; if (navigator.vibrate) navigator.vibrate(10); fn(el, e); }, delay);
+    });
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    rootEl.addEventListener('pointermove', (e) => { if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel(); });
+    rootEl.addEventListener('pointerup', cancel);
+    rootEl.addEventListener('pointercancel', cancel);
+    rootEl.addEventListener('contextmenu', (e) => { if (e.target.closest(selector) && isCoarse()) e.preventDefault(); });
+    rootEl.addEventListener('click', (e) => { if (fired) { fired = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  }
+
+  /* swipe(root, selector, { left: {label, icon, cls, run(el)}, right: {...} }): drag a row sideways;
+     past 35% of its width (or a flick) the action runs, otherwise it springs back. A coloured backing
+     names the action as the row moves. Vertical scrolling wins over sideways drags. */
+  function swipe(rootEl, selector, actions) {
+    const reduce = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let s = null;
+    rootEl.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || e.target.closest('button, a, input, select, textarea, label')) return;
+      const el = e.target.closest(selector);
+      if (!el || !rootEl.contains(el)) return;
+      s = { el, x: e.clientX, y: e.clientY, t: e.timeStamp, dx: 0, locked: null, back: null };
+    });
+    rootEl.addEventListener('pointermove', (e) => {
+      if (!s) return;
+      const dx = e.clientX - s.x, dy = e.clientY - s.y;
+      if (s.locked == null && Math.hypot(dx, dy) > 8) s.locked = Math.abs(dx) > Math.abs(dy) * 1.4 ? 'x' : 'y';
+      if (s.locked !== 'x') return;
+      const act = dx < 0 ? actions.left : actions.right;
+      if (!act) return;
+      s.dx = dx;
+      if (!s.back) {
+        s.back = document.createElement('div');
+        s.el.classList.add('is-swiping');
+        s.el.appendChild(s.back);
+      }
+      s.back.className = `swipe-back swipe-back--${dx < 0 ? 'left' : 'right'} ${act.cls || ''}`;
+      s.back.innerHTML = `${act.icon ? icon(act.icon) : ''}<span>${esc(act.label)}</span>`;
+      s.el.style.setProperty('--swipe-x', `${Math.round(dx)}px`);
+    });
+    const end = (e) => {
+      if (!s) return;
+      const { el, dx, back, t } = s; s = null;
+      const w = el.offsetWidth || 1;
+      const act = dx < 0 ? actions.left : actions.right;
+      const commit = act && (Math.abs(dx) > w * 0.35 || (Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, e.timeStamp - t) > 0.7));
+      const reset = () => { el.style.removeProperty('--swipe-x'); el.classList.remove('is-swiping'); if (back) back.remove(); };
+      if (commit) {
+        if (navigator.vibrate) navigator.vibrate(10);
+        el.style.setProperty('--swipe-x', `${dx < 0 ? -w : w}px`);
+        setTimeout(() => { reset(); act.run(el); }, reduce() ? 0 : 160);
+      } else reset();
+    };
+    rootEl.addEventListener('pointerup', end);
+    rootEl.addEventListener('pointercancel', end);
+    rootEl.addEventListener('click', (e) => { if (e.target.closest('.is-swiping')) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
 
   /* ---------- Skeletons / empty ---------- */
   function skeleton(width = '100%', height = 14, cls = '') { return `<span class="skel ${cls}" style="width:${typeof width === 'number' ? width + 'px' : width};height:${height}px"></span>`; }
@@ -666,7 +801,7 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, sheet, isPhone, isCoarse, longPress, swipe, dragToDismiss, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

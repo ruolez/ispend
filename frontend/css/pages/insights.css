@@ -1,5 +1,5 @@
 /* Insights */
-#month { width: 170px; }
+#month-btn { min-width: 170px; justify-content: space-between; }
 .ins-grid { align-items: start; }
 .ins-grid > * { min-width: 0; }
 .rec-table td { vertical-align: middle; }
