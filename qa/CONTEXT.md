@@ -114,3 +114,18 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
 - `css_audit.touch_checks()` (+ `test_css_touch_rules`): no bare `100vh` without a `dvh` companion, no
   `:hover` outside `@media (hover: hover)` (landing.css exempt). Joins `--check` once it passes.
 - `qa/e2e/phone_gallery.py <out-dir>`: every page × {320,375,430} × {light,dark} screenshots for review.
+
+## Added 2026-09-26 (phone visual polish)
+- `test_mobile.py` visual probes at 320 and 390 on every app page: `test_no_text_overlap` (text line boxes
+  crossing each other or a canvas; absolutely positioned chart overlays exempt), `test_no_hard_clipped_text`
+  (text cut by an overflow/clip box without a working ellipsis; text-overflow only counts on a block
+  container's own inline content), `test_no_stranded_separators` (a visible "·" at a line start or end).
+- `css_audit.contrast_checks()` is part of `--check` and `test_css_audit.test_contrast_tokens`: WCAG 2.2 AA on
+  every text token × surface (both themes), 3:1 for `--border-control` / `--switch-off` / focus ring, white on
+  `--accent-solid(-hover)` / `--danger-solid` / darkened `.acct-mark`, and APCA floors (text-1 Lc 90, text-2 75,
+  text-3 60, text-4 45, accent/danger/success/warning 50 on surface).
+- Tokens: `--accent-solid*` for filled controls (dark fills are a mid blue with white text; `--accent` stays for
+  links/rings), `--border-control` for control outlines, `--switch-off`, `--danger-solid`. Red text uses
+  `--danger-text`. Dark layers (`.modal/.popover/.palette/.toast/.drawer`) remap `--surface-2` to `--surface-3`.
+- `.dots` (app.css) is the separator-list pattern; `.tbl--list` rows use the same clip trick without a wrapper.
+  `ui.edgeFade(selector)` fades whichever edge of a sideways strip still hides content (mounted in nav.js).
