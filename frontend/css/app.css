@@ -186,7 +186,7 @@ html[data-sidebar="rail"] .sb-expand { display: grid; }
 }
 .topbar.scrolled { border-bottom-color: var(--border); }
 .tb-title { font-weight: 600; font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; transition: opacity var(--dur-2); }
-.tb-primary, .page-more { display: none; }
+.btn.tb-primary, .btn.page-more, .phone-only, .btn.phone-only { display: none; }
 .btn.tb-menu { display: none; }
 .tb-search {
   margin-left: auto; height: 36px; width: clamp(200px, 32vw, 460px);
@@ -662,10 +662,11 @@ tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon
   .bn-item .pill { position: absolute; top: -4px; left: calc(50% + 4px); }
   /* phone chrome: no hamburger or theme toggle (both live in More), a "+" for the page's main action */
   .btn.tb-menu, #tb-theme, .tb-avatar-btn > .ico { display: none; }
-  .tb-primary { display: inline-flex; border-radius: var(--r-pill); }
+  .btn.tb-primary { display: inline-flex; border-radius: var(--r-pill); }
+  .phone-only, .btn.phone-only { display: inline-flex; }
   #main [data-primary-action], #main .page-head [data-overflow] { display: none; }
   .page-head { position: relative; }
-  .page-more { display: inline-flex; position: absolute; top: 0; right: 0; }
+  .btn.page-more { display: inline-flex; position: absolute; top: 0; right: 0; }
   .page-head:has(.page-more) > div:first-child { padding-right: calc(var(--control-h) + var(--sp-2)); }
   .page-actions:not(:has(> :not([data-overflow]):not([data-primary-action]):not([hidden]))) { display: none; }
   .topbar:not(.show-title) .tb-title { opacity: 0; }

@@ -242,3 +242,18 @@ def test_date_sheet_fits_visual_viewport(device):
     box = page.evaluate("""() => { const s = document.querySelector('.sheet'); const r = s.getBoundingClientRect(); const a = s.querySelector('[data-act=apply]').getBoundingClientRect();
       const vv = window.visualViewport; return { top: r.top, bottom: r.bottom, vh: vv.height, applyBottom: a.bottom, applyH: a.height }; }""")
     assert box["top"] >= 0 and box["bottom"] <= box["vh"] + 1 and box["applyBottom"] <= box["vh"] and box["applyH"] >= 44, box
+
+
+@pytest.mark.parametrize("page_key", ["index", "transactions", "review", "budgets", "categories", "rules", "reports", "statements"])
+def test_desktop_hides_phone_chrome(browser, session_state, page_key):
+    """The phone-only chrome (topbar +, header ⋯, More sheet trigger, .phone-only controls, day headers) never shows at 1440."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, base_url=BASE_URL, service_workers="block", storage_state=session_state)
+    try:
+        page = ctx.new_page()
+        page.goto(PAGES[page_key])
+        wait_loaded(page)
+        shown = page.evaluate("""() => Array.from(document.querySelectorAll('#tb-primary, .page-more, .phone-only, .bottomnav, tr.tx-day, .tbl-tx .col-ico'))
+          .filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden').map((el) => el.id || el.className)""")
+        assert shown == [], f"{page_key}: phone-only chrome visible on desktop: {shown}"
+    finally:
+        ctx.close()

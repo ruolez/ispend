@@ -101,12 +101,11 @@
 .catchip--static { pointer-events: none; }
 
 /* ---------- phones: search + chip strip, day-grouped compact rows, selection mode ---------- */
-.phone-only, .tbl-tx .col-ico, .tbl-tx tr.tx-day { display: none; }
+.tbl-tx .col-ico, .tbl-tx tr.tx-day { display: none; }
 .tx-chips { display: contents; }
 .tx-search { order: 1; }
 #f-clear { order: 2; }
 @media (max-width: 768px) {
-  .phone-only { display: inline-flex; }
   #main .page-head .phone-only[data-overflow] { display: none; }
   .tbl-toolbar#tx-toolbar { position: sticky; top: calc(var(--topbar-h) + var(--safe-top)); z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2); margin: 0 calc(-1 * var(--sp-4)) var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--bg); border-bottom: 1px solid transparent; }
   .tx-search { order: 0; max-width: none; flex-basis: auto; }
