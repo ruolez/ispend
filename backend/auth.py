@@ -122,8 +122,8 @@ def refresh_session_user():
     if uid is None:
         return
     row = db.query(
-        """SELECT u.id, u.role, u.status, u.session_epoch, u.email, u.email_verified_at,
-                  u.created_at,
+        """SELECT u.id, u.username, u.role, u.status, u.session_epoch, u.email, u.email_verified_at,
+                  u.created_at, u.preferences,
                   (SELECT value FROM settings WHERE key = 'session_epoch') AS global_epoch,
                   s.status AS sub_status, s.plan, s.price_id, s.stripe_customer_id,
                   s.stripe_subscription_id, s.trial_end, s.current_period_end,
@@ -288,8 +288,9 @@ def _send_verification(user):
                           link=f"{_base_url()}/verify.html?token={token}")
 
 
-def _me_payload(user):
-    ent = entitlement.evaluate(user) if "sub_status" in (user or {}) else None
+def _me_payload(user, ent=None):
+    if ent is None and "sub_status" in (user or {}):
+        ent = entitlement.evaluate(user)
     return {
         "id": user["id"],
         "username": user["username"],
@@ -342,6 +343,9 @@ def logout():
 @bp.get("/me")
 @login_required
 def me():
+    # The session hook has already loaded (and vetted) this user with their subscription.
+    if g.get("user_row") is not None:
+        return jsonify(_me_payload(g.user_row, g.get("entitlement")))
     user = db.query(
         """SELECT u.*, s.status AS sub_status, s.plan, s.trial_end, s.current_period_end,
                   s.cancel_at_period_end, s.lapsed_at, s.grace_until, s.comped_until,

@@ -85,6 +85,17 @@ class SessionEnforcementTest(unittest.TestCase):
         self.assertEqual((res.status_code, res.get_json()), (403, {"error": "Admin access required"}))
         self.assertEqual(self._get(c, "/protected").status_code, 200)
 
+    def test_me_reuses_the_row_the_session_hook_loaded(self):
+        """Every screen asks for /api/auth/me; the hook has already joined users and subscriptions."""
+        row = {"id": 7, "username": "ann", "email": "a@x.io", "email_verified_at": None, "role": "user",
+               "status": "active", "preferences": {"theme": "dark"}}
+        self.q.routes.append(("FROM users u", row))
+        res = self._get(self._client(), "/api/auth/me")
+        body = res.get_json()
+        self.assertEqual((res.status_code, len(self.q.sql("FROM users u"))), (200, 1))
+        self.assertEqual({k: body[k] for k in ("id", "username", "email", "role", "preferences")},
+                         {"id": 7, "username": "ann", "email": "a@x.io", "role": "user", "preferences": {"theme": "dark"}})
+
     def test_anonymous_request_does_not_query_the_database(self):
         res = self._get(self.app.test_client(), "/protected")
         self.assertEqual(res.status_code, 401)

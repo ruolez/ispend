@@ -63,7 +63,10 @@ class TagsApiTest(unittest.TestCase):
         self.q.routes += [("FROM tags g LEFT JOIN", [TAG])]
         res = self._call("get", "/api/tags")
         self.assertEqual(res.get_json(), [{"id": 5, "name": "Trip", "color": "c4", "sort_order": 0, "txn_count": 3, "created_at": None}])
-        self.assertEqual(self.q.sql("FROM tags g LEFT JOIN")[0][1], (1,))
+        sql, params = self.q.sql("FROM tags g LEFT JOIN")[0]
+        # the counts subquery is narrowed to this user's tags, not grouped over every tenant's links
+        self.assertIn("JOIN tags tg ON tg.id = tt.tag_id WHERE tg.user_id = %s", " ".join(sql.split()))
+        self.assertEqual(params, (1, 1))
 
 
 if __name__ == "__main__":

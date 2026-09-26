@@ -1,8 +1,9 @@
 import logging
+import time
 
 import psycopg2
 import psycopg2.errors
-from flask import Flask, abort, jsonify, request
+from flask import Flask, abort, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 import billing_tick
@@ -54,6 +55,10 @@ def create_app():
     ):
         app.register_blueprint(module.bp)
 
+    @app.before_request
+    def _start_timer():
+        g.t0 = time.perf_counter()
+
     app.before_request(auth.refresh_session_user)
 
     @app.before_request
@@ -90,6 +95,15 @@ def create_app():
         db.execute("""UPDATE backup_jobs SET status = 'error', finished_at = now(),
                              error_message = 'Interrupted by a server restart'
                        WHERE status IN ('queued','running')""")
+    # With --preload this ran in the gunicorn master; its idle connection would sit unused for good.
+    db.close_idle()
+
+    @app.after_request
+    def server_timing(response):
+        t0 = g.get("t0")
+        if t0 is not None:
+            response.headers["Server-Timing"] = f"db;dur={g.get('db_ms', 0.0):.1f}, app;dur={(time.perf_counter() - t0) * 1000:.1f}"
+        return response
 
     @app.after_request
     def no_cache(response):

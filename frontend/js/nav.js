@@ -525,7 +525,7 @@ function openPalette() {
     if (mySeq === seq) render(out, q);
     if (ql.length >= 2) {
       try {
-        const res = await api(`/api/transactions?q=${encodeURIComponent(q)}&limit=8`);
+        const res = await api(`/api/transactions?q=${encodeURIComponent(q)}&limit=8&summary=0`);
         if (mySeq !== seq) return;
         const tx = (res.items || []).map((t) => ({ group: 'Transactions', label: t.merchant_name || t.description_clean || '', sub: `${fmtDate(t.txn_date)} · ${fmtMoney(t.amount, t.currency)}`, icon: 'list', run: () => { location.href = `/transactions.html?q=${encodeURIComponent(q)}&open=${t.id}`; } }));
         render([...tx, ...out], q);

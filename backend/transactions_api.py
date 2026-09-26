@@ -275,6 +275,11 @@ def list_transactions():
     if len(items) > limit:
         items = items[:limit]
         next_cursor = encode_cursor(items[-1], sort)
+    # Totals and facets describe the whole filter: the first page carries them. Later pages
+    # (infinite scroll) and callers that only want rows (summary=0: the command palette) skip the
+    # five aggregates over the filtered set.
+    if cur_sql or args.get("summary") == "0":  # an undecodable cursor is ignored: a first page
+        return jsonify({"items": rows_json(items), "next_cursor": next_cursor})
     totals = db.query(
         f"""SELECT COUNT(*) AS total,
                    COALESCE(SUM(CASE WHEN t.amount > 0 AND NOT t.is_transfer AND NOT t.is_excluded THEN t.amount END), 0) AS sum_in,

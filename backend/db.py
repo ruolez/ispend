@@ -1,9 +1,12 @@
 import os
+import threading
+import time
 from contextlib import contextmanager
 
 import psycopg2
+import psycopg2.extensions
 import psycopg2.extras
-from flask import g
+from flask import g, has_request_context
 from werkzeug.security import generate_password_hash
 
 import config
@@ -15,16 +18,88 @@ def connect():
     return psycopg2.connect(**config.POSTGRES)
 
 
+# Connections are reused across requests instead of opened per request (a TCP connect, a new
+# Postgres backend and a password exchange each time — a screen switch makes 5-10 calls). Each
+# worker process keeps up to POOL_IDLE idle connections; a busy moment simply opens more, and those
+# beyond POOL_IDLE are closed when handed back. After a fork the child starts empty: its parent's
+# sockets are never used (or closed — that would end the parent's sessions).
+POOL_IDLE = int(os.environ.get("DB_POOL_IDLE", "8"))
+_idle = []
+_idle_pid = None
+_idle_lock = threading.Lock()
+
+
+def _reset_pool():
+    global _idle, _idle_pid
+    with _idle_lock:
+        _idle, _idle_pid = [], None
+
+
+def _take():
+    global _idle, _idle_pid
+    with _idle_lock:
+        if _idle_pid != os.getpid():
+            _idle, _idle_pid = [], os.getpid()
+        while _idle:
+            conn = _idle.pop()
+            if not conn.closed:
+                return conn
+    return connect()
+
+
+def _give_back(conn):
+    """Return a connection for reuse — rolled back to a clean state — or close it if it is broken."""
+    status = psycopg2.extensions.TRANSACTION_STATUS_UNKNOWN if conn.closed else conn.get_transaction_status()
+    ok = status != psycopg2.extensions.TRANSACTION_STATUS_UNKNOWN
+    if ok and status != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
+        try:
+            conn.rollback()
+        except psycopg2.Error:
+            ok = False
+    with _idle_lock:
+        if ok and _idle_pid == os.getpid() and len(_idle) < POOL_IDLE:
+            _idle.append(conn)
+            return
+    try:
+        conn.close()
+    except psycopg2.Error:
+        pass
+
+
+def close_idle():
+    """Close this process's idle connections (the gunicorn master after startup work: its children
+    never use them)."""
+    global _idle
+    with _idle_lock:
+        doomed, _idle = (_idle if _idle_pid == os.getpid() else []), []
+    for conn in doomed:
+        try:
+            conn.close()
+        except psycopg2.Error:
+            pass
+
+
 def get_db():
     if "db" not in g:
-        g.db = connect()
+        g.db = _take()
     return g.db
 
 
 def close_db(_exc=None):
     db = g.pop("db", None)
     if db is not None:
-        db.close()
+        _give_back(db)
+
+
+@contextmanager
+def _timed():
+    """Adds the statement's time to g.db_ms, which app.py reports in the Server-Timing header."""
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        if has_request_context():
+            g.db_ms = g.get("db_ms", 0.0) + (time.perf_counter() - t0) * 1000
 
 
 def _commit_now(commit):
@@ -33,7 +108,7 @@ def _commit_now(commit):
 
 
 def query(sql, params=None, one=False, commit=True):
-    with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with _timed(), get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
         rows = None if cur.description is None else cur.fetchall()
     if _commit_now(commit):
@@ -44,7 +119,7 @@ def query(sql, params=None, one=False, commit=True):
 
 
 def execute(sql, params=None, returning=False, commit=True):
-    with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with _timed(), get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
         row = cur.fetchone() if returning else None
         count = cur.rowcount
@@ -58,7 +133,7 @@ def execute_values(sql, rows, template=None, commit=True, page_size=500, fetch=F
     With fetch=True the RETURNING rows come back as dicts."""
     if not rows:
         return [] if fetch else None
-    with get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with _timed(), get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         out = psycopg2.extras.execute_values(cur, sql, rows, template=template, page_size=page_size, fetch=fetch)
     if _commit_now(commit):
         get_db().commit()
@@ -83,9 +158,27 @@ def transaction():
         g.in_tx = False
 
 
+def _settings_memo():
+    """Per-request memo of settings reads: entitlement, billing and the AI flags each read the same
+    handful of keys several times per request. Only inside a request — background jobs run long
+    and must see changes."""
+    if not has_request_context():
+        return None
+    if "settings_memo" not in g:
+        g.settings_memo = {}
+    return g.settings_memo
+
+
 def get_setting(key, default=None):
-    row = query("SELECT value FROM settings WHERE key = %s", (key,), one=True)
-    return row["value"] if row and row["value"] is not None else default
+    memo = _settings_memo()
+    if memo is not None and key in memo:
+        value = memo[key]
+    else:
+        row = query("SELECT value FROM settings WHERE key = %s", (key,), one=True)
+        value = row["value"] if row else None
+        if memo is not None:
+            memo[key] = value
+    return value if value is not None else default
 
 
 def set_setting(key, value):
@@ -94,6 +187,9 @@ def set_setting(key, value):
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
         (key, value),
     )
+    memo = _settings_memo()
+    if memo is not None:
+        memo[key] = value
 
 
 def user_setting(user_id, key, default=None):

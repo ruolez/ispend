@@ -413,7 +413,8 @@ async function loadMore(first = false) {
 }
 function showPage(r, first) {
   if (first) { tx.items = []; tx.byId.clear(); }
-  tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
+  // Only the first page carries the filter's totals and facets; later pages are rows alone.
+  if ('total' in r) { tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || []; }
   tx.cursor = r.next_cursor; tx.done = !r.next_cursor;
   const startIdx = tx.items.length;
   r.items.forEach((it) => { tx.items.push(it); tx.byId.set(it.id, it); });

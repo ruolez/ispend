@@ -95,12 +95,20 @@ class AccountsApiTest(unittest.TestCase):
         self.assertEqual([c.args[0]["id"] for c in discard.call_args_list], [30, 31])
         self.assertEqual([p for _s, p in self.x.sql("DELETE FROM accounts")], [(4,)])
 
+    def test_list_counts_only_the_users_own_transactions(self):
+        """The per-account counts come from a grouped subquery, which Postgres does not narrow by the
+        outer a.user_id: without its own filter it aggregated every tenant's transactions."""
+        self._call("get", "/api/accounts?all=1")
+        sql = " ".join(self.q.calls[0][0].split())
+        self.assertIn("FROM transactions WHERE user_id = %s GROUP BY account_id", sql)
+        self.assertEqual(self.q.calls[0][1], (1, 1))
+
     def test_list_hides_archived_unless_asked(self):
         for path, expect_active in (("/api/accounts", True), ("/api/accounts?all=1", False)):
             self.q.calls.clear()
             self._call("get", path)
             self.assertEqual("AND a.is_active" in self.q.calls[0][0], expect_active, path)
-            self.assertEqual(self.q.calls[0][1], (1,))
+            self.assertEqual(self.q.calls[0][1], (1, 1))
 
 
 if __name__ == "__main__":

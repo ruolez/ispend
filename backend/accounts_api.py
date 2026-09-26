@@ -21,7 +21,7 @@ SELECT a.id, a.name, a.institution, a.account_type, a.currency, a.last4, a.color
 FROM accounts a
 LEFT JOIN (
   SELECT account_id, COUNT(*) AS txn_count, MAX(txn_date) AS last_txn_date, MIN(txn_date) AS first_txn_date
-  FROM transactions GROUP BY account_id
+  FROM transactions WHERE user_id = %s GROUP BY account_id
 ) s ON s.account_id = a.id
 WHERE a.user_id = %s
 """
@@ -62,7 +62,7 @@ def list_accounts():
     sql = LIST_SQL
     if request.args.get("all") != "1":
         sql += " AND a.is_active"
-    rows = db.query(sql + " ORDER BY a.is_active DESC, a.name", (session["user_id"],))
+    rows = db.query(sql + " ORDER BY a.is_active DESC, a.name", (session["user_id"], session["user_id"]))
     return jsonify(rows_json(rows))
 
 

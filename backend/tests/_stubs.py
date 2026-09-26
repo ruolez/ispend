@@ -64,6 +64,9 @@ class FakeDB:
     def close_db(self, _exc=None):
         pass
 
+    def close_idle(self):
+        pass
+
 
 class _FakeStripeError(Exception):
     pass

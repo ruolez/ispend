@@ -280,6 +280,20 @@ class ListEndpointTest(unittest.TestCase):
         self.assertEqual(body["facets"]["status"]["uncategorized"], 1)
         self.assertEqual(body["skipped"], {"count": 0, "sum": 0.0})
 
+    def test_later_pages_and_summary_0_skip_the_totals_and_facets(self):
+        """The totals and facets describe the whole filter; the first page carries them, and infinite
+        scroll or the command palette (summary=0) must not recompute five aggregates per request."""
+        for path in ("/api/transactions?cursor=" + tapi.encode_cursor({"id": 4, "txn_date": date(2026, 9, 1)}, "-date"),
+                     "/api/transactions?q=coffee&limit=8&summary=0"):
+            seen = []
+
+            def handler(sql, params, one):
+                seen.append(sql)
+                return {} if one else []
+            with patch_db(FakeDB(handler)):
+                body = json.loads(self.client.get(path).get_data())
+            self.assertEqual((len(seen), sorted(body)), (1, ["items", "next_cursor"]), path)
+
     def test_totals_leave_out_transfers_and_excluded_rows(self):
         seen = []
 

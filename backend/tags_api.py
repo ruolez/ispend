@@ -49,9 +49,11 @@ def _taken(uid, name, exclude_id=None):
 def list_tags():
     rows = db.query(
         f"""SELECT {FIELDS}, COALESCE(n.c, 0) AS txn_count
-            FROM tags g LEFT JOIN (SELECT tag_id, COUNT(*) AS c FROM transaction_tags GROUP BY tag_id) n ON n.tag_id = g.id
+            FROM tags g LEFT JOIN (SELECT tt.tag_id, COUNT(*) AS c FROM transaction_tags tt
+                                   JOIN tags tg ON tg.id = tt.tag_id WHERE tg.user_id = %s
+                                   GROUP BY tt.tag_id) n ON n.tag_id = g.id
             WHERE g.user_id = %s ORDER BY g.sort_order, lower(g.name)""",
-        (_uid(),),
+        (_uid(), _uid()),
     ) or []
     return jsonify([_json(r) for r in rows])
 
