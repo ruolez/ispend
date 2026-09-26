@@ -48,14 +48,23 @@
     return `<span class="bd-delta ${cls}" data-tip="Previous period: ${esc(fmtMoney(prev, currency))}">${arrow} ${esc(fmtPct(Math.abs(pct)))}</span>`;
   }
 
-  /* GET /api/budgets/progress for a range that is exactly one calendar month, as a Map(category_id → item); null otherwise. */
-  async function budgetsForRange(start, end, extraQuery = {}) {
-    if (!start || !end || !/^\d{4}-\d{2}-01$/.test(start)) return null;
-    const [y, m] = start.split('-').map(Number);
-    const last = new Date(y, m, 0).getDate();
-    if (end !== `${start.slice(0, 7)}-${String(last).padStart(2, '0')}`) return null;
+  /* The calendar month a period covers exactly ('YYYY-MM'), or null: month presets, or a custom
+     from/to spanning one whole month. Known before any request, so budgets load alongside the data. */
+  function wholeMonth(period) {
+    if (!period) return null;
+    const p = period.preset || '';
+    if (p === 'this-month' || p === 'last-month' || p.startsWith('month:')) return periodMonth(period);
+    const { from, to } = period;
+    if (!from || !to || !/^\d{4}-\d{2}-01$/.test(from)) return null;
+    const [y, m] = from.split('-').map(Number);
+    return to === `${from.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` ? from.slice(0, 7) : null;
+  }
+  /* GET /api/budgets/progress for a period that is exactly one calendar month, as a Map(category_id → item); null otherwise. */
+  async function budgetsForPeriod(period, extraQuery = {}) {
+    const ym = wholeMonth(period);
+    if (!ym) return null;
     try {
-      const p = await api(`/api/budgets/progress${toQuery({ month: start.slice(0, 7), ...extraQuery })}`);
+      const p = await apiShared(`/api/budgets/progress${toQuery({ month: ym, ...extraQuery })}`);
       return p && p.items && p.items.length ? new Map(p.items.map((i) => [i.category_id, i])) : null;
     } catch { return null; }
   }
@@ -114,5 +123,5 @@
   }
 
   window.renderBreakdown = renderBreakdown;
-  window.budgetsForRange = budgetsForRange;
+  window.budgetsForPeriod = budgetsForPeriod;
 })();

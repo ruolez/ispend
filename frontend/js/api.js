@@ -31,7 +31,17 @@ async function api(path, options = {}) {
     err.data = data;
     throw err;
   }
+  if (opts.method && opts.method !== 'GET' && typeof store !== 'undefined') store.afterWrite(path);
   return data;
+}
+
+/* A GET that another part of the page may be making at the same moment (the dashboard's budget card
+   and its breakdown table both want this month's budgets) shares the one request in flight. Callers
+   must treat the result as read-only. */
+const _sharedGets = new Map();
+function apiShared(path) {
+  if (!_sharedGets.has(path)) _sharedGets.set(path, api(path).finally(() => _sharedGets.delete(path)));
+  return _sharedGets.get(path);
 }
 
 /* Session gone: back to login. A browser that signed in before (ispend.uid survives until sign-out)

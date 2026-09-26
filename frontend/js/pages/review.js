@@ -36,9 +36,10 @@ initNav('review').then(async () => {
   rv.skipped = loadSkipped();
   const q = qs();
   if (MODES.includes(q.mode)) rv.mode = q.mode;
-  await loadRefs();
-  rv.currency = await store.displayCurrency();
-  rv.settings = await store.settings().catch(() => ({}));
+  // The queue is requested now, alongside the reference data; load() picks it up.
+  if (rv.mode !== 'transfers') rv.prefetch = api(reviewUrl());
+  refreshPairCount();
+  [, rv.currency, rv.settings] = await Promise.all([loadRefs(), store.displayCurrency(), store.settings().catch(() => ({}))]);
   rv.focusMode = q.focus === '1';
   const focusBtn = $('#btn-focus');
   focusBtn.innerHTML = `${icon('eye', 'ico-sm')}<span class="label">Focus</span>`;
@@ -61,7 +62,6 @@ initNav('review').then(async () => {
   pairBtn.innerHTML = `${icon('arrow-left-right', 'ico-sm')}<span class="label">Pair all confident</span>`;
   pairBtn.addEventListener('click', pairAllConfident);
   rv.seg = ui.segmented($('#rv-mode'), { onChange: (b) => { if (!b || b.dataset.mode === rv.mode) return; rv.mode = b.dataset.mode; setQs({ mode: rv.mode === 'merchant' ? null : rv.mode }); paintMode(); load(); } });
-  refreshPairCount();
   $('#rv-list').addEventListener('click', onCardClick);
   $('#rv-list').addEventListener('change', onCardChange);
   $('#rv-list').addEventListener('focusin', (e) => { const card = e.target.closest('.rv-card'); if (card) setFocus(Number(card.dataset.idx), { scroll: false }); });
@@ -110,13 +110,15 @@ function pairKey(p) { return `p${p.a.id}-${p.b.id}`; }
 function announce(t) { const l = $('#rv-live'); l.textContent = ''; setTimeout(() => { l.textContent = t; }, 30); }
 
 /* ---------- data ---------- */
+function reviewUrl() { return `/api/review?mode=${rv.mode}&limit=${PAGE_LIMIT}`; }
 async function load() {
   if (rv.mode === 'transfers') return loadTransfers();
   const seq = ++rv.seq;
   rv.loading = true;
   $('#rv-list').innerHTML = `<div class="rv-card">${ui.skeleton('40%', 18)}<div class="mt-2">${ui.skeleton('60%', 12)}</div><div class="mt-3">${ui.skeleton('100%', 32)}</div></div><div class="rv-card">${ui.skeleton('35%', 18)}<div class="mt-2">${ui.skeleton('55%', 12)}</div></div>`;
+  const pending = rv.prefetch; rv.prefetch = null;
   try {
-    const r = await api(`/api/review?mode=${rv.mode}&limit=${PAGE_LIMIT}`);
+    const r = await (pending || api(reviewUrl()));
     if (seq !== rv.seq) return;
     rv.window = WINDOW;
     if (rv.mode === 'merchant') {

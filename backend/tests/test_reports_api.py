@@ -124,6 +124,18 @@ class ByCategoryEndpointTest(unittest.TestCase):
         self.assertEqual(lines[0], "name,total,count,pct,parent_id,id")
         self.assertEqual(lines[1], "Dining,300.0,12,75.0,,4")
 
+    def test_prev_reports_the_period_before_the_requested_one(self):
+        """prev=1 lets a page ask for this period and the one before in parallel, from the same range query."""
+        with mock.patch.object(DB, "query", return_value=CAT_ROWS, create=True) as q:
+            data = json.loads(self._get("/api/reports/by-category?range=month:2026-08&prev=1").get_data())
+        self.assertEqual((data["period"], data["range"]["start"], data["total"]), ("previous", "2026-08-01", 400.0))
+        self.assertEqual(q.call_args.args[1][1:3], (date(2026, 7, 1), date(2026, 7, 31)))
+
+    def test_prev_of_a_range_without_one_is_empty(self):
+        with mock.patch.object(DB, "query", return_value=CAT_ROWS, create=True) as q:
+            data = json.loads(self._get("/api/reports/by-category?range=all&prev=1").get_data())
+        self.assertEqual((data["period"], data["categories"], data["total"], q.called), ("previous", [], 0, False))
+
     def test_account_filter_is_passed_to_sql(self):
         with mock.patch.object(DB, "query", return_value=[], create=True) as q:
             self._get("/api/reports/by-category?account_id=2,5")

@@ -26,7 +26,7 @@ initNav('dashboard').then(async (me) => {
   state.me = me;
   state.period = initialRange(qs(), { preset: 'this-month' });
   state.drill = Number(qs().drill) || null;
-  state.currency = await store.displayCurrency();
+  state.currencyP = store.displayCurrency();
   state.seg = ui.segmented($('#range-seg'), { onChange: (b) => setPeriod({ preset: b.dataset.range }) });
   $('[data-month="prev"]').innerHTML = icon('chevron-left');
   $('[data-month="next"]').innerHTML = icon('chevron-right');
@@ -83,15 +83,18 @@ async function load() {
   $('#recent-list').innerHTML = `<div class="list">${ui.skeletonList(6)}</div>`;
   $('#attention').innerHTML = `<div class="col gap-3">${ui.skeleton('100%', 56)}${ui.skeleton('60%', 14)}${ui.skeleton('100%', 14)}${ui.skeleton('100%', 14)}</div>`;
   const seq = ++state.seq;
-  let data;
+  // Everything the page shows is requested at once; the breakdown and the budget card render as
+  // soon as their own data lands.
+  loadBreakdown();
+  loadBudgetCard(periodMonth(state.period));
+  let data, flat;
   try {
-    data = await api(`/api/reports/dashboard${dashboardQuery()}`);
+    [data, flat, state.currency] = await Promise.all([api(`/api/reports/dashboard${dashboardQuery()}`), store.categoriesFlat(), state.currencyP]);
   } catch (err) {
     if (seq !== state.seq) return;
     $('#dash-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' });
     return;
   }
-  const flat = await store.categoriesFlat();
   if (seq !== state.seq) return;
   state.data = data;
   state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
@@ -115,8 +118,6 @@ async function load() {
   setPageTitle(data.range.label);
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
-  loadBreakdown(data.range);
-  loadBudgetCard(periodMonth(state.period));
   renderMonthly(data);
   renderDonut(data);
   renderIncome(data);
@@ -129,7 +130,7 @@ async function loadBudgetCard(ym) {
   const host = $('#budget-card'); if (!host) return;
   const seq = state.seq;
   let p;
-  try { p = await api(`/api/budgets/progress${toQuery({ month: ym })}`); } catch { host.hidden = true; return; }
+  try { [p, state.currency] = await Promise.all([apiShared(`/api/budgets/progress${toQuery({ month: ym })}`), state.currencyP]); } catch { host.hidden = true; return; }
   if (seq !== state.seq) return;
   const cur = state.currency;
   const label = fmtMonth(ym, { long: true });
@@ -406,20 +407,19 @@ function renderAttention(data) {
 
 
 /* ---------- category → subcategory breakdown for the selected period ---------- */
-async function loadBreakdown(range) {
+async function loadBreakdown() {
   const host = $('#breakdown'); if (!host) return;
-  $('#bd-label').textContent = range.label;
   host.innerHTML = `<div class="tbl-wrap bd-wrap"><table class="tbl"><tbody>${ui.skeletonRows(6, 5)}</tbody></table></div>`;
   const seq = state.seq;
+  const q = rangeToQuery(state.period);
+  const byCat = (extra) => api(`/api/reports/by-category${toQuery({ range: q.range, from: q.from, to: q.to, level: 'sub', ...extra })}`);
   try {
-    const [cur, prev, categories] = await Promise.all([
-      api(`/api/reports/by-category${toQuery({ from: range.start, to: range.end, level: 'sub' })}`),
-      range.prev_start ? api(`/api/reports/by-category${toQuery({ from: range.prev_start, to: range.prev_end, level: 'sub' })}`) : Promise.resolve({ categories: [] }),
-      store.categoriesFlat(),
+    const [cur, prev, categories, budgets, currency] = await Promise.all([
+      byCat({}), byCat({ prev: 1 }), store.categoriesFlat(), budgetsForPeriod(state.period), state.currencyP,
     ]);
     if (seq !== state.seq) return;
-    const budgets = await budgetsForRange(range.start, range.end);
-    if (seq !== state.seq) return;
-    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency: state.currency, range, categories, storageKey: 'ispend.breakdown.dashboard', budgets });
+    const range = { ...cur.range, label: cur.range.name === 'custom' ? rangeLabel(state.period) : cur.range.label };
+    $('#bd-label').textContent = range.label;
+    renderBreakdown(host, { rows: cur.categories, prevRows: prev.categories, total: cur.total, currency, range, categories, storageKey: 'ispend.breakdown.dashboard', budgets });
   } catch (err) { if (seq === state.seq) host.innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }

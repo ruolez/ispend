@@ -5,7 +5,6 @@ const word = (n, one, many) => (Number(n) === 1 ? one : (many || one + 's'));
 const state = { rules: [], cats: new Map(), accounts: [], q: '', dragId: null, currency: 'USD', filterCat: null, view: 'rules', merchants: [], mq: '', mloading: false };
 
 initNav('rules').then(async (me) => {
-  state.currency = await store.displayCurrency();
   $('.rules-search .ico-wrap').innerHTML = icon('search');
   $('[data-act="new-rule"]').innerHTML = `${icon('plus')}<span>New rule</span>`;
   $('[data-act="run-all"]').innerHTML = `${icon('play')}<span>Run all rules</span>`;
@@ -41,7 +40,8 @@ async function load() {
   $('#rules-error').innerHTML = '';
   if (!state.rules.length) $('#rule-list').innerHTML = `<li class="rules-empty">${ui.skeletonList(5)}</li>`;
   try {
-    const [rules, flat, accounts] = await Promise.all([api('/api/rules'), store.categoriesFlat(), store.accounts()]);
+    const [rules, flat, accounts, currency] = await Promise.all([api('/api/rules'), store.categoriesFlat(), store.accounts(), store.displayCurrency()]);
+    state.currency = currency;
     state.rules = rules; state.cats = new Map(flat.map((c) => [c.id, c])); state.accounts = accounts;
   } catch (err) { $('#rules-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); return; }
   render();

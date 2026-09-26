@@ -39,7 +39,7 @@ Vanilla JS, no build step, classic `<script>` globals. Every authenticated page 
 initNav('transactions').then(async (me) => { /* read qs(), hydrate, load() */ });
 ```
 
-`initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), reveals `[data-admin-only]` elements for admins and removes them for everyone else (admin markup ships with `hidden` so it never flashes before `/api/auth/me` resolves), applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
+`initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`; from the session cache at once when this tab has seen it, revalidated in the background — a changed id/role/billing state reloads the page), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), reveals `[data-admin-only]` elements for admins and removes them for everyone else (admin markup ships with `hidden` so it never flashes before `/api/auth/me` resolves), applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
 
 Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings, admin (admins only). Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|b|a|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
 
@@ -64,6 +64,7 @@ Safe areas: `--safe-top` / `--safe-bottom` in `tokens.css` wrap `env(safe-area-i
 | Helper | Purpose |
 |---|---|
 | `await api(path, {method, body, headers})` | JSON fetch; objects auto-stringified; `FormData` passes through; 401 → login redirect; non-2xx throws `Error(message)` with `.status`, `.data` |
+| `await apiShared(path)` | GET that shares one in-flight request with any identical call made at the same moment; treat the result as read-only |
 | `await apiUpload(path, formData, {onProgress(0..1)})` | XHR multipart upload with progress |
 | `esc(s)` | HTML-escape (use on EVERY interpolation) |
 | `qs()` → `{k:v}`, `setQs({k:v}, {replace, merge})`, `toQuery(obj)` → `?a=1&b=2` | URL state helpers; empty/null/false keys are dropped, arrays joined with `,` |
@@ -81,7 +82,8 @@ Safe areas: `--safe-top` / `--safe-bottom` in `tokens.css` wrap `env(safe-area-i
 | `await store.categories()` | tree `[{id,parent_id,name,slug,kind,color,icon,txn_count,children:[…]}]` |
 | `await store.categoriesFlat()` | flattened, adds `parent_name`, `parent_color`, `path` (`Dining › Coffee`), `depth` |
 | `store.accounts()` (all incl. archived), `store.tags()` (`[{id,name,color,txn_count}]`), `store.settings()` (`/api/settings/client`) | |
-| `store.get(key, url, {ttl, force})`, `store.invalidate(key)` | generic cache; keys `categories`, `accounts`, `settings` |
+| `store.get(key, url, {ttl, force})`, `store.invalidate(key)` | generic cache; keys `categories`, `accounts`, `settings`, `me`, `review-count` (`ttl: 0` = always serve the cached copy and revalidate) |
+| `store.afterWrite(path)` | called by `api()` after every successful non-GET: drops `me` (after `/api/auth/me*`) and `review-count` |
 | `store.on(event, fn)`, `store.emit(event, detail)` | `${key}-changed` fires after a revalidate changes data; also dispatched as `window` event `ispend:<event>` |
 
 Cache is memory + sessionStorage, stale-while-revalidate. After mutating categories/accounts call `store.invalidate('categories')` (or `'accounts'`).
@@ -196,7 +198,7 @@ UI: row chip `.catchip--split` (`data-split-edit`), `openSplitEditor(id)` (`ui.m
 `/api/tags` CRUD; rows carry `tag_ids`; `PUT /api/transactions/:id {tag_ids}` replaces, bulk `tag`/`untag {tag_ids}` add or remove; list filter `?tag=1,2|none[&tag_mode=all]`, `facets.tags`. Chips: `.tagchip` (neutral surface + coloured dot). Tag manager lives on the Categories page.
 
 ## Budgets
-`/api/budgets` (one row per category and month, `POST` upserts, `POST /copy {from,to}`), `/api/budgets/progress?month=` (`items[{category_id, budget, spent, remaining, pct, projected, pace_status}]`, `totals`, `unbudgeted`). `budgetsForRange(start, end)` (breakdown.js) returns a Map for a single-month range so the breakdown table can show a Budget column; the dashboard card and the category side panel call the same endpoints.
+`/api/budgets` (one row per category and month, `POST` upserts, `POST /copy {from,to}`), `/api/budgets/progress?month=` (`items[{category_id, budget, spent, remaining, pct, projected, pace_status}]`, `totals`, `unbudgeted`). `budgetsForPeriod(period, extraQuery)` (breakdown.js) returns a Map when the picker period is exactly one calendar month (known before any request, so it loads alongside the data) so the breakdown table can show a Budget column; the dashboard card and the category side panel call the same endpoints.
 
 ## Saved views
 Transactions keeps `saved_views` in the account preferences (`[{id, name, query, pinned, page}]`, query = the filter string). `views.apply(v)` rewrites the URL and reloads; `?view=<id>` marks the active view and is dropped as soon as a filter changes. Pinned views paint under the Transactions link (`nav.js paintPinnedViews`, event `ispend:views-changed`).

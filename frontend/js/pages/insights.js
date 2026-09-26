@@ -4,8 +4,12 @@ const KIND = { unusual_amount: { label: 'Unusual amount', icon: 'trending-up' },
 
 initNav('insights').then(async (me) => {
   state.me = me;
-  state.currency = await store.displayCurrency();
   state.month = qs().month || periodMonth(periodGet()) || currentMonth();
+  const dataP = load.prefetch = api(`/api/insights${toQuery({ month: state.month })}`);
+  dataP.catch(() => {}); // load() reports a failure
+  const [currency, flat] = await Promise.all([store.displayCurrency(), store.categoriesFlat().catch(() => [])]);
+  state.currency = currency;
+  state.cats = new Map(flat.map((c) => [c.id, c]));
   paintMonth();
   $('[data-act="prev-month"]').innerHTML = icon('chevron-left'); $('[data-act="next-month"]').innerHTML = icon('chevron-right');
   $('.ai-mark').innerHTML = icon('sparkles');
@@ -15,7 +19,6 @@ initNav('insights').then(async (me) => {
     const done = pop.close; pop.close = (r) => { btn.setAttribute('aria-expanded', 'false'); done(r); };
   });
   document.body.addEventListener('click', onAction);
-  await store.categoriesFlat().then((f) => { state.cats = new Map(f.map((c) => [c.id, c])); }).catch(() => {});
   load();
 });
 
@@ -31,8 +34,9 @@ async function load() {
   $('#anomalies').innerHTML = ui.skeletonList(2);
   $('#ai-panel').innerHTML = `<div class="col gap-3">${ui.skeleton('90%', 14)}${ui.skeleton('100%', 14)}${ui.skeleton('70%', 14)}</div>`;
   const seq = ++state.seq;
+  const pending = load.prefetch; load.prefetch = null;
   let data;
-  try { data = await api(`/api/insights${toQuery({ month: state.month })}`); }
+  try { data = await (pending || api(`/api/insights${toQuery({ month: state.month })}`)); }
   catch (err) { if (seq === state.seq) $('#ins-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); return; }
   if (seq !== state.seq) return;
   state.data = data;

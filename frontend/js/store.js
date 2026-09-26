@@ -107,5 +107,13 @@ const store = (() => {
     return Object.keys(weight).sort((a, b) => weight[b] - weight[a])[0] || 'USD';
   }
 
-  return { get, invalidate, on, emit, flatten, categories, categoriesFlat, accounts, tags, settings, displayCurrency };
+  /* api() calls this after every successful write. Anything cached that the write may have made
+     stale is dropped: the signed-in user after a change to /api/auth/me*, the review count after
+     any write (almost every write can move a transaction in or out of the queue). */
+  function afterWrite(path) {
+    if (path.startsWith('/api/auth/me')) invalidate('me');
+    invalidate('review-count');
+  }
+
+  return { get, invalidate, afterWrite, on, emit, flatten, categories, categoriesFlat, accounts, tags, settings, displayCurrency };
 })();

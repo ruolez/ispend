@@ -183,10 +183,12 @@ async function initNav(activePage) {
     { description: `Go to ${i.label}`, when: () => !i.adminOnly || (window.currentUser || {}).role === 'admin' }));
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); } });
 
-  // Auth gate
+  // Auth gate. A signed-in tab keeps /api/auth/me in the session cache: the page starts from that
+  // copy at once and it is revalidated in the background (a 401 there still sends the user to
+  // login, and api() drops the copy after any change to /api/auth/me*). A first visit waits.
   let me;
   try {
-    me = await api('/api/auth/me');
+    me = await store.get('me', '/api/auth/me', { ttl: 0 });
   } catch (err) {
     if (err.message !== 'Not authenticated') {
       const msg = navigator.onLine === false ? 'You’re offline. iSpend needs a connection to show your accounts.' : `Could not reach the server: ${err.message}`;
@@ -214,17 +216,35 @@ async function initNav(activePage) {
   paintBillingBanner(me);
   watchConnectivity();
   refreshReviewPill();
-  window.addEventListener('ispend:transactions-changed', refreshReviewPill);
+  window.addEventListener('ispend:transactions-changed', () => refreshReviewPill(true));
   // Back/forward restores the page as it was left: refresh the shared bits, and tell the page
   // (ispend:resume) so it can refetch data that may have changed elsewhere meanwhile.
   window.addEventListener('pageshow', (e) => {
     if (!e.persisted) return;
-    refreshReviewPill();
+    store.get('me', '/api/auth/me', { force: true }).catch(() => {});
+    refreshReviewPill(true);
     window.dispatchEvent(new CustomEvent('ispend:resume'));
   });
   paintPinnedViews(me);
   window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
+  store.on('me-changed', (fresh) => applyFreshMe(me, fresh));
   return me;
+}
+
+/* The background revalidation of a cached /me came back different. Who the user is, their role or
+   their billing state decide what the page may show, so those reload it; anything else (name,
+   preferences) is repainted in place. */
+function applyFreshMe(cached, fresh) {
+  if (!fresh) return;
+  const billing = (m) => JSON.stringify(m.billing || null);
+  if (fresh.id !== cached.id || fresh.role !== cached.role || billing(fresh) !== billing(cached)) {
+    location.reload();
+    return;
+  }
+  window.currentUser = fresh;
+  $('#tb-avatar').textContent = initials(fresh.username);
+  $('#tb-username').textContent = fresh.username;
+  paintPinnedViews(fresh);
 }
 
 /* Trial / grace / read-only notices, built from the existing .notice vocabulary rather than a
@@ -308,11 +328,16 @@ function watchConnectivity() {
   paint();
 }
 
-async function refreshReviewPill() {
+/* The count paints from the session cache at once and refreshes in the background; force skips the
+   cached copy after this tab changed transactions. */
+function paintReviewPill(c) {
+  const n = (c && (c.total ?? ((c.uncategorized || 0) + (c.suggested || 0)))) || 0;
+  $$('[data-review-pill]').forEach((el) => { el.textContent = n > 999 ? '999+' : String(n); el.hidden = !n; });
+}
+store.on('review-count-changed', paintReviewPill);
+async function refreshReviewPill(force = false) {
   try {
-    const c = await api('/api/review/count');
-    const n = (c && (c.total ?? ((c.uncategorized || 0) + (c.suggested || 0)))) || 0;
-    $$('[data-review-pill]').forEach((el) => { el.textContent = n > 999 ? '999+' : String(n); el.hidden = !n; });
+    paintReviewPill(await store.get('review-count', '/api/review/count', { ttl: 0, force }));
   } catch { /* endpoint may not exist yet */ }
 }
 

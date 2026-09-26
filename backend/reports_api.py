@@ -94,11 +94,14 @@ def by_category():
     r = _range()
     level = "sub" if request.args.get("level") == "sub" else "top"
     flow = _flow()
-    rows = reports.by_category(_uid(), r["start"], r["end"], level, _accounts(), include_transfers=_inc(), flow=flow)
+    # prev=1: the period before the requested one, so a page can fetch both at once from one range query.
+    prev = request.args.get("prev") in ("1", "true")
+    start, end = (r["prev_start"], r["prev_end"]) if prev else (r["start"], r["end"])
+    rows = reports.by_category(_uid(), start, end, level, _accounts(), include_transfers=_inc(), flow=flow) if start else []
     if _wants_csv():
         return csv_response(rows, f"{flow}-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
-    return jsonify({"range": reports.range_json(r), "level": level, "flow": flow, "categories": rows,
-                    "total": round(sum(c["total"] for c in rows), 2)})
+    return jsonify({"range": reports.range_json(r), "period": "previous" if prev else "current", "level": level,
+                    "flow": flow, "categories": rows, "total": round(sum(c["total"] for c in rows), 2)})
 
 
 @bp.get("/monthly")

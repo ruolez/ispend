@@ -12,8 +12,9 @@ function catColorOf(c) { return c ? `var(--${c.color || c.parent_color || 'c1'})
 initNav('budgets').then(async () => {
   const q = qs();
   bud.month = /^\d{4}-(0[1-9]|1[0-2])$/.test(q.month || '') ? q.month : currentYm();
-  bud.currency = await store.displayCurrency();
-  await loadCats();
+  load.prefetch = fetchMonth();
+  load.prefetch.catch(() => {}); // load() reports a failure
+  [bud.currency] = await Promise.all([store.displayCurrency(), loadCats()]);
   $('[data-month="prev"]').innerHTML = icon('chevron-left');
   $('[data-month="next"]').innerHTML = icon('chevron-right');
   $('#btn-add').innerHTML = `${icon('plus', 'ico-sm')}<span class="label">Add budget</span>`;
@@ -55,6 +56,9 @@ function openMonthMenu(anchor) {
 }
 
 /* ---------- data ---------- */
+function fetchMonth() {
+  return Promise.all([api(`/api/budgets${toQuery({ month: bud.month })}`), api(`/api/budgets/progress${toQuery({ month: bud.month })}`)]);
+}
 async function load() {
   const seq = ++bud.seq;
   $('#bud-error').innerHTML = '';
@@ -63,8 +67,9 @@ async function load() {
   $('#month-btn').innerHTML = `${icon('calendar', 'ico-sm')}<span class="label">${esc(fmtMonth(bud.month, { long: true }))}</span>${icon('chevron-down', 'ico-sm')}`;
   $('#bud-month-label').textContent = fmtMonth(bud.month, { long: true });
   setPageTitle(fmtMonth(bud.month, { long: true }));
+  const pending = load.prefetch; load.prefetch = null;
   try {
-    const [list, progress] = await Promise.all([api(`/api/budgets${toQuery({ month: bud.month })}`), api(`/api/budgets/progress${toQuery({ month: bud.month })}`)]);
+    const [list, progress] = await (pending || fetchMonth());
     if (seq !== bud.seq) return;
     bud.list = list; bud.progress = progress; bud.months = list.months_with_budgets || [];
   } catch (err) {

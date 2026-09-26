@@ -9,7 +9,7 @@ const flowWord = () => (isInc() ? 'income' : 'spending');
 initNav('reports').then(async (me) => {
   const ob = ((me && me.preferences) || {}).onboarding || {};
   if (!ob.reports_opened) api('/api/auth/me/preferences', { method: 'PUT', body: { onboarding: { ...ob, reports_opened: true } } }).then((p) => { if (window.currentUser) window.currentUser.preferences = p; }).catch(() => {});
-  state.currency = await store.displayCurrency();
+  [state.currency, state.accountsList] = await Promise.all([store.displayCurrency(), store.accounts().catch(() => [])]);
   const q = qs();
   state.tab = TABS.includes(q.tab) ? q.tab : 'category';
   state.range = initialRange(q, { preset: 'this-month' });
@@ -30,7 +30,6 @@ initNav('reports').then(async (me) => {
   $('#incl-transfers').checked = state.transfers;
   paintTransfersHint();
   $('#incl-transfers').addEventListener('change', (e) => { state.transfers = e.target.checked; state.cache = {}; paintTransfersHint(); sync(); loadTab(true); });
-  state.accountsList = await store.accounts().catch(() => []);
   $('[data-act="export"]').innerHTML = `${icon('download')}<span>Export CSV</span>`;
   state.tabs = ui.tabs($('#report-tabs'), { onChange: (t) => switchTab(t.dataset.tab) });
   paintMonths();
@@ -133,14 +132,18 @@ async function loadCategory(force) {
   state.pctSeg.select(state.pct ? 1 : 0, { focus: false, silent: true });
   const rq = rangeToQuery(state.range);
   const seq = ++state.seq;
+  const byCatUrl = (extra) => `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery(), ...extra })}`;
   try {
-    const [monthly, byCat] = await Promise.all([
+    const [monthly, byCat, prev, categories, budgets] = await Promise.all([
       cached(`monthly-${state.months}-${state.parent || ''}-${rangeEndMonth()}`, `/api/reports/monthly${toQuery({ months: state.months, parent_id: state.parent || null, end: rangeEndMonth(), ...acctQuery() })}`, force),
-      cached(`bycat-${JSON.stringify(rq)}`, `/api/reports/by-category${toQuery({ ...rq, level: 'sub', ...acctQuery() })}`, force),
+      cached(`bycat-${JSON.stringify(rq)}`, byCatUrl({}), force),
+      cached(`bycat-prev-${JSON.stringify(rq)}`, byCatUrl({ prev: 1 }), force).catch(() => ({ categories: [] })),
+      store.categoriesFlat(),
+      isInc() ? null : budgetsForPeriod(state.range, state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {}),
     ]);
     if (seq !== state.seq) return;
     renderStack(monthly);
-    renderCatTable(byCat);
+    renderCatTable(byCat, prev, categories, budgets);
   } catch (err) { $('#report-error').innerHTML = ui.errorBox(err.message, { retry: 'reload' }); }
 }
 let isolated = null;
@@ -176,15 +179,9 @@ function renderStack(data) {
   legend.innerHTML = data.series.map((s, i) => `<button type="button" class="legend-item ${isolated != null && isolated !== i ? 'is-off' : ''}" data-i="${i}"><span class="legend-name"><i class="dot" style="--c:${seriesColor(s)}"></i>${esc(s.name)}</span><span class="legend-val">${fmtMoney(s.total, cur)}</span></button>`).join('');
   legend.onclick = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const i = Number(b.dataset.i); isolated = isolated === i ? null : i; state.iso = isolated == null ? null : seriesKey(data.series[i], i); sync(); chart.data.datasets.forEach((d, j) => { chart.setDatasetVisibility(j, isolated == null || isolated === j); }); chart.update(); $$('.legend-item', legend).forEach((l, j) => l.classList.toggle('is-off', isolated != null && isolated !== j)); };
 }
-async function renderCatTable(res) {
+function renderCatTable(res, prev, categories, budgets) {
   $('#cat-range-label').textContent = rangeLabel(state.range);
   const host = $('#cat-table');
-  let prev = { categories: [] };
-  if (res.range && res.range.prev_start) {
-    try { prev = await cached(`bycat-prev-${res.range.prev_start}-${res.range.prev_end}-${JSON.stringify(acctQuery())}`, `/api/reports/by-category${toQuery({ from: res.range.prev_start, to: res.range.prev_end, level: 'sub', ...acctQuery() })}`); } catch { prev = { categories: [] }; }
-  }
-  const categories = await store.categoriesFlat();
-  const budgets = isInc() ? null : await budgetsForRange(res.range.start, res.range.end, state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {});
   renderBreakdown(host, { rows: res.categories, prevRows: prev.categories, total: res.total, currency: state.currency, range: { start: res.range.start, end: res.range.end }, categories, storageKey: 'ispend.breakdown.reports', upIsGood: isInc(), budgets });
 }
 function wireRowLinks(tb) {

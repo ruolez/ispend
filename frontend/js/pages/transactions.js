@@ -27,9 +27,11 @@ const tx = {
 };
 
 initNav('transactions').then(async () => {
-  await loadRefs();
-  tx.displayCurrency = await store.displayCurrency();
   readUrl();
+  // The first page is requested now, alongside the reference data; loadMore(true) picks it up.
+  tx.prefetch = api('/api/transactions' + toQuery(queryParams({ limit: 100, cursor: null })));
+  tx.prefetch.catch(() => {}); // loadMore reports a failure
+  [, tx.displayCurrency] = await Promise.all([loadRefs(), store.displayCurrency()]);
   $('#btn-export').innerHTML = `${icon('download', 'ico-sm')}<span class="label">Export CSV</span>`;
   paintDensity();
   $('#btn-density').addEventListener('click', () => { const d = Theme.density() === 'compact' ? 'comfortable' : 'compact'; Theme.setDensity(d); paintDensity(); api('/api/auth/me/preferences', { method: 'PUT', body: { density: d } }).catch(() => {}); });
@@ -387,8 +389,10 @@ async function loadMore(first = false) {
   tx.loading = true;
   const seq = ++tx.seq;
   const params = queryParams({ limit: 100, cursor: tx.cursor });
+  const pending = first ? tx.prefetch : null;
+  tx.prefetch = null;
   try {
-    const r = await api('/api/transactions' + toQuery(params));
+    const r = await (pending || api('/api/transactions' + toQuery(params)));
     if (seq !== tx.seq) return;
     tx.total = r.total; tx.sumIn = r.sum_in; tx.sumOut = r.sum_out; tx.skipped = r.skipped || { count: 0, sum: 0 }; tx.facets = r.facets; tx.currencies = r.currencies || [];
     tx.cursor = r.next_cursor; tx.done = !r.next_cursor;

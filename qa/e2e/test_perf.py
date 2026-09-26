@@ -46,7 +46,6 @@ def test_back_restores_from_the_back_forward_cache(walk):
     assert walk["back"] == {"restored": True, "reasons": walk["back"]["reasons"]}
 
 
-@pytest.mark.xfail(strict=True, reason="phase 2: page data no longer waits for /api/auth/me or for each other")
 def test_no_screen_chains_api_requests(walk):
     assert {n["path"]: n["api"] for n in walk["navs"] if n["depth"] > 1} == {}
 

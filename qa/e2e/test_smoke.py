@@ -603,8 +603,10 @@ def test_theme_persists_across_reload_and_pages(make_context):
 
 
 @pytest.mark.parametrize("scheme", ["dark", "light"])
-def test_theme_follows_system_when_unset(make_context, scheme):
+def test_theme_follows_system_when_unset(make_context, scheme, base_url):
     ctx, page, rec = make_context("qa_tester", None, "1440", color_scheme=scheme, stored_theme=False)
+    # "Unset" on the server too: other suites toggle qa_tester's theme, and the login cookie carries it.
+    ctx.request.put(f"{base_url}/api/auth/me/preferences", data={"theme": "system"})
     page.goto("/index.html", wait_until="domcontentloaded")
     at_dcl = page.evaluate("() => ({ bg: getComputedStyle(document.body).backgroundColor, attr: document.documentElement.getAttribute('data-theme'), mode: document.documentElement.getAttribute('data-theme-mode') })")
     wait_loaded(page)

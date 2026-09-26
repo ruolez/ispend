@@ -11,7 +11,6 @@ try { collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]'
 function persistCollapsed() { try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(collapsed))); } catch { /* ignore */ } }
 
 initNav('categories').then(async (me) => {
-  state.currency = await store.displayCurrency();
   $('[data-act="add-category"]').innerHTML = `${icon('plus')}<span>Add category</span>`;
   document.body.addEventListener('click', onAction);
   $('#cat-tree').addEventListener('dblclick', (e) => { const row = e.target.closest('.cat-row'); if (row && !e.target.closest('input')) startRename(Number(row.dataset.id)); });
@@ -34,13 +33,17 @@ async function load() {
   trendCache.clear();
   $('#cat-error').innerHTML = '';
   if (!state.tree.length) $('#cat-tree').innerHTML = `<div class="cat-empty">${ui.skeletonList(8)}</div>`;
+  loadTags();
   try {
-    const [tree, sub, subInc] = await Promise.all([
+    // Forced: this page shows each category's transaction count, so the session copy is not enough.
+    const [tree, sub, subInc, currency] = await Promise.all([
       store.categories({ force: true }),
       api('/api/reports/by-category?range=this-month&level=sub').catch(() => ({ categories: [] })),
       api('/api/reports/by-category?range=this-month&level=sub&flow=income').catch(() => ({ categories: [] })),
+      store.displayCurrency(),
     ]);
     state.tree = tree;
+    state.currency = currency;
     state.flat = await store.categoriesFlat();
     state.totals = {};
     [sub, subInc].forEach((r) => r.categories.forEach((c) => { if (c.id != null && !(c.id in state.totals)) state.totals[c.id] = c.total; }));
@@ -51,7 +54,6 @@ async function load() {
   }
   render();
   renderSide();
-  loadTags();
 }
 
 function countOf(c) { return (c.txn_count || 0) + (c.children || []).reduce((s, k) => s + (k.txn_count || 0), 0); }

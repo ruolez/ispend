@@ -23,8 +23,9 @@ const imp = {
 
 initNav('import').then(async () => {
   store.settings().then((cfg) => { imp.aiReady = !!(cfg && cfg.ai_configured); }).catch(() => {});
-  imp.accounts = (await store.accounts().catch(() => [])).filter((a) => a.is_active);
-  (await store.categoriesFlat().catch(() => [])).forEach((c) => imp.cats.set(c.id, c));
+  const [accounts, cats] = await Promise.all([store.accounts().catch(() => []), store.categoriesFlat().catch(() => [])]);
+  imp.accounts = accounts.filter((a) => a.is_active);
+  cats.forEach((c) => imp.cats.set(c.id, c));
   store.on('accounts-changed', async () => { imp.accounts = (await store.accounts()).filter((a) => a.is_active); });
   renderUpload();
   document.body.addEventListener('click', onImportClick);
