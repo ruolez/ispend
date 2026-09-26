@@ -427,7 +427,7 @@ tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon
 
 /* ---------- Chart cards ---------- */
 .chart-card .chart-body { position: relative; height: var(--h, 260px); padding: var(--sp-4) var(--sp-5) var(--sp-3); }
-.chart-body.is-loading::after { content: ''; position: absolute; inset: var(--sp-4) var(--sp-5); border-radius: var(--r-md); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.chart-body.is-loading::after { content: ''; position: absolute; inset: var(--sp-4) var(--sp-5); border-radius: var(--r-md); background: var(--surface-3); animation: skel-pulse 1.4s ease-in-out infinite; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 var(--sp-5) var(--sp-4); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: var(--fs-sm); color: var(--text-2); padding: 2px 6px; border-radius: var(--r-sm); border: 0; background: none; cursor: pointer; }
 @media (hover: hover) { .legend-item:hover { background: var(--surface-2); } }
@@ -574,9 +574,11 @@ tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon
 @media (hover: hover) { .toast-close:hover { background: var(--surface-2); color: var(--text-1); } }
 
 /* ---------- Skeleton, empty, error ---------- */
-.skel { display: block; border-radius: var(--r-sm); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
-@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .skel, .chart-body.is-loading::after { animation: none; background: var(--surface-2); } }
+/* Placeholders pulse in opacity — composited, so dozens of them cost no repaint per frame (a moving
+   background-position gradient repainted every one on every frame while the page was still loading). */
+.skel { display: block; border-radius: var(--r-sm); background: var(--surface-3); animation: skel-pulse 1.4s ease-in-out infinite; }
+@keyframes skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .skel, .chart-body.is-loading::after { animation: none; } }
 .skel-row td { height: var(--row-h); }
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: var(--sp-10) var(--sp-5); gap: 6px; }
 .empty-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--text-3); display: grid; place-items: center; margin-bottom: 6px; }
@@ -864,3 +866,41 @@ body[data-readonly] [data-needs-write] { opacity: 0.45; pointer-events: none; }
   .tbl--list.tbl--cards .st-status { display: inline-flex; vertical-align: middle; }
 }
 @media (pointer: coarse) { .row-actions { gap: 6px; } a.row-link { min-height: var(--tap); } }
+
+/* ---------- Screen changes ----------
+   Every screen is its own page; a cross-document view transition keeps the old screen up until the
+   new one can paint, then crossfades the content while the topbar, bottom nav and sidebar stay put
+   (each is its own transition group, so only a changed active tab fades). Browsers without support
+   (Safari < 18.2, Chrome < 126) and Reduce Motion simply swap. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+}
+.topbar { view-transition-name: topbar; }
+.bottomnav { view-transition-name: bottomnav; }
+.sidebar { view-transition-name: sidebar; }
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) { animation-duration: var(--dur-2); animation-timing-function: var(--ease-out); }
+
+/* ---------- Touch feedback ----------
+   Tapping should answer at once. Tappable rows darken while pressed; the change waits 60 ms, so a
+   finger that starts scrolling (which cancels :active) never flashes the rows it crosses, and fades
+   back on release. iOS only applies :active because ui.js registers a passive touchstart listener. */
+html { -webkit-tap-highlight-color: transparent; }
+@media (pointer: coarse) {
+  .tbl-tx tbody tr[data-id], .tbl tbody tr.is-clickable, .list-item.is-clickable, .cat-row, .rule, .more-row,
+  .fs-row, .palette-item, .tb-search, .tb-avatar-btn, .bd-row {
+    transition: background-color var(--dur-2) var(--ease-out);
+  }
+  .tbl-tx tbody tr[data-id]:active, .tbl tbody tr.is-clickable:active, .list-item.is-clickable:active, .cat-row:active,
+  .rule:active, .more-row:active, .fs-row:active, .palette-item:active, .tb-search:active, .tb-avatar-btn:active, .bd-row:active {
+    background-color: var(--surface-2);
+    transition-duration: 0s;
+    transition-delay: 60ms;
+  }
+  /* The tab just tapped lights up while the next screen loads (nav.js), and the old one lets go. */
+  .bottomnav.is-going .bn-item[aria-current="page"]:not(.is-going) { color: var(--text-3); font-weight: 500; }
+  .bottomnav.is-going .bn-item[aria-current="page"]:not(.is-going) .bn-ico { background: none; }
+  .bn-item.is-going { color: var(--accent); font-weight: 600; }
+  .bn-item.is-going .bn-ico { background: var(--accent-soft); }
+}

@@ -55,11 +55,16 @@ function _toDate(v) {
 }
 
 /* fmtDate('2026-09-02') -> "Sep 2" (adds year when not the current year or {year:true}). */
+/* toLocaleDateString builds a formatter per call; a list of 100 rows calls this hundreds of times. */
+const _dateFmt = {};
+const _thisYear = new Date().getFullYear();
 function fmtDate(v, { year } = {}) {
   const d = _toDate(v);
   if (!d) return '—';
-  const showYear = year === true || (year !== false && d.getFullYear() !== new Date().getFullYear());
-  return d.toLocaleDateString(LOCALE, { month: 'short', day: 'numeric', ...(showYear ? { year: 'numeric' } : {}) });
+  const showYear = year === true || (year !== false && d.getFullYear() !== _thisYear);
+  const key = showYear ? 'y' : 'n';
+  if (!_dateFmt[key]) _dateFmt[key] = new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric', ...(showYear ? { year: 'numeric' } : {}) });
+  return _dateFmt[key].format(d);
 }
 function fmtDateLong(v) {
   const d = _toDate(v);

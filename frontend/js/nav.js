@@ -33,15 +33,16 @@ const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
 const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
 
+/* matchMedia, not innerWidth: reading innerWidth this early forces a synchronous layout of the
+   half-built page (tens of ms on a phone) that the first frame then redoes. */
+const atLeast = (px) => window.matchMedia(`(min-width: ${px}px)`).matches;
 function sidebarMode() {
   try { const v = localStorage.getItem(SIDEBAR_KEY); if (v) return v; } catch { /* ignore */ }
-  const w = window.innerWidth;
-  return w >= 1280 ? 'full' : w >= 960 ? 'rail' : 'hidden';
+  return atLeast(1280) ? 'full' : atLeast(960) ? 'rail' : 'hidden';
 }
 function applySidebarMode() {
-  const w = window.innerWidth;
   let mode = sidebarMode();
-  if (w < 960) mode = 'hidden';
+  if (!atLeast(960)) mode = 'hidden';
   document.documentElement.setAttribute('data-sidebar', mode);
 }
 function setSidebarMode(mode) {
@@ -124,6 +125,17 @@ async function initNav(activePage) {
   bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.label)}</span></a>`).join('')
     + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${BOTTOM_NAV.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}</span><span class="bn-label">More</span></button>`;
   document.body.appendChild(bn);
+  // The tapped tab takes the highlight at once, while the next screen loads; a back/forward restore
+  // brings this page back as it was, so the highlight is handed back too.
+  bn.addEventListener('click', (e) => {
+    const a = e.target.closest('a.bn-item');
+    if (!a || a.getAttribute('aria-current') === 'page' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    bn.classList.add('is-going'); a.classList.add('is-going');
+  });
+  window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    bn.classList.remove('is-going'); $$('.bn-item.is-going', bn).forEach((el) => el.classList.remove('is-going'));
+  });
   ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; d.setAttribute('role', 'region'); d.setAttribute('aria-label', ROOT_LABELS[id]); document.body.appendChild(d); } });
 
   // Wiring
@@ -382,9 +394,12 @@ function watchLargeTitle() {
   const top = $('#topbar');
   const h1 = document.querySelector('#main .page-head h1');
   if (!h1 || !('IntersectionObserver' in window)) { top.classList.add('show-title'); return; }
-  const io = new IntersectionObserver(([e]) => top.classList.toggle('show-title', !e.isIntersecting),
-    { rootMargin: `-${top.offsetHeight || 56}px 0px 0px 0px` });
-  io.observe(h1);
+  // After the first frame: offsetHeight would otherwise force a layout in the middle of boot.
+  requestAnimationFrame(() => {
+    const io = new IntersectionObserver(([e]) => top.classList.toggle('show-title', !e.isIntersecting),
+      { rootMargin: `-${top.offsetHeight || 56}px 0px 0px 0px` });
+    io.observe(h1);
+  });
 }
 
 /* More (phone): every destination the bottom bar doesn't hold, pinned views, theme and account. */

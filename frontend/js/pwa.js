@@ -17,6 +17,17 @@
     prompt = e;
     window.dispatchEvent(new CustomEvent('ispend:pwa-installable'));
   });
+  /* A screen change may run a cross-document view transition (app.css). The browser skips it when
+     it cannot run it cleanly (the viewport resized mid-way, say) and rejects its promises — harmless,
+     but unhandled they would reach the global error toast. pagereveal must be heard from <head>. */
+  function quiet(e) {
+    var vt = e.viewTransition;
+    if (!vt) return;
+    [vt.ready, vt.finished, vt.updateCallbackDone].forEach(function (p) { if (p) p.catch(function () {}); });
+  }
+  window.addEventListener('pagereveal', quiet);
+  window.addEventListener('pageswap', quiet);
+
   window.addEventListener('appinstalled', function () {
     prompt = null;
     window.dispatchEvent(new CustomEvent('ispend:pwa-installed'));

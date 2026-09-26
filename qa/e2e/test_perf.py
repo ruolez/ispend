@@ -55,6 +55,5 @@ def test_warm_bottom_tabs_show_content_fast(walk):
     assert {n["path"]: n["content"] for n in second_round if n["content"] > WARM_TABS_MS} == {}
 
 
-@pytest.mark.xfail(strict=True, reason="phase 4: the topbar and bottom nav exist at first paint")
 def test_first_paint_already_has_the_app_chrome(walk):
     assert {n["path"]: (n["fcp"], n["chrome"]) for n in walk["navs"] if n["fcp"] is None or n["chrome"] > n["fcp"]} == {}

@@ -8,9 +8,15 @@ const charts = (() => {
      style recalculation, and a dashboard builds six charts of ~25 reads each. data-theme (and the
      reduced-motion setting) is the whole key — tokens change with nothing else. */
   let memo = { key: null, vars: new Map(), theme: null };
+  // Read together on first use: one style recalculation instead of one per token met mid-render.
+  const TOKENS = ['--text-3', '--text-1', '--text-2', '--chart-grid', '--chart-axis', '--surface', '--surface-overlay',
+    '--border-strong', '--accent', '--chart-muted', '--success', '--danger', ...Array.from({ length: 12 }, (_, i) => `--c${i + 1}`)];
   function memoFor() {
     const key = `${document.documentElement.getAttribute('data-theme')}|${window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches}`;
-    if (memo.key !== key) memo = { key, vars: new Map(), theme: null };
+    if (memo.key !== key) {
+      const cs = getComputedStyle(document.documentElement);
+      memo = { key, vars: new Map(TOKENS.map((t) => [t, cs.getPropertyValue(t).trim()])), theme: null };
+    }
     return memo;
   }
   function css(name) {

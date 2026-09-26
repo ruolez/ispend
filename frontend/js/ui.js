@@ -2,6 +2,9 @@
    skeletons, empty states, shortcuts, focus trap. All return handles. */
 const ui = (() => {
   const layers = []; // stack of {close} for Esc handling (topmost first)
+  // iOS Safari applies :active (the pressed look) only when a touchstart listener exists; a passive
+  // no-op costs nothing and never delays scrolling.
+  document.addEventListener('touchstart', () => {}, { passive: true });
 
   /* Focus survival across innerHTML re-renders: describe the focused control by its stable data
      attributes (and position among lookalikes), then find the same control in the fresh DOM. */
@@ -82,6 +85,9 @@ const ui = (() => {
      the panel, and letting go past 80px (or with a flick) dismisses it; anything less springs back.
      Every sheet also has a visible Close, so the gesture is never the only way out. */
   function dragToDismiss(panel, onDismiss, { zone = null, strip = 28 } = {}) {
+    // The grab zone's drags belong to this gesture: without touch-action the browser starts its own
+    // pan and cancels the pointer stream halfway.
+    if (zone) zone.style.touchAction = 'none';
     let startY = 0, startT = 0, dy = 0, pid = null;
     const inZone = (e) => (zone && zone.contains(e.target) && !e.target.closest('button, a, input, select, textarea'))
       || (e.clientY - panel.getBoundingClientRect().top <= strip);
@@ -711,6 +717,9 @@ const ui = (() => {
      names the action as the row moves. Vertical scrolling wins over sideways drags. */
   function swipe(rootEl, selector, actions) {
     const reduce = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Vertical scrolling (and zoom) stays native; horizontal drags come here instead of being
+    // claimed by the browser, which would cancel the swipe with pointercancel.
+    rootEl.style.touchAction = 'pan-y pinch-zoom';
     let s = null;
     rootEl.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' || e.target.closest('button, a, input, select, textarea, label')) return;
@@ -825,10 +834,13 @@ const ui = (() => {
         el.classList.toggle('is-fade-start', more && el.scrollLeft > 2);
         el.classList.toggle('is-fade-end', more && el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
       };
+      // Content changes are measured once per frame, not in the middle of a page's DOM writes
+      // (each read there forces a layout). The ResizeObserver's first callback does the initial sync.
+      let queued = false;
+      const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; sync(); }); };
       el.addEventListener('scroll', sync, { passive: true });
-      new ResizeObserver(sync).observe(el);
-      new MutationObserver(sync).observe(el, { childList: true, subtree: true, characterData: true });
-      sync();
+      new ResizeObserver(later).observe(el);
+      new MutationObserver(later).observe(el, { childList: true, subtree: true, characterData: true });
     });
   }
 

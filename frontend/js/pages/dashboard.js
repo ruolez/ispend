@@ -100,7 +100,7 @@ async function load() {
       if (seq !== state.seq) return;
       const quiet = cached || painted;
       painted = true;
-      if (quiet) charts.quietly(() => renderDashboard(data, flat)); else renderDashboard(data, flat);
+      renderDashboard(data, flat, quiet);
     });
   } catch (err) {
     if (seq !== state.seq) return;
@@ -109,7 +109,8 @@ async function load() {
   }
 }
 
-function renderDashboard(data, flat) {
+function renderDashboard(data, flat, quiet) {
+  const token = state.renderSeq = (state.renderSeq || 0) + 1;
   state.data = data;
   state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
   if (state.drill && !(state.subCounts.get(state.drill) > 0)) { state.drill = null; setQs({ drill: null }); }
@@ -132,11 +133,17 @@ function renderDashboard(data, flat) {
   setPageTitle(data.range.label);
   $('#dash-sub').textContent = `${data.range.label} · ${fmtDate(data.range.start, { year: true })} – ${fmtDate(data.range.end, { year: true })}`;
   renderKpis(data);
-  renderMonthly(data);
-  renderDonut(data);
   renderIncome(data);
   renderRecent(data);
   renderAttention(data);
+  // Drawn from a kept copy (or over one), charts appear without their grow-in. On a phone they sit
+  // below the fold, so they wait for the first frame instead of holding it back.
+  const drawCharts = () => {
+    if (token !== state.renderSeq) return;
+    const draw = () => { renderMonthly(data); renderDonut(data); };
+    if (quiet) charts.quietly(draw); else draw();
+  };
+  if (ui.isPhone()) requestAnimationFrame(() => setTimeout(drawCharts, 0)); else drawCharts();
 }
 
 /* ---------- budgets ---------- */
