@@ -6,11 +6,14 @@ Run on its own for a table:  <venv>/bin/python qa/e2e/perf_probe.py [--cpu 4] [-
 test_perf.py drives the same measure() and asserts on the result.
 
 Service workers are allowed here (as in test_pwa.py): the worker's cache is part of what is measured.
-Playwright passes --disable-back-forward-cache by default; it is dropped so Back can be measured.
+Playwright passes --disable-back-forward-cache by default; it is dropped (and the new headless mode used) so
+Back can be measured.
 """
 import argparse
 import json
 import os
+import pathlib
+import subprocess
 import time
 
 from playwright.sync_api import sync_playwright
@@ -22,7 +25,8 @@ USER = (os.environ.get("ISPEND_PERF_USER", "admin"), os.environ.get("ISPEND_PERF
 TABS = ["/index.html", "/transactions.html", "/review.html", "/budgets.html"]
 # Two rounds of the bottom tabs (the second is the "warm" switch a returning thumb makes), then More pages.
 SEQUENCE = TABS + TABS + ["/reports.html", "/insights.html", "/categories.html", "/rules.html", "/settings.html"]
-LAUNCH_ARGS = {"ignore_default_args": ["--disable-back-forward-cache"]}
+# channel="chromium" is the new headless mode: the old headless shell never uses the back/forward cache.
+LAUNCH_ARGS = {"channel": "chromium", "headless": True, "ignore_default_args": ["--disable-back-forward-cache"]}
 
 # Runs at document creation on every navigation (not on a bfcache restore — the old window comes back).
 PROBE_JS = """
@@ -91,6 +95,23 @@ COLLECT_JS = """
   return { dcl: n.domContentLoadedEventEnd || 0, fcp: P.fcp, chrome: P.chrome, me: P.me, content, ready: settled, api };
 }
 """
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def stamp_worker(mode="on", check=False):
+    """Re-run nginx/40-ispend-sw.sh in the running nginx container. mode "on"/"off" forces
+    ISPEND_SW_CACHE; None uses the container's own setting (restores the dev stamp). check=True only
+    reports whether the container is reachable."""
+    def compose(*args):
+        return subprocess.run(["docker", "compose", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    if check:
+        return compose("exec", "-T", "nginx", "true").returncode == 0
+    env = ["-e", f"ISPEND_SW_CACHE={mode}"] if mode else []
+    r = compose("exec", "-T", *env, "nginx", "/docker-entrypoint.d/40-ispend-sw.sh")
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip()
 
 
 def chain_depth(api):
@@ -176,8 +197,8 @@ def measure(browser, device, cpu=4, rtt=80, sequence=SEQUENCE):
     # Back from the last page: restored from the back/forward cache, or a full reload?
     page.goto(f"{BASE_URL}/budgets.html")
     _wait_ready(page)
-    page.go_back()
-    _wait_ready(page)
+    page.go_back(wait_until="commit")  # a bfcache restore fires no load event
+    page.wait_for_timeout(500)
     back = page.evaluate("""() => {
       const n = performance.getEntriesByType('navigation')[0] || {};
       return { restored: !!(window.__perf && window.__perf.restored),
@@ -202,8 +223,12 @@ if __name__ == "__main__":
     ap.add_argument("--rtt", type=int, default=80)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
-    with sync_playwright() as p:
-        b = p.chromium.launch(headless=True, **LAUNCH_ARGS)
-        res = measure(b, phone(p), cpu=a.cpu, rtt=a.rtt)
-        b.close()
+    stamp_worker("on")  # the dev overlay stamps "dev"; measure the production worker
+    try:
+        with sync_playwright() as p:
+            b = p.chromium.launch(**LAUNCH_ARGS)
+            res = measure(b, phone(p), cpu=a.cpu, rtt=a.rtt)
+            b.close()
+    finally:
+        stamp_worker(None)
     print(json.dumps(res, indent=1) if a.json else table(res))

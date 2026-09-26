@@ -6,6 +6,10 @@ would open a second sync_playwright() inside the first one's loop.)
 The static tests need no stack; the served and browser tests run against ISPEND_BASE_URL
 (default http://localhost:5559). This is the only suite that lets the service worker register —
 every other Playwright context passes service_workers="block" (see helpers.SW_BLOCKED_WARNING).
+
+The worker is stamped by nginx/40-ispend-sw.sh at container start ("dev" under the dev overlay, a
+content hash in production). The `stamp` fixture re-runs the stamper inside the nginx container to
+test both modes, and puts the container's own mode back afterwards.
 """
 # ruff: noqa: F811  (pytest fixtures imported from smoke_fixtures are re-bound as test parameters)
 import json
@@ -18,9 +22,11 @@ import requests
 from playwright.sync_api import Error as PwError
 
 from helpers import Recorder
+from perf_probe import stamp_worker
 from smoke_fixtures import BASE_URL, INIT_JS, api_login, browser, pw  # noqa: F401  (pytest fixtures)
 
-FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+FRONTEND = ROOT / "frontend"
 MANIFEST = FRONTEND / "manifest.json"
 SHELL_PAGES = {"index", "transactions", "review", "import", "statements", "categories", "rules",
                "reports", "budgets", "insights", "settings", "billing", "admin"}
@@ -93,9 +99,17 @@ def test_service_worker_never_touches_the_api():
     s = (FRONTEND / "sw.js").read_text()
     assert "url.pathname.startsWith('/api/')" in s
     assert s.index("startsWith('/api/')") < s.index("req.mode !== 'navigate'"), "the /api/ guard must run before the navigation branch"
-    assert re.search(r"caches\.open\(CACHE\)\.then\(\(\w+\) => \w+\.add\(", s), "install precaches through caches.open().add()"
+    assert re.search(r"caches\.open\(CACHE\)\.then\(\(\w+\) => \w+\.addAll\(", s), "install precaches through caches.open().addAll()"
     assert "const OFFLINE_URL = '/offline.html'" in s
-    assert "caches.put" not in s and "cache.put" not in s, "nothing but the offline page may ever be stored"
+    assert "caches.put" not in s and "cache.put" not in s, "only the stamped precache list is ever stored — never a runtime response"
+
+
+def test_unstamped_worker_is_valid_and_caches_nothing():
+    """The raw file (served if the stamp is missing) must parse, and its placeholders must switch caching off."""
+    s = (FRONTEND / "sw.js").read_text()
+    assert "const BUILD = '__ISPEND_BUILD__';" in s
+    assert "const PRECACHE = [/*__ISPEND_PRECACHE__*/];" in s
+    assert "const CACHING = !BUILD.startsWith('__') && BUILD !== 'dev' && PRECACHE.length > 0;" in s
 
 
 # ---------- served: what nginx hands out ----------
@@ -114,9 +128,61 @@ def test_manifest_and_worker_are_served(anon):
     r = anon.get(f"{BASE_URL}/sw.js")
     assert r.status_code == 200
     assert r.headers["Content-Type"].split(";")[0] in ("application/javascript", "text/javascript")
-    assert "no-store" in r.headers["Cache-Control"], "a cached worker script would outlive its deploy"
+    assert r.headers["Cache-Control"] == "no-cache", "the browser must byte-check the worker on every visit, or a deploy goes unnoticed"
     r = anon.get(f"{BASE_URL}/offline.html")
     assert (r.status_code, r.headers["Content-Type"].split(";")[0]) == (200, "text/html")
+
+
+def test_shell_revalidates_and_the_api_is_never_stored(anon):
+    got = {path: anon.get(f"{BASE_URL}{path}").headers.get("Cache-Control")
+           for path in ("/index.html", "/css/app.css", "/js/nav.js", "/api/health")}
+    assert got == {"/index.html": "no-cache", "/css/app.css": "no-cache", "/js/nav.js": "no-cache",
+                   "/api/health": "no-store, no-cache, must-revalidate"}
+
+
+# ---------- the stamper (nginx/40-ispend-sw.sh) ----------
+
+def _worker(anon):
+    s = anon.get(f"{BASE_URL}/sw.js").text
+    build = re.search(r"const BUILD = '([^']*)';", s).group(1)
+    precache = json.loads(re.search(r"const PRECACHE = (\[.*?\]);", s).group(1))
+    return build, precache
+
+
+@pytest.fixture
+def stamp(anon):
+    """stamp('on'|'off') re-stamps the served worker; the container's own mode is restored afterwards."""
+    if not stamp_worker(check=True):
+        pytest.skip("needs the nginx container (docker compose exec)")
+
+    def _stamp(mode):
+        stamp_worker(mode)
+        return _worker(anon)
+
+    yield _stamp
+    stamp_worker(None)
+
+
+APP_HTML = sorted(p for p in FRONTEND.glob("*.html") if p.stem not in {"landing", "privacy", "terms"})
+
+
+def test_stamp_precaches_every_file_the_app_pages_reference(stamp, anon):
+    build, precache = stamp("on")
+    assert re.fullmatch(r"[0-9a-f]{12}", build)
+    referenced = set()
+    for p in APP_HTML:
+        referenced.add(f"/{p.name}")
+        referenced.update(re.findall(r'(?:src|href)="(/[^"?#]+\.(?:js|css|svg|png|json))"', p.read_text()))
+    referenced.update({"/fonts/InterVariable-latin-v2.woff2", "/vendor/chart.umd.js"})
+    assert sorted(referenced - set(precache)) == []
+    assert {u: anon.get(f"{BASE_URL}{u}").status_code for u in precache if anon.get(f"{BASE_URL}{u}").status_code != 200} == {}
+    assert [u for u in precache if u.startswith("/api/") or u in ("/sw.js", "/landing.html")] == []
+
+
+def test_stamp_changes_with_the_files_and_off_means_dev(stamp):
+    build, precache = stamp("on")
+    assert stamp("on") == (build, precache), "same files, same build"
+    assert stamp("off") == ("dev", [])
 
 
 def test_icons_are_served_as_png(anon):
@@ -159,7 +225,9 @@ def test_worker_registers_and_controls_the_app(sw_context):
     assert (rec.console, rec.pageerrors, rec.failed, rec.http_errors, sw_console) == ([], [], [], [], [])
 
 
-def test_offline_navigation_lands_on_the_offline_page(sw_context):
+def test_offline_navigation_lands_on_the_offline_page(sw_context, stamp):
+    """Dev stamp: nothing is cached but the offline page, so an offline navigation lands there."""
+    stamp("off")
     ctx, page, _, _ = sw_context
     page.goto("/index.html")
     page.evaluate(READY_JS)
@@ -173,3 +241,31 @@ def test_offline_navigation_lands_on_the_offline_page(sw_context):
         assert "ERR_INTERNET_DISCONNECTED" in str(exc.value), "the worker must never answer for /api/"
     finally:
         ctx.set_offline(False)
+
+
+def test_stamped_worker_serves_the_shell_from_its_cache(sw_context, stamp):
+    """Production stamp: after the first visit every shell file comes from the worker, and an offline
+    navigation still opens the app page, which then explains it needs a connection."""
+    stamp("on")
+    ctx, page, rec, sw_console = sw_context
+    page.goto("/index.html")
+    page.evaluate(READY_JS)
+    page.wait_for_function("() => caches.keys().then((k) => k.some((n) => /^ispend-shell-[0-9a-f]{12}$/.test(n)))")
+    page.reload()
+    page.wait_for_function("() => !!window.currentUser")
+    shell = []
+    page.on("response", lambda r: shell.append((r.url.replace(BASE_URL, ""), r.from_service_worker))
+            if r.url.startswith(BASE_URL) and "/api/" not in r.url else None)
+    page.goto("/transactions.html")
+    page.wait_for_function("() => !!window.currentUser")
+    assert shell and [u for u, from_sw in shell if not from_sw] == []
+    ctx.set_offline(True)
+    try:
+        page.goto("/review.html")
+        page.wait_for_selector("#main .error-box")
+        assert (page.locator("#tb-title").inner_text(), page.locator("#main .error-box").inner_text().strip()) == (
+            "Review", "You’re offline. iSpend needs a connection to show your accounts.\nRetry")
+    finally:
+        ctx.set_offline(False)
+    offline_fetch = "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"  # the page's own /api/auth/me
+    assert (rec.pageerrors, [m for m in sw_console if m != offline_fetch]) == ([], [])

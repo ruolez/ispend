@@ -15,3 +15,8 @@ services:
       resources:
         limits:
           memory: 1536M
+  nginx:
+    environment:
+      # ./frontend is edited live here: stamp sw.js as "dev" so the worker never caches the shell.
+      # test_pwa.py / test_perf.py re-stamp on demand (40-ispend-sw.sh with ISPEND_SW_CACHE=on).
+      ISPEND_SW_CACHE: "off"

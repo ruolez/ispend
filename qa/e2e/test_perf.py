@@ -14,10 +14,16 @@ WARM_TABS_MS = 200  # a bottom tab visited before shows its content within this,
 
 @pytest.fixture(scope="module")
 def walk():
-    with sync_playwright() as p:
-        b = p.chromium.launch(headless=True, **perf_probe.LAUNCH_ARGS)
-        res = perf_probe.measure(b, perf_probe.phone(p))
-        b.close()
+    if not perf_probe.stamp_worker(check=True):
+        pytest.skip("needs the nginx container to stamp the production service worker")
+    perf_probe.stamp_worker("on")  # the dev overlay stamps "dev"; measure the production worker
+    try:
+        with sync_playwright() as p:
+            b = p.chromium.launch(**perf_probe.LAUNCH_ARGS)
+            res = perf_probe.measure(b, perf_probe.phone(p))
+            b.close()
+    finally:
+        perf_probe.stamp_worker(None)
     print("\n" + perf_probe.table(res))
     return res
 
@@ -32,12 +38,10 @@ def test_chain_depth_is_measured_from_request_timing():
     assert (perf_probe.chain_depth([]), perf_probe.chain_depth([a, b]), perf_probe.chain_depth([c, a, b])) == (0, 1, 2)
 
 
-@pytest.mark.xfail(strict=True, reason="phase 1: the service worker serves the shell")
 def test_warm_switches_fetch_no_shell_file_from_the_network(walk):
     assert {n["path"]: n["network_shell"] for n in walk["navs"] if n["network_shell"]} == {}
 
 
-@pytest.mark.xfail(strict=True, reason="phase 1: pages are no longer no-store, so Back is a bfcache restore")
 def test_back_restores_from_the_back_forward_cache(walk):
     assert walk["back"] == {"restored": True, "reasons": walk["back"]["reasons"]}
 

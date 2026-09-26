@@ -215,6 +215,13 @@ async function initNav(activePage) {
   watchConnectivity();
   refreshReviewPill();
   window.addEventListener('ispend:transactions-changed', refreshReviewPill);
+  // Back/forward restores the page as it was left: refresh the shared bits, and tell the page
+  // (ispend:resume) so it can refetch data that may have changed elsewhere meanwhile.
+  window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    refreshReviewPill();
+    window.dispatchEvent(new CustomEvent('ispend:resume'));
+  });
   paintPinnedViews(me);
   window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
   return me;

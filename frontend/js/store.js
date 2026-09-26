@@ -13,9 +13,13 @@ const store = (() => {
     try { sessionStorage.setItem(SS_PREFIX + key, JSON.stringify(entry)); } catch { /* quota */ }
     if (bc) { try { bc.postMessage({ key, entry }); } catch { /* ignore */ } }
   }
-  /* Other tabs learn about fresh reference data (a renamed category, a new account) at once. */
-  const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ispend.store') : null;
-  if (bc) {
+  /* Other tabs learn about fresh reference data (a renamed category, a new account) at once.
+     The channel is closed while the page sits in the back/forward cache: a message arriving then
+     (the next page's own revalidation) would evict it, and Back would become a full reload. */
+  let bc = null;
+  function openChannel() {
+    if (typeof BroadcastChannel === 'undefined' || bc) return;
+    bc = new BroadcastChannel('ispend.store');
     bc.onmessage = (e) => {
       const { key, entry, invalidate: inv } = e.data || {};
       if (!key) return;
@@ -25,6 +29,14 @@ const store = (() => {
       if (changed) emit(`${key}-changed`, entry.data);
     };
   }
+  openChannel();
+  window.addEventListener('pagehide', (e) => { if (e.persisted && bc) { bc.close(); bc = null; } });
+  window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    // Whatever other pages wrote meanwhile is in sessionStorage; drop the in-memory copies.
+    Object.keys(mem).forEach((k) => { delete mem[k]; });
+    openChannel();
+  });
 
   /* get(key, url, {ttl}) -> Promise<data>. Fresh cache returns immediately; stale
      cache returns immediately AND revalidates in the background (emitting `${key}-changed`). */
