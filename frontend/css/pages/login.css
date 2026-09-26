@@ -73,13 +73,14 @@
 }
 
 @media (max-width: 640px) {
-  .login-wrap { align-items: start; padding: calc(var(--sp-6) + env(safe-area-inset-top, 0px)) var(--sp-4) var(--sp-6); }
-  .login-card { max-width: none; border: 0; box-shadow: none; background: transparent; padding: var(--sp-6) var(--sp-1) var(--sp-4); animation: none; }
+  /* full-bleed: the gradient column fills the screen edge to edge, the form sits 20px in */
+  .auth-form { align-items: flex-start; padding: calc(var(--sp-8) + env(safe-area-inset-top, 0px)) calc(var(--sp-5) + env(safe-area-inset-right, 0px)) calc(var(--sp-6) + env(safe-area-inset-bottom, 0px)) calc(var(--sp-5) + env(safe-area-inset-left, 0px)); }
+  .login-card { max-width: none; border: 0; box-shadow: none; background: transparent; padding: 0; animation: none; }
   .login-card h1 { font-size: var(--fs-2xl); }
   .login-sub { font-size: var(--fs-md); }
   .login-card .btn-primary.btn-block { height: 48px; font-size: var(--fs-md); }
 }
 @media (pointer: coarse) {
-  .login-links a, .login-foot a, .login-legal a { display: inline-flex; align-items: center; min-height: var(--tap); }
+  .login-links a, .login-foot a { display: inline-flex; align-items: center; min-height: var(--tap); }
   .login-foot .btn { min-height: var(--tap); }
 }

@@ -814,7 +814,25 @@ const ui = (() => {
     modal({ title: 'Keyboard shortcuts', size: 'lg', html: groups.map((g) => `<div class="section-label mb-2 mt-2">${esc(g.title)}</div><div class="shortcuts-grid mb-3">${g.items.map(([k, d]) => `<div><span>${esc(d)}</span><span class="keys">${k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join('')}</span></div>`).join('')}</div>`).join('') });
   }
 
-  return { modal, sheet, isPhone, isCoarse, longPress, swipe, dragToDismiss, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  /* Sideways-scrolling strips (tabs, chip rows, filter rows): fade whichever edge still hides content,
+     so a strip cut by the screen edge reads as scrollable and a fully scrolled one shows no fade. */
+  function edgeFade(selector, rootEl = document) {
+    rootEl.querySelectorAll(selector).forEach((el) => {
+      if (el.dataset.edgeFade) return;
+      el.dataset.edgeFade = '1';
+      const sync = () => {
+        const more = el.scrollWidth > el.clientWidth + 1;
+        el.classList.toggle('is-fade-start', more && el.scrollLeft > 2);
+        el.classList.toggle('is-fade-end', more && el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+      };
+      el.addEventListener('scroll', sync, { passive: true });
+      new ResizeObserver(sync).observe(el);
+      new MutationObserver(sync).observe(el, { childList: true, subtree: true, characterData: true });
+      sync();
+    });
+  }
+
+  return { modal, sheet, isPhone, edgeFade, isCoarse, longPress, swipe, dragToDismiss, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

@@ -114,7 +114,7 @@
   #f-sheet { height: var(--control-h); border-radius: var(--r-pill); gap: 6px; }
   #f-sheet.active { border-color: var(--accent); color: var(--accent); }
   #f-sheet .pill { background: var(--accent-solid); color: var(--accent-solid-fg); }
-  .tx-chips { display: flex; grid-column: 1 / -1; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--sp-4)); padding: 2px var(--sp-4); scroll-padding: 0 var(--sp-4); mask-image: linear-gradient(90deg, transparent, black var(--sp-3), black calc(100% - var(--sp-6)), transparent); }
+  .tx-chips { display: flex; grid-column: 1 / -1; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--sp-4)); padding: 2px var(--sp-4); scroll-padding: 0 var(--sp-4); }
   .tx-chips::-webkit-scrollbar { display: none; }
   .tx-chips > * { flex: 0 0 auto; }
   .tx-chips .btn { height: 40px; border-radius: var(--r-pill); padding: 0 var(--sp-3); font-size: var(--fs-sm); }

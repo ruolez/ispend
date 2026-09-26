@@ -24,7 +24,7 @@
 @media (max-width: 640px) {
   .filter-row .hint { display: none; }
   .spark-cell, .col-avg, .col-count { display: none; }
-  .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent); }
+  .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .filter-row::-webkit-scrollbar { display: none; }
   .filter-row > * { flex: 0 0 auto; }
 }

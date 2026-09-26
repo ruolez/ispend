@@ -165,6 +165,7 @@ async function initNav(activePage) {
   mountPrimaryAction();
   mountPageOverflow();
   watchLargeTitle();
+  ui.edgeFade('#main .tabs, #main .settings-nav, #main .filter-row, #main .tx-chips');
   // Settings/Admin section strips scroll sideways on phones: keep the open section in view.
   const revealSection = () => setTimeout(() => {
     const cur = document.querySelector('.settings-nav [aria-current="page"], .settings-nav .active');
