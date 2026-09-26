@@ -2667,7 +2667,10 @@ def test_f12_mobile(browser, qapi):
     p.wait_for_timeout(300)
     shot(p, "F12-dashboard-bottom")
     p.evaluate("window.scrollTo(0, 0)")
-    p.locator(".bottomnav .bn-item", has_text="Import").click()
+    F.check(p.locator(".bottomnav .bn-item").all_inner_texts() == ["Home", "Transactions", "Review", "Budgets", "More"] or
+            [t.split("\n")[-1].strip() for t in p.locator(".bottomnav .bn-item").all_inner_texts()] == ["Home", "Transactions", "Review", "Budgets", "More"],
+            f"bottom tabs: {p.locator('.bottomnav .bn-item').all_inner_texts()}")
+    p.locator("#tb-primary").click()  # the dashboard's "Import statement", mirrored as the topbar +
     p.wait_for_selector("#dropzone", timeout=10000)
     p.select_option("#upload-account", str(S["acct_card"]))
     upload_and_wait(p, F, FIX / "capital_one_card.csv", "mobile")
@@ -2729,13 +2732,15 @@ def test_f12_mobile(browser, qapi):
     F.check(fb and bn and fb["y"] + fb["height"] <= bn["y"] + 1, "floatbar does not overlap the bottom nav")
     F.check(fb and fb["x"] >= 0 and fb["x"] + fb["width"] <= 390 + 1, "floatbar fits the viewport")
     shot(p, "F12-floatbar")
-    # More -> off-canvas sidebar
+    # More -> a bottom sheet with the other pages, theme and account
     p.locator("#bn-more").click()
+    p.wait_for_selector(".more-sheet .more-tile", timeout=4000)
     p.wait_for_timeout(400)
-    F.check(p.evaluate("document.body.classList.contains('sidebar-open')"), "More opens the off-canvas menu")
+    tiles = p.locator(".more-sheet .more-tile").all_inner_texts()
+    F.check(not p.evaluate("document.body.classList.contains('sidebar-open')") and "Import" in tiles and "Reports" in tiles, f"More opens a sheet of pages: {tiles}")
     shot(p, "F12-more-menu")
-    p.locator("#sidebar-backdrop").click(position={"x": 380, "y": 500})
-    p.wait_for_timeout(300)
-    F.check(not p.evaluate("document.body.classList.contains('sidebar-open')"), "tapping the backdrop closes the menu")
+    p.locator(".more-sheet .modal-close").click()
+    p.wait_for_selector(".more-sheet", state="detached", timeout=3000)
+    F.check(True, "the sheet's Close button closes it")
     c.close()
     F.finish()

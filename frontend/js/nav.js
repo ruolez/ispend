@@ -26,7 +26,9 @@ const NAV_GROUPS = [
 const NAV_BILLING = { page: 'billing', href: '/billing.html', label: 'Billing', icon: 'credit-card' };
 const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Settings', icon: 'settings', key: 's' };
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_BILLING, NAV_SETTINGS];
-const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'import'];
+const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'budgets'];
+const BOTTOM_LABELS = { dashboard: 'Home' };
+const MORE_ORDER = ['reports', 'insights', 'import', 'statements', 'categories', 'rules', 'settings', 'billing', 'admin'];
 const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
 const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
@@ -119,8 +121,8 @@ async function initNav(activePage) {
 
   // Mobile bottom nav
   const bn = document.createElement('nav'); bn.className = 'bottomnav'; bn.setAttribute('aria-label', 'Primary');
-  bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`).join('')
-    + `<button type="button" class="bn-item" id="bn-more">${icon('menu')}<span>More</span></button>`;
+  bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.label)}</span></a>`).join('')
+    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${BOTTOM_NAV.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}</span><span class="bn-label">More</span></button>`;
   document.body.appendChild(bn);
   ['drawer-root', 'modal-root', 'toast-root'].forEach((id) => { if (!document.getElementById(id)) { const d = document.createElement('div'); d.id = id; d.setAttribute('role', 'region'); d.setAttribute('aria-label', ROOT_LABELS[id]); document.body.appendChild(d); } });
 
@@ -146,7 +148,7 @@ async function initNav(activePage) {
     if (opener && opener.offsetParent) opener.focus();
   }
   $('#tb-menu').addEventListener('click', openMobile);
-  $('#bn-more').addEventListener('click', openMobile);
+  $('#bn-more').addEventListener('click', () => openMoreSheet(activePage));
   $('#sidebar-backdrop').addEventListener('click', closeMobile);
   $('#sidebar').addEventListener('click', (e) => { if (e.target.closest('a')) closeMobile(); });
   $('#sb-collapse').addEventListener('click', () => { if (document.documentElement.getAttribute('data-sidebar') === 'hidden') closeMobile(); else setSidebarMode('rail'); });
@@ -160,6 +162,17 @@ async function initNav(activePage) {
   window.addEventListener('ispend:theme', paintTheme);
   $('#tb-search').addEventListener('click', openPalette);
   $('#tb-user').addEventListener('click', (e) => openUserMenu(e.currentTarget));
+  mountPrimaryAction();
+  mountPageOverflow();
+  watchLargeTitle();
+  // Settings/Admin section strips scroll sideways on phones: keep the open section in view.
+  const revealSection = () => setTimeout(() => {
+    const cur = document.querySelector('.settings-nav [aria-current="page"], .settings-nav .active');
+    const strip = cur && cur.parentElement;
+    if (strip && strip.scrollWidth > strip.clientWidth + 1) strip.scrollLeft = Math.max(0, cur.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft - (strip.clientWidth - cur.offsetWidth) / 2);
+  }, 60);
+  window.addEventListener('hashchange', revealSection);
+  window.addEventListener('load', revealSection);
 
   ui.shortcuts.register('[', () => setSidebarMode(sidebarMode() === 'rail' ? 'full' : 'rail'), { description: 'Toggle sidebar' });
   ui.shortcuts.register(']', () => setSidebarMode('full'));
@@ -295,6 +308,87 @@ async function refreshReviewPill() {
   } catch { /* endpoint may not exist yet */ }
 }
 
+/* ---------- Phone chrome ---------- */
+/* The page's main action ([data-primary-action] in its header) is mirrored as a "+" in the phone
+   topbar, which takes the header button's place there. The mirror just clicks the original, so
+   the page keeps one code path. */
+function mountPrimaryAction() {
+  const src = document.querySelector('#main [data-primary-action]');
+  if (!src) return;
+  const label = src.getAttribute('aria-label') || src.textContent.trim();
+  const b = document.createElement('button');
+  b.type = 'button'; b.id = 'tb-primary'; b.className = 'btn btn-icon btn-primary tb-primary';
+  b.setAttribute('aria-label', label);
+  if (src.hasAttribute('data-needs-write')) b.setAttribute('data-needs-write', '');
+  b.innerHTML = icon('plus');
+  b.addEventListener('click', () => src.click());
+  $('.tb-actions').prepend(b);
+}
+
+/* Secondary header actions ([data-overflow]) fold into a "⋯" menu on phones. */
+function mountPageOverflow() {
+  const actions = document.querySelector('#main .page-head .page-actions');
+  if (!actions || !actions.querySelector('[data-overflow]')) return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'btn btn-icon btn-secondary page-more'; b.setAttribute('aria-label', 'More actions'); b.setAttribute('aria-haspopup', 'menu');
+  b.innerHTML = icon('more-horizontal');
+  actions.closest('.page-head').appendChild(b);
+  b.addEventListener('click', () => {
+    const items = $$('[data-overflow]', actions).filter((el) => !el.hidden).map((el) => ({
+      label: el.getAttribute('aria-label') || el.textContent.trim(),
+      disabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+      onClick: () => el.click(),
+    }));
+    ui.menu(b, items.length ? items : [{ label: 'Nothing to do here yet', disabled: true }]);
+  });
+}
+
+/* Large titles: on phones the page's H1 is the title, and the topbar shows its own copy only once
+   the H1 has scrolled under it. */
+function watchLargeTitle() {
+  const top = $('#topbar');
+  const h1 = document.querySelector('#main .page-head h1');
+  if (!h1 || !('IntersectionObserver' in window)) { top.classList.add('show-title'); return; }
+  const io = new IntersectionObserver(([e]) => top.classList.toggle('show-title', !e.isIntersecting),
+    { rootMargin: `-${top.offsetHeight || 56}px 0px 0px 0px` });
+  io.observe(h1);
+}
+
+/* More (phone): every destination the bottom bar doesn't hold, pinned views, theme and account. */
+function openMoreSheet(activePage) {
+  const me = window.currentUser || {};
+  const allowed = (i) => (!i.adminOnly || me.role === 'admin') && (i.page !== 'billing' || (me.billing && me.billing.billing_enabled));
+  const items = MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).map((i) => (i.page === 'admin' ? { ...i, adminOnly: true } : i)).filter(allowed);
+  const views = (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
+  const mode = Theme.get();
+  const html = `
+    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${i.href}${esc(savedQuery(i.href))}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span></a>`).join('')}</nav>
+    ${views.length ? `<div class="section-label mt-4">Saved views</div><div class="more-list">${views.map((v) => `<a class="more-row" href="/transactions.html${esc(v.query)}&view=${encodeURIComponent(v.id)}">${icon('star', 'ico-sm')}<span class="grow truncate">${esc(v.name)}</span>${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}</div>` : ''}
+    <div class="section-label mt-4">Appearance</div>
+    <div class="seg more-theme" role="radiogroup" aria-label="Theme">${[['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="seg-btn${mode === k ? ' active' : ''}" role="radio" aria-checked="${mode === k}" data-theme-set="${k}">${icon(ic, 'ico-sm')}${l}</button>`).join('')}</div>
+    <div class="more-list mt-4">
+      <div class="more-row more-me"><span class="avatar">${esc(initials(me.username || ''))}</span><span class="grow truncate"><b>${esc(me.username || '')}</b><span class="text-3"> · ${esc(me.role || '')}</span></span></div>
+      ${window.PWA && PWA.canInstall() ? `<button type="button" class="more-row" data-more="install">${icon('download', 'ico-sm')}<span class="grow">Install app</span></button>` : ''}
+      <button type="button" class="more-row" data-more="password">${icon('lock', 'ico-sm')}<span class="grow">Change password</span></button>
+      <button type="button" class="more-row danger" data-more="signout">${icon('log-out', 'ico-sm')}<span class="grow">Sign out</span></button>
+    </div>`;
+  const sh = ui.sheet({ title: 'More', html, className: 'more-sheet' });
+  ui.segmented(sh.body.querySelector('.more-theme'), { onChange: (btn) => setThemePref(btn.dataset.themeSet) });
+  sh.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-more]');
+    if (!b) return;
+    if (b.dataset.more === 'install') { sh.close(); PWA.install(); }
+    if (b.dataset.more === 'password') { sh.close(); openChangePassword(); }
+    if (b.dataset.more === 'signout') await signOut();
+  });
+}
+
+async function signOut() {
+  try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* the cookie is cleared server-side on the next request anyway */ }
+  clearUserState();
+  location.href = '/login.html';
+}
+
 /* ---------- User menu ---------- */
 function openUserMenu(anchor) {
   const me = window.currentUser || {};
@@ -305,18 +399,14 @@ function openUserMenu(anchor) {
     { label: 'Theme: Light', icon: 'sun', checked: mode === 'light', onClick: () => setThemePref('light') },
     { label: 'Theme: Dark', icon: 'moon', checked: mode === 'dark', onClick: () => setThemePref('dark') },
     { divider: true },
-    { label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) },
+    ...(ui.isCoarse() ? [] : [{ label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) }]),
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
     ...(window.PWA && PWA.canInstall() ? [{ label: 'Install app', icon: 'download', onClick: () => PWA.install() }] : []),
     ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
     ...(me.role === 'admin' ? [{ label: 'Admin', icon: 'shield', href: '/admin.html' }] : []),
     { label: 'Settings', icon: 'settings', href: '/settings.html' },
     { divider: true },
-    { label: 'Sign out', icon: 'log-out', onClick: async () => {
-      try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* the cookie is cleared server-side on the next request anyway */ }
-      clearUserState();
-      location.href = '/login.html';
-    } },
+    { label: 'Sign out', icon: 'log-out', onClick: signOut },
   ]);
 }
 /* Quick toggle that persists: when the target equals what the device would show anyway, store "system"

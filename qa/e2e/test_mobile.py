@@ -215,7 +215,6 @@ def test_transactions_first_row_in_first_screen(device):
     assert top is not None and top + 56 <= nav, f"first row starts at {top}px, bottom nav at {nav}px"
 
 
-@pytest.mark.xfail(strict=True, reason="bottom tabs and More sheet land in Phase 3")
 def test_bottom_nav_and_more_sheet(device):
     page = device("375")
     page.goto(PAGES["index"])
@@ -227,7 +226,6 @@ def test_bottom_nav_and_more_sheet(device):
     assert not page.evaluate("() => document.body.classList.contains('sidebar-open')")
 
 
-@pytest.mark.xfail(strict=True, reason="large-title topbar lands in Phase 3")
 def test_single_page_title(device):
     page = device("375")
     page.goto(PAGES["transactions"])

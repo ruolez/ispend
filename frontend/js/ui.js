@@ -436,6 +436,8 @@ const ui = (() => {
     if (typeof initial === 'number') current = initial;
     if (current < 0 && !allowNone) current = 0;
     if (current < -1) current = -1;
+    // a scrolling strip (phone tabs) keeps the selected item in view without scrolling the page
+    const reveal = () => { const el = items[current]; if (el && container.scrollWidth > container.clientWidth + 1) container.scrollLeft = Math.max(0, el.getBoundingClientRect().left - container.getBoundingClientRect().left + container.scrollLeft - (container.clientWidth - el.offsetWidth) / 2); };
     const paint = () => items.forEach((el, i) => {
       const on = i === current;
       el.setAttribute(attr, on ? 'true' : 'false');
@@ -446,8 +448,8 @@ const ui = (() => {
       const i = typeof target === 'number' ? target : items.indexOf(target);
       if (i >= items.length || i < -1) return; // select(-1) clears programmatically; allowNone lets a click do it
       const changed = i !== current;
-      current = i; paint();
-      if (focus && i >= 0) items[i].focus();
+      current = i; paint(); reveal();
+      if (focus && i >= 0) items[i].focus({ preventScroll: true });
       if (changed && !silent && onChange) onChange(i >= 0 ? items[i] : null, i);
     };
     const onKey = (e) => {
@@ -467,6 +469,7 @@ const ui = (() => {
     container.addEventListener('click', onClick);
     container.toggleAttribute('data-allow-none', allowNone);
     paint();
+    requestAnimationFrame(reveal);
     const handle = { select, current: () => current, items, dispose() { container.removeEventListener('keydown', onKey); container.removeEventListener('click', onClick); if (container._roving === handle) container._roving = null; } };
     container._roving = handle;
     return handle;

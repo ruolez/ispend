@@ -99,3 +99,4 @@
 .sug-side { display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
 .sug-amt { font-size: var(--fs-sm); color: var(--text-2); }
 .catchip--static { pointer-events: none; }
+@media (max-width: 768px) { #btn-density { display: none; } }
