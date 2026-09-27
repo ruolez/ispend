@@ -32,6 +32,7 @@ def create_app():
     import admin_api
     import admin_backup
     import admin_billing
+    import admin_email
     import admin_metrics
     import admin_system
     import admin_users
@@ -54,7 +55,7 @@ def create_app():
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
         transactions_api, review_api, rules_api, merchants_api, import_layouts_api, reports_api, ai_api, budgets_api, tags_api,
-        admin_api, admin_users, admin_backup, admin_billing, admin_metrics, admin_system, billing_api, public_api,
+        admin_api, admin_users, admin_backup, admin_billing, admin_email, admin_metrics, admin_system, billing_api, public_api,
     ):
         app.register_blueprint(module.bp)
 

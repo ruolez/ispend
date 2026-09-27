@@ -20,6 +20,7 @@ TABLE_ORDER = [
     "metric_daily",
     "admin_tags",
     "erasures",              # anonymous: erased_user_id is not a foreign key
+    "email_suppressions",    # hashed addresses, no foreign key
     # level 1 - depend on users only
     "subscriptions",
     "stripe_events",
@@ -33,7 +34,8 @@ TABLE_ORDER = [
     "audit_log",             # user_id, target_user_id nullable
     "login_events",          # user_id nullable (unknown-account attempts)
     "user_activity_days",
-    "email_log",             # user_id, sent_by nullable
+    "email_campaigns",       # created_by nullable
+    "email_log",             # user_id, sent_by, campaign_id nullable
     "signup_attribution",
     "admin_notes",
     "user_admin_tags",       # users + admin_tags
@@ -68,6 +70,7 @@ PK = {
     "user_activity_days": "user_id, day",
     "signup_attribution": "user_id",
     "metric_daily": "day, metric, dim",
+    "email_suppressions": "email_sha256",
     "user_admin_tags": "user_id, tag_id",
 }
 DEFAULT_PK = "id"
@@ -75,7 +78,7 @@ DEFAULT_PK = "id"
 # Tables with a SERIAL id whose sequence must be advanced after an id-preserving restore.
 NO_SEQUENCE = {"settings", "subscriptions", "stripe_events",
                "recurring_dismissals", "anomaly_dismissals", "transaction_tags",
-               "user_activity_days", "signup_attribution", "metric_daily", "user_admin_tags"}
+               "user_activity_days", "signup_attribution", "metric_daily", "user_admin_tags", "email_suppressions"}
 
 # The one trigger that rewrites values on insert. Disabled during a restore (table ownership is
 # enough; no superuser needed) so is_transfer/is_excluded come back exactly as they were saved

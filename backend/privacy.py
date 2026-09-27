@@ -85,6 +85,8 @@ NOT_EXPORTED = {
     "schema_migrations": "not personal data",
     "app_errors": "server diagnostics, pruned after 30 days",
     "metric_cache": "computed totals across everyone",
+    "email_campaigns": "the operator's messages; what each person was sent is in email_log",
+    "email_suppressions": "hashed addresses, not linked to an account",
 }
 
 SECRET_SETTING = ("key", "secret", "password", "token")

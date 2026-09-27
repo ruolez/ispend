@@ -261,3 +261,10 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .adm-trace { max-height: 280px; overflow: auto; padding: var(--sp-3); background: var(--surface-2); border-radius: var(--r-md);
   font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 var(--sp-3); }
 .stat-value .u { font-size: var(--fs-md); font-weight: 500; color: var(--text-3); margin-left: 2px; }
+
+/* ---------- Messages ---------- */
+.cmp-to { display: flex; align-items: center; background: var(--surface-2); color: var(--text-2); }
+.cmp-kind { margin-top: 4px; }
+.cmp-preview { padding: var(--sp-3); border: 1px dashed var(--border-strong); border-radius: var(--r-md); font-size: var(--fs-sm); }
+.cmp-sample pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 0; max-height: 220px; overflow: auto; color: var(--text-2); }
+.cmp-body { height: auto; min-height: 180px; resize: vertical; padding-top: 8px; padding-bottom: 8px; line-height: 1.5; }

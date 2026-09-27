@@ -58,6 +58,41 @@ class TestDataRights:
         assert any(e["erased_user_id"] == uid for e in admin_api.get("/api/admin/erasures").json())
 
 
+class TestMessages:
+    def test_preview_and_validation(self, admin_api):
+        r = admin_api.post("/api/admin/email/preview", json={"subject": "", "body": "x", "category": "service",
+                                                             "audience": {"query": "?status=active"}})
+        assert (r.status_code, r.json()["error"]) == (400, "A subject is 1 to 200 characters")
+        r = admin_api.post("/api/admin/email/preview", json={"subject": "Hi {name}", "body": "Hello {name} {oops}",
+                                                             "category": "service", "audience": {"query": "?status=active"}})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        if body["sample"]:
+            assert "{oops}" in body["sample"]["text"] and "{name}" not in body["sample"]["text"]
+
+    def test_a_message_to_one_person_is_recorded(self, admin_api):
+        r = admin_api.post("/api/admin/users", json={"username": "qa_msg", "email": "qa_msg@example.com",
+                                                      "password": "qa-msg-pass-1"})
+        assert r.status_code == 201, r.text
+        uid = r.json()["id"]
+        try:
+            r = admin_api.post(f"/api/admin/users/{uid}/email", json={"subject": "Hello", "body": "About your account",
+                                                                      "category": "service"})
+            assert r.status_code == 202, r.text
+            campaign = r.json()["id"]
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                row = next(c for c in admin_api.get("/api/admin/email/campaigns").json() if c["id"] == campaign)
+                if row["status"] != "sending":
+                    break
+                time.sleep(0.5)
+            assert (row["status"], row["recipients"]) == ("done", 1)
+            emails = admin_api.get(f"/api/admin/users/{uid}").json()["emails"]
+            assert any(e["template"] == "campaign" for e in emails)
+        finally:
+            admin_api.post(f"/api/admin/users/{uid}/erase", json={"confirm": "qa_msg", "reason": "e2e"})
+
+
 class TestMetricsApi:
     @pytest.mark.parametrize("rng,points", [("7d", 7), ("30d", 30), ("90d", 13), ("12m", 13)])
     def test_overview_shape(self, admin_api, rng, points):
@@ -220,7 +255,8 @@ class TestShell:
         assert page.errors == []
 
     @pytest.mark.parametrize("section,marker", [("revenue", "#ch-rv-bridge"), ("engagement", ".adm-funnel, #en-funnel .empty"),
-                                                ("imports", "#ch-im"), ("system", ".adm-health-chip:not(.is-loading)")])
+                                                ("imports", "#ch-im"), ("system", ".adm-health-chip:not(.is-loading)"),
+                                                ("messages", "#msg-list table, #msg-list .empty")])
     def test_growth_sections_render(self, page, section, marker):
         page.goto(f"{BASE}/admin.html?range=90d#{section}")
         panel = page.locator(f'[data-panel="{section}"]')

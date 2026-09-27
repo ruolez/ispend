@@ -12,7 +12,7 @@
 const ADMIN = { sections: {}, current: null, me: null, loadSeq: 0 };
 const ADMIN_GROUPS = [['insights', 'Insights'], ['operations', 'Operations'], ['settings', 'Settings']];
 const ADMIN_ORDER = ['overview', 'revenue', 'users', 'engagement', 'imports', 'system', 'activity',
-  'billing', 'signups', 'landing', 'retention', 'backup'];
+  'billing', 'signups', 'messages', 'landing', 'retention', 'backup'];
 const ADMIN_DEFAULT_GROUP = { billing: 'settings', signups: 'settings', backup: 'settings' };
 const ADMIN_BOTTOM = ['overview', 'revenue', 'users', 'activity'];
 const ADMIN_KEYS = { overview: 'o', revenue: 'v', users: 'u', engagement: 'e', activity: 'l', system: 'y' };

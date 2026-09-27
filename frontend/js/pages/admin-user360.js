@@ -209,6 +209,7 @@ function personMenu(anchor) {
       { label: 'Resend the confirmation email', icon: 'mail', onClick: () => personPost('resend-confirmation', 'Confirmation email sent') },
       { label: 'Mark email as confirmed', icon: 'check', onClick: () => personPost('mark-confirmed', 'Email marked as confirmed') },
     ] : []),
+    ...(u.email ? [{ label: 'Email this person…', icon: 'mail', onClick: () => openComposer({ audience: { ids: [u.id] }, label: personLabel(u) }) }] : []),
     { label: u.email ? 'Change email address…' : 'Add an email address…', icon: 'pencil', disabled: isMe, onClick: changeEmail },
     ...(u.email && !isMe ? [{ label: 'Send an invitation to set a password', icon: 'mail', onClick: () => personPost('invite', 'Invitation sent') }] : []),
     { divider: true },

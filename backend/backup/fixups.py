@@ -108,6 +108,7 @@ NO_FIXUP_NEEDED = {
     "024_metrics.sql",
     "025_admin_crm.sql",
     "026_privacy.sql",
+    "027_email_campaigns.sql",
 }
 
 

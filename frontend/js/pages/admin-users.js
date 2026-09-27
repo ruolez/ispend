@@ -305,6 +305,7 @@ function paintBulkBar() {
   const pageFull = AU.items.length && AU.items.every((u) => AU.selected.has(u.id));
   bar.innerHTML = `<span><b>${fmtNumber(n)}</b> selected</span>
     ${pageFull && !AU.allMatching && AU.total > AU.items.length ? `<button type="button" class="btn btn-ghost btn-sm" data-act="bulk-all">Select all ${fmtNumber(AU.total)}</button>` : ''}
+    <button type="button" class="btn btn-ghost btn-sm" data-act="bulk-email">${icon('mail', 'ico-sm')}Email</button>
     <button type="button" class="btn btn-ghost btn-sm" data-act="bulk-tag">${icon('tag', 'ico-sm')}Tag</button>
     <button type="button" class="btn btn-ghost btn-sm" data-act="bulk-trial">${icon('clock', 'ico-sm')}Extend trial</button>
     <button type="button" class="btn btn-ghost btn-sm" data-act="bulk-lock">${icon('lock', 'ico-sm')}Lock</button>
@@ -698,6 +699,13 @@ async function onUsersAction(e) {
     case 'bulk-unlock': return ui.busy(el, () => runBulk('unlock'));
     case 'bulk-trial': return bulkTrial();
     case 'bulk-tag': return bulkTag(el);
+    case 'bulk-email': {
+      const f = { ...uq() };
+      delete f.page;
+      return openComposer(AU.allMatching
+        ? { audience: { query: toQuery(f) }, label: `Everyone matching these filters (${people(AU.total)})` }
+        : { audience: { ids: Array.from(AU.selected) }, label: `${people(AU.selected.size)} you selected` });
+    }
     default: return undefined;
   }
 }

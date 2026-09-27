@@ -5,6 +5,7 @@ user data as markup, and every value interpolated into the HTML alternative is e
 """
 
 import html as html_mod
+import re
 
 APP = "iSpend"
 
@@ -127,3 +128,29 @@ def render(template, **ctx):
     html = (f"<html><body style=\"font-family:system-ui,sans-serif;line-height:1.5;color:#202124\">"
             f"{body}<p style=\"color:#5f6368;font-size:13px\">{APP}</p></body></html>")
     return spec["subject"], text, html
+
+
+# ---------- messages written in the admin ----------
+
+CUSTOM_PLACEHOLDERS = ("name", "email", "trial_end", "app_link")
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def fill(text, ctx):
+    """Substitute only the known placeholders; anything else in braces stays as typed (an admin's
+    message may well contain a literal brace, which str.format would choke on)."""
+    return _PLACEHOLDER.sub(lambda m: str(ctx.get(m.group(1), "")) if m.group(1) in CUSTOM_PLACEHOLDERS
+                            else m.group(0), text or "")
+
+
+def render_custom(subject, body, ctx, footer=None):
+    """(subject, text, html) for an admin-written message. Every value is escaped in the HTML part,
+    the admin's own text included."""
+    text = fill(body, ctx).strip() + "\n"
+    if footer:
+        text += "\n--\n" + footer.strip() + "\n"
+    paragraphs = "".join(
+        f"<p>{html_mod.escape(p).replace(chr(10), '<br>')}</p>" for p in text.strip().split("\n\n"))
+    html = (f"<html><body style=\"font-family:system-ui,sans-serif;line-height:1.5;color:#202124\">"
+            f"{paragraphs}<p style=\"color:#5f6368;font-size:13px\">{APP}</p></body></html>")
+    return fill(subject, ctx).strip()[:200], text, html

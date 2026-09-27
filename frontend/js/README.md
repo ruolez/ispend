@@ -236,11 +236,12 @@ five-minute `metric_cache`, `as_of` stamp).
   the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
   `/api/auth/me` resolves. `/admin.html` is a static file anyone can fetch, so the page also self-guards
   with an "Admins only" empty state — every endpoint is `@admin_required` regardless.
-- **API** (`/api/admin/*`, all admin-only): `GET|POST /users`, `GET|PUT|DELETE /users/:id`,
-  `PUT /users/:id/password`, `POST /users/:id/lock|unlock|restore`,
-  `DELETE /users/:id?permanent=true&confirm=<username>`, `GET /stats/overview?days=`,
-  `GET /audit` (keyset `cursor`, `format=csv`), `GET /audit/actions`, `GET|PUT /settings`.
-  The user endpoints moved here from `/api/users` because DELETE changed meaning.
+- **API** (`/api/admin/*`, all admin-only): people (`admin_users.py`: `/users`, `/users/facets`, `/users/bulk`,
+  `/users/:id` and its actions, `/notes`, `/tags`, `/erasures`), lifecycle (`admin_api.py`: create, role,
+  password, lock/unlock/restore, trash/purge, `/audit`, `/search`, `/settings`, `/step-up`), metrics
+  (`admin_metrics.py`: `/metrics/overview|revenue|trial-cohorts|funnel|engagement`), operations
+  (`admin_system.py`: `/system/*`, `/imports`, `/ai`), messages (`admin_email.py`: `/email/*`), billing
+  and backup as before. The user endpoints moved here from `/api/users` because DELETE changed meaning.
 - **Step-up.** Sensitive actions answer `403 {code: "step_up_required"}` until the admin re-enters their
   password (`POST /api/admin/step-up`, 10-minute window in the signed cookie, `GET /step-up/status`;
   five wrong answers in 15 minutes end the session). `api()` handles it for every caller: one shared
@@ -277,6 +278,13 @@ five-minute `metric_cache`, `as_of` stamp).
   sign-ins, emails, notes (`admin_notes`) and tags (`admin_tags`); its payload's key set is pinned by a
   test. Password help is an emailed reset link or invitation (`auth_tokens.kind = 'invite'`, accepted by
   reset.html); typing a password for someone is the fallback and signs them out everywhere.
+- **Messages** (`admin-email.js`, backend `admin_email.py`). `openComposer({audience, label})` is opened
+  from the Messages section, the people bulk bar and the person view; audience is `{ids}` or a people-list
+  `{query}`. "Their account" messages go to everyone addressed; "News or offers" only to confirmed
+  addresses that have not unsubscribed, with RFC 8058 one-click unsubscribe (`/api/public/unsubscribe`,
+  HMAC token, GET shows a button so link scanners cannot unsubscribe anyone). Sending uses its own
+  one-worker pool, claims each `email_log` row before sending, and is resumed by `ops_tick` after a
+  restart. Placeholders `{name}` `{trial_end}` `{app_link}` only; other braces are left as typed.
 - **Data rights** (`backend/privacy.py`). A person exports everything from Settings › Your data
   (`POST/GET /api/auth/me/exports`, download in their own session only, 7 days) and deletes their account
   there (`DELETE /api/auth/me`, password + typing DELETE; administrators cannot). An admin can have an

@@ -63,7 +63,7 @@ def _port(s):
     return {"ssl": 465, "none": 25}.get(s["smtp_security"], 587)
 
 
-def _deliver(to, subject, text, html=None):
+def _deliver(to, subject, text, html=None, headers=None):
     """(ok, error, message_id). Never raises: a failed send must not take a request or a job down."""
     if not configured():
         log.warning("SMTP is not configured — skipping %r to %s", subject, _redact(to))
@@ -75,6 +75,8 @@ def _deliver(to, subject, text, html=None):
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid()
     msg["Auto-Submitted"] = "auto-generated"
+    for name, value in (headers or {}).items():
+        msg[name] = value
     msg.set_content(text)                       # plain text first
     if html:
         msg.add_alternative(html, subtype="html")
@@ -107,7 +109,8 @@ def _redact(address):
 # What kind of message each template is, for the admin's delivery report.
 CATEGORIES = {
     "welcome": "auth", "welcome_pending": "auth", "verify_email": "auth", "password_reset": "auth",
-    "password_changed": "auth", "invite": "auth", "export_ready": "auth", "account_deleted": "auth", "admin_new_login": "admin",
+    "password_changed": "auth", "invite": "auth", "export_ready": "auth", "account_deleted": "auth",
+    "campaign": "campaign", "admin_new_login": "admin",
     "trial_ending": "lifecycle", "trial_ended": "lifecycle", "grace_ending": "lifecycle", "read_only": "lifecycle",
     "payment_failed": "billing", "subscription_started": "billing", "subscription_canceled": "billing",
     "test": "test",

@@ -50,6 +50,15 @@ def prune():
     return out
 
 
+def _resume_campaigns():
+    import admin_email
+    try:
+        return admin_email.resume_stalled()
+    except Exception:
+        log.warning("could not resume email campaigns", exc_info=True)
+        return 0
+
+
 def tick(now=None):
     import billing
     import billing_tick
@@ -64,6 +73,7 @@ def tick(now=None):
 
     out = {"ent_states_changed": ledger.refresh_all_ent_states(), "pruned": prune(),
            "exports_expired": privacy.prune_exports(),
+           "campaigns_resumed": _resume_campaigns(),
            "snapshot": admin_metrics.snapshot(activity.today())}
     if billing.enabled():
         import billing_reconcile
