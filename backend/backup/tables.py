@@ -18,6 +18,7 @@ TABLE_ORDER = [
     "subscription_events",   # user_id is not a foreign key: revenue history outlives the user
     "payments",              # same
     "metric_daily",
+    "admin_tags",
     # level 1 - depend on users only
     "subscriptions",
     "stripe_events",
@@ -33,6 +34,8 @@ TABLE_ORDER = [
     "user_activity_days",
     "email_log",             # user_id, sent_by nullable
     "signup_attribution",
+    "admin_notes",
+    "user_admin_tags",       # users + admin_tags
     # level 2 - depend on users + accounts/categories
     "rules",
     "statements",
@@ -63,13 +66,14 @@ PK = {
     "user_activity_days": "user_id, day",
     "signup_attribution": "user_id",
     "metric_daily": "day, metric, dim",
+    "user_admin_tags": "user_id, tag_id",
 }
 DEFAULT_PK = "id"
 
 # Tables with a SERIAL id whose sequence must be advanced after an id-preserving restore.
 NO_SEQUENCE = {"settings", "subscriptions", "stripe_events",
                "recurring_dismissals", "anomaly_dismissals", "transaction_tags",
-               "user_activity_days", "signup_attribution", "metric_daily"}
+               "user_activity_days", "signup_attribution", "metric_daily", "user_admin_tags"}
 
 # The one trigger that rewrites values on insert. Disabled during a restore (table ownership is
 # enough; no superuser needed) so is_transfer/is_excluded come back exactly as they were saved

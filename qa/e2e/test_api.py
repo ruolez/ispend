@@ -210,7 +210,7 @@ class TestAuth:
             assert s.get("/api/accounts").status_code == 200
             r = admin.post(f"/api/admin/users/{uid}/lock", json={"reason": "qa"})
             assert r.json() == {"ok": True, "status": "locked"}
-            listed = admin.get("/api/admin/users").json()["items"]
+            listed = admin.get("/api/admin/users", params={"q": "qa_api_inactive"}).json()["items"]
             assert any(u["id"] == uid and u["status"] == "locked" for u in listed)
             # A password holder is told the account is blocked; a wrong password stays generic.
             assert Api().login("qa_api_inactive", "inactive-pass1").status_code == 403
@@ -269,8 +269,8 @@ class TestAuth:
             assert r.status_code == 409, r.text
             assert admin.delete(f"/api/admin/users/{uid}").json() == {"ok": True, "status": "deleted"}
             assert Api().login("qa_api_trash", "trash-pass-1").status_code == 403
-            assert not any(u["id"] == uid for u in admin.get("/api/admin/users").json()["items"])
-            assert any(u["id"] == uid for u in admin.get("/api/admin/users?status=deleted").json()["items"])
+            assert not any(u["id"] == uid for u in admin.get("/api/admin/users", params={"q": f"#{uid}"}).json()["items"])
+            assert any(u["id"] == uid for u in admin.get("/api/admin/users", params={"status": "deleted", "q": f"#{uid}"}).json()["items"])
             # The username stays reserved, and re-creating it points at the restore instead.
             r = admin.post("/api/admin/users", json={"username": "qa_api_trash", "password": "other-pass-99"})
             assert (r.status_code, r.json()["code"], r.json()["user_id"]) == (409, "username_deleted", uid)

@@ -27,12 +27,6 @@ from util import (admin_audit_retention_days, api_error, audit, audit_retention_
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-# Sort keys are interpolated into SQL, so they may only ever come from this dict.
-USER_SORTS = {
-    "id": "u.id", "username": "u.username", "email": "lower(u.email)", "role": "u.role",
-    "status": "u.status", "created_at": "u.created_at", "last_login_at": "u.last_login_at",
-    "txn_count": "txn_count", "storage_bytes": "storage_bytes",
-}
 DEFAULT_RETENTION_DAYS = 30
 STATS_TTL_SECONDS = 300
 
@@ -107,85 +101,27 @@ def search():
 
 # ---------- Users ----------
 
-_LIST_USERS_SQL = """
-SELECT u.id, u.username, u.email, u.email_verified_at, u.role, u.status, u.locked_at,
-       u.lock_reason, u.deleted_at, u.created_at, u.last_login_at,
-       COALESCE(t.n, 0) AS txn_count,
-       COALESCE(a.n, 0) AS account_count,
-       COALESCE(s.n, 0) AS statement_count,
-       COALESCE(s.bytes, 0) AS storage_bytes,
-       (u.deleted_at IS NOT NULL AND %(retention)s > 0
-        AND u.deleted_at < now() - make_interval(days => %(retention)s)) AS purge_due
-  FROM users u
-  LEFT JOIN (SELECT user_id, COUNT(*) n FROM transactions GROUP BY user_id) t ON t.user_id = u.id
-  LEFT JOIN (SELECT user_id, COUNT(*) n FROM accounts GROUP BY user_id) a ON a.user_id = u.id
-  LEFT JOIN (SELECT user_id, COUNT(*) n, SUM(file_size) bytes
-               FROM (SELECT DISTINCT ON (user_id, file_sha256) user_id, file_size
-                       FROM statements WHERE status <> 'discarded'
-                      ORDER BY user_id, file_sha256, id) d
-              GROUP BY user_id) s ON s.user_id = u.id
- WHERE u.status = ANY(%(statuses)s)
-   AND (%(role)s IS NULL OR u.role = %(role)s)
-   AND (%(q)s IS NULL OR u.username ILIKE %(q)s OR u.email ILIKE %(q)s)
- ORDER BY {order}, u.id
- LIMIT %(limit)s
-"""
-
-
-@bp.get("/users")
-@admin_required
-def list_users():
-    status = request.args.get("status") or "default"
-    if status == "all":
-        statuses = list(user_state.STATUSES)
-    elif status in user_state.STATUSES:
-        statuses = [status]
-    else:
-        statuses = [user_state.ACTIVE, user_state.LOCKED]
-    role = request.args.get("role")
-    if role not in ("admin", "user"):
-        role = None
-    q = (request.args.get("q") or "").strip()
-    sort = USER_SORTS.get(request.args.get("sort"), "u.id")
-    direction = "DESC" if request.args.get("dir") == "desc" else "ASC"
-    nulls = " NULLS LAST" if direction == "DESC" else ""
-    retention = _retention_days()
-    rows = db.query(
-        _LIST_USERS_SQL.format(order=f"{sort} {direction}{nulls}"),
-        {"statuses": statuses, "role": role, "q": f"%{q}%" if q else None,
-         "retention": retention, "limit": to_int(request.args.get("limit"), "limit", lo=1, hi=1000) or 200},
-    ) or []
-    me = _uid()
-    items = [{**r, "is_self": r["id"] == me} for r in rows_json(rows)]
-    # Billing is optional; the users list must render on an install that has none.
-    try:
-        import admin_billing
-        blocks = admin_billing.users_block([r["id"] for r in items])
-        for item in items:
-            item["billing"] = blocks.get(item["id"])
-    except Exception:
-        for item in items:
-            item["billing"] = None
-    due = db.query(
-        """SELECT COUNT(*) AS n FROM users
-            WHERE status = 'deleted' AND %(retention)s > 0
-              AND deleted_at < now() - make_interval(days => %(retention)s)""",
-        {"retention": retention}, one=True) or {"n": 0}
-    return jsonify({"items": items, "retention_days": retention, "purge_due_count": due["n"]})
-
-
 @bp.post("/users")
 @admin_required
 def create_user():
+    import admin_users
     data = json_body()
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
+    email = (data.get("email") or "").strip().lower() or None
+    username = (data.get("username") or "").strip() or (email or "")
+    invite = bool(data.get("send_invite"))
+    password = admin_users.random_password() if invite else (data.get("password") or "")
     role = data.get("role") if data.get("role") in ("admin", "user") else "user"
     access = data.get("access") or "trial"
     if access not in ("trial", "comped"):
         return api_error("access must be trial or comped")
+    if email and auth.email_problem(email):
+        return api_error(auth.email_problem(email))
+    if invite and not email:
+        return api_error("An invitation needs an email address")
     if not username or password_problem(password):
         return api_error(f"Username and a password of at least {MIN_PASSWORD_LEN} characters are required")
+    if email and auth.identity_taken(email):
+        return jsonify({"error": "That email is already in use.", "code": "email_taken"}), 409
     existing = db.query("SELECT id, status, username FROM users WHERE username = %s", (username,), one=True)
     if existing and existing["status"] == user_state.DELETED:
         # A deleted user keeps their username reserved (renaming would break restore and poison
@@ -196,8 +132,8 @@ def create_user():
         return api_error("Username already exists")
     with db.transaction():
         row = db.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s) RETURNING id",
-            (username, generate_password_hash(password), role),
+            "INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING id",
+            (username, email, generate_password_hash(password), role),
             returning=True, commit=False,
         )
         # Without a row the evaluator would quietly start a trial from created_at; writing it
@@ -214,9 +150,11 @@ def create_user():
     ledger.record_admin(row["id"], "comped" if access == "comped" else "trial_started",
                         {"created_by_admin": True})
     ledger.refresh_ent_state(row["id"])
-    audit("user.create", {"id": row["id"], "username": username, "role": role, "access": access},
-          target=row["id"])
-    return jsonify({"id": row["id"]}), 201
+    audit("user.create", {"id": row["id"], "username": username, "role": role, "access": access,
+                          "invited": invite}, target=row["id"])
+    if invite:
+        admin_users._invite({"id": row["id"], "email": email, "username": username})
+    return jsonify({"id": row["id"], "invited": invite}), 201
 
 
 @bp.put("/users/<int:user_id>")
@@ -548,64 +486,6 @@ def _build_overview(days):
             "oldest_audit_at": iso(house.get("oldest_audit_at")),
         },
     }
-
-
-@bp.get("/users/<int:user_id>")
-@admin_required
-def user_detail(user_id):
-    row = db.query(
-        """SELECT id, username, role, status, locked_at, lock_reason, deleted_at, created_at,
-                  last_login_at, preferences
-             FROM users WHERE id = %s""", (user_id,), one=True)
-    if not row:
-        return api_error("User not found", 404)
-    counts = db.query("""
-        SELECT (SELECT COUNT(*) FROM accounts WHERE user_id = %(u)s) AS accounts,
-               (SELECT COUNT(*) FROM transactions WHERE user_id = %(u)s) AS transactions,
-               (SELECT COUNT(*) FROM statements WHERE user_id = %(u)s AND status='committed') AS statements,
-               (SELECT COUNT(*) FROM categories WHERE user_id = %(u)s) AS categories,
-               (SELECT COUNT(*) FROM rules WHERE user_id = %(u)s) AS rules,
-               (SELECT COUNT(*) FROM budgets WHERE user_id = %(u)s) AS budgets,
-               (SELECT COUNT(*) FROM tags WHERE user_id = %(u)s) AS tags,
-               (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %(u)s) AS merchants,
-               (SELECT COUNT(*) FROM insights WHERE user_id = %(u)s) AS insights,
-               -- Per-user settings live in the GLOBAL settings table under a 'u<id>:' prefix, so a
-               -- "tables with user_id" sweep misses them. This is the only place they are visible.
-               (SELECT COUNT(*) FROM settings WHERE key LIKE %(pfx)s) AS settings_rows,
-               (SELECT MIN(txn_date) FROM transactions WHERE user_id = %(u)s) AS first_txn,
-               (SELECT MAX(txn_date) FROM transactions WHERE user_id = %(u)s) AS last_txn,
-               (SELECT MAX(created_at) FROM statements WHERE user_id = %(u)s) AS last_import_at
-        """, {"u": user_id, "pfx": f"u{user_id}:%"}, one=True) or {}
-    counts = dict(rows_json([counts])[0]) if counts else {}
-    src = db.query(_SOURCE_BYTES_SQL.format(where="AND user_id = %(u)s"), {"u": user_id}, one=True) or {}
-    disk_bytes, disk_ok = _disk_usage(user_id)
-    ai = db.query("""
-        SELECT COUNT(*) AS calls, COUNT(*) FILTER (WHERE status='error') AS errors,
-               COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
-               COALESCE(SUM(completion_tokens),0) AS completion_tokens,
-               MAX(created_at) AS last_call_at
-          FROM ai_calls WHERE user_id = %s""", (user_id,), one=True) or {}
-    mix = db.query("""
-        SELECT COALESCE(category_source,'none') AS source, category_status, COUNT(*) AS n
-          FROM transactions WHERE user_id = %s GROUP BY 1,2 ORDER BY n DESC""", (user_id,)) or []
-    activity = db.query(
-        """SELECT id, action, detail, by_admin, created_at FROM audit_log
-            WHERE user_id = %s ORDER BY id DESC LIMIT 20""",
-        (user_id,)) or []
-    user = dict(rows_json([row])[0])
-    prefs = user.pop("preferences", None) or {}
-    user["preferences_keys"] = sorted(prefs)
-    return jsonify({
-        "user": user,
-        "counts": {k: v for k, v in counts.items() if k not in ("first_txn", "last_txn", "last_import_at")},
-        "data_range": {"first_txn": counts.get("first_txn"), "last_txn": counts.get("last_txn"),
-                       "last_import_at": counts.get("last_import_at")},
-        "storage": {"disk_bytes": disk_bytes, "source_bytes": int(src.get("source_bytes") or 0),
-                    "unique_files": src.get("unique_files", 0), "disk_scan_ok": disk_ok},
-        "categorization": rows_json(mix),
-        "ai": rows_json([ai])[0] if ai else {},
-        "recent_activity": [admin_privacy.redact_row(r) for r in rows_json(activity)],
-    })
 
 
 # ---------- Activity log ----------

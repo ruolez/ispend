@@ -35,8 +35,7 @@ def stat_routes(extra=None):
 
 # Every route the blueprint exposes; the admin-only test walks all of them.
 ROUTES = [
-    ("get", "/api/admin/users"), ("post", "/api/admin/users"),
-    ("get", "/api/admin/users/5"), ("put", "/api/admin/users/5"),
+    ("post", "/api/admin/users"), ("put", "/api/admin/users/5"),
     ("put", "/api/admin/users/5/password"),
     ("post", "/api/admin/users/5/lock"), ("post", "/api/admin/users/5/unlock"),
     ("post", "/api/admin/users/5/restore"), ("delete", "/api/admin/users/5"),
@@ -189,7 +188,7 @@ class AdminApiTest(unittest.TestCase):
         self.x.routes.append(("INSERT INTO users", {"id": 7}))
         with mock.patch.object(seed_categories, "seed_for_user") as seed:
             res = self._call("post", "/api/admin/users", {"username": "eve", "password": "secret1234x", "role": "user"})
-        self.assertEqual((res.status_code, res.get_json()), (201, {"id": 7}))
+        self.assertEqual((res.status_code, res.get_json()), (201, {"id": 7, "invited": False}))
         self.assertEqual(seed.call_args.args, (FAKE, 7))
         self.assertEqual(self.x.sql("INSERT INTO users")[0][1][0], "eve")
 
@@ -210,8 +209,7 @@ class AdminApiTest(unittest.TestCase):
     def test_unknown_user_ids_are_404(self):
         for method, path, body in (("delete", "/api/admin/users/5", None),
                                    ("put", "/api/admin/users/5/password", {"password": "a" * 10}),
-                                   ("post", "/api/admin/users/5/lock", None),
-                                   ("get", "/api/admin/users/5", None)):
+                                   ("post", "/api/admin/users/5/lock", None)):
             with self.subTest(path=path):
                 res = self._call(method, path, body)
                 self.assertEqual((res.status_code, res.get_json()), (404, {"error": "User not found"}), path)
@@ -223,34 +221,6 @@ class AdminApiTest(unittest.TestCase):
         self.assertEqual(res.get_json(), {"error": "Username and a password of at least 10 characters are required"})
         res = self._call("put", "/api/admin/users/5/password", {"password": short})
         self.assertEqual(res.get_json(), {"error": "Password must be at least 10 characters"})
-
-    # ---------- listing ----------
-
-    def test_sort_key_cannot_be_injected(self):
-        """ruff's S608 is globally off, so the whitelist is the only thing standing between a
-        query parameter and the ORDER BY clause."""
-        for raw, expected in (("sort=;DROP%20TABLE%20users", "ORDER BY u.id ASC"),
-                              ("sort=username&dir=desc", "ORDER BY u.username DESC"),
-                              ("sort=' OR 1=1--&dir=;DELETE", "ORDER BY u.id ASC")):
-            with self.subTest(raw=raw):
-                self.q.calls.clear()
-                self._call("get", f"/api/admin/users?{raw}")
-                sql = self.q.sql("FROM users u")[0][0]
-                self.assertNotIn("DROP TABLE", sql)
-                self.assertNotIn("DELETE", sql)
-                self.assertIn(expected, sql)
-
-    def test_listing_hides_deleted_users_by_default(self):
-        self._call("get", "/api/admin/users")
-        self.assertEqual(self.q.sql("FROM users u")[0][1]["statuses"], ["active", "locked"])
-        self.q.calls.clear()
-        self._call("get", "/api/admin/users?status=deleted")
-        self.assertEqual(self.q.sql("FROM users u")[0][1]["statuses"], ["deleted"])
-
-    def test_storage_is_deduped_by_content_hash(self):
-        """The same file uploaded twice is two statements rows but one file on disk."""
-        self._call("get", "/api/admin/users")
-        self.assertIn("DISTINCT ON (user_id, file_sha256)", self.q.sql("FROM users u")[0][0])
 
 
 class AdminStatsTest(unittest.TestCase):
@@ -297,15 +267,6 @@ class AdminStatsTest(unittest.TestCase):
             self.assertEqual(len(q.calls), first, "a warm cache must not re-run the aggregates")
             self._get("/api/admin/stats/overview?refresh=1", query=q)
             self.assertGreater(len(q.calls), first, "refresh=1 must bypass the cache")
-
-    def test_user_detail_counts_the_prefixed_settings_rows(self):
-        q = stat_routes([("FROM users WHERE id", {"id": 5, "username": "eve", "role": "user", "status": "active",
-                                                   "preferences": {"theme": "dark"}})])
-        with mock.patch.object(admin_api, "_disk_usage", return_value=(0, True)):
-            res = self._get("/api/admin/users/5", query=q)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(q.sql("settings WHERE key LIKE")[0][1]["pfx"], "u5:%")
-        self.assertEqual(res.get_json()["user"]["preferences_keys"], ["theme"])
 
     def test_audit_uses_keyset_pagination_and_survives_purged_users(self):
         rows = [{"id": 900 - i, "user_id": None, "username": None, "action": "user.purge",

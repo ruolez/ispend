@@ -107,7 +107,7 @@ def _redact(address):
 # What kind of message each template is, for the admin's delivery report.
 CATEGORIES = {
     "welcome": "auth", "welcome_pending": "auth", "verify_email": "auth", "password_reset": "auth",
-    "password_changed": "auth", "admin_new_login": "admin",
+    "password_changed": "auth", "invite": "auth", "admin_new_login": "admin",
     "trial_ending": "lifecycle", "trial_ended": "lifecycle", "grace_ending": "lifecycle", "read_only": "lifecycle",
     "payment_failed": "billing", "subscription_started": "billing", "subscription_canceled": "billing",
     "test": "test",

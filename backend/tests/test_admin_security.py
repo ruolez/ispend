@@ -18,6 +18,7 @@ from flask import Flask  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 import admin_api  # noqa: E402
+import admin_users  # noqa: E402
 import admin_backup  # noqa: E402
 import admin_billing  # noqa: E402
 import auth  # noqa: E402
@@ -47,7 +48,7 @@ STEP_UP_ROUTES = [
 def build_app():
     app = Flask(__name__)
     app.secret_key = "test"
-    for module in (auth, admin_api, admin_billing, admin_backup):
+    for module in (auth, admin_api, admin_users, admin_billing, admin_backup):
         app.register_blueprint(module.bp)
     return app
 

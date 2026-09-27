@@ -301,7 +301,7 @@ def fixture_rows():
 def fresh_user():
     """Delete + re-create qa_flows through the admin API so the run starts from an empty account."""
     admin = Api(ADMIN)
-    existing = next((u for u in admin.get("/api/admin/users?status=all")["items"]
+    existing = next((u for u in admin.get(f"/api/admin/users?status=all&q={QA[0]}")["items"]
                      if u["username"] == QA[0]), None)
     if existing:
         # Purging is two steps, and the server refuses while one of that user's imports is still

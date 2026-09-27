@@ -18,7 +18,8 @@ from util import api_error, audit, client_ip, json_body, to_int, user_agent
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
-PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start", "saved_views", "review_skips", "onboarding"}
+PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start", "saved_views", "review_skips",
+                   "onboarding", "admin_views"}
 TX_VIEW_KEYS = {"range", "from", "to", "acct", "cat", "status", "flow", "q", "sort", "min", "max", "transfers", "merchant_key", "tag", "tag_mode", "split"}
 VIEW_ID = re.compile(r"^[a-z0-9_-]{1,16}$")
 MAX_SAVED_VIEWS = 20
@@ -75,7 +76,13 @@ def _clean_onboarding(value):
     return {k: bool(value.get(k)) for k in ("dismissed", "reports_opened") if k in value}
 
 
-PREFERENCE_CLEANERS = {"saved_views": _clean_saved_views, "review_skips": _clean_review_skips, "onboarding": _clean_onboarding}
+def _clean_admin_views(value):
+    import admin_users
+    return admin_users.clean_admin_views(value)
+
+
+PREFERENCE_CLEANERS = {"saved_views": _clean_saved_views, "review_skips": _clean_review_skips,
+                       "onboarding": _clean_onboarding, "admin_views": _clean_admin_views}
 PREFERENCE_CHOICES = {"theme": ("system", "light", "dark"), "density": ("comfortable", "compact"), "currency": ("", "USD", "CAD")}
 MIN_PASSWORD_LEN = 10
 # Deliberately loose: an address that round-trips a confirmation link is the only real proof, and
@@ -660,7 +667,8 @@ def reset_password_with_token():
     problem = password_problem(new, "New password")
     if problem:
         return api_error(problem)
-    user_id = _consume_token(data.get("token"), "reset")
+    # An invitation is a first password set by the person themselves, through the same page.
+    user_id = _consume_token(data.get("token"), "reset") or _consume_token(data.get("token"), "invite")
     if not user_id:
         return api_error("That link has expired or was already used. Request a new one.")
     with db.transaction():

@@ -88,6 +88,11 @@ TEMPLATES = {
                  "If this was you, there is nothing to do. If it was not, change your password straight "
                  "away — that signs every other session out.\n"),
     },
+    "invite": {
+        "subject": "You have an iSpend account",
+        "text": ("Hi {username},\n\nAn iSpend account has been set up for you. Choose a password to start "
+                 "using it:\n{link}\n\nThe link works once and for the next 7 days.\n"),
+    },
     "test": {
         "subject": "iSpend test email",
         "text": "This is a test message from iSpend. If it arrived, email is working.\n",

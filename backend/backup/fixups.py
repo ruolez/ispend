@@ -106,6 +106,7 @@ NO_FIXUP_NEEDED = {
     "019_budgets_optional_category.sql",
     "020_perf_indexes.sql",
     "024_metrics.sql",
+    "025_admin_crm.sql",
 }
 
 

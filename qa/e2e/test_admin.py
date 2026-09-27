@@ -4,6 +4,7 @@
 
 Read-only against the admin account: nothing here creates, locks or deletes anyone.
 """
+import json
 import re
 
 import pytest
@@ -51,8 +52,29 @@ class TestMetricsApi:
             users = admin_api.get("/api/admin/search", params={"q": q}).json()["users"]
             assert users and users[0]["id"] == me["id"], (q, users)
 
+    def test_people_list_pages_and_filters(self, admin_api):
+        body = admin_api.get("/api/admin/users", params={"per_page": 1}).json()
+        assert (body["per_page"], len(body["items"])) == (1, 1) and body["total"] >= 1
+        me = admin_api.get("/api/auth/me").json()
+        mine = admin_api.get("/api/admin/users", params={"q": f"#{me['id']}", "state": "admin_exempt,active,trialing,grace,read_only"}).json()
+        assert [u["id"] for u in mine["items"]] in ([me["id"]], []), mine
+        facets = admin_api.get("/api/admin/users/facets").json()
+        assert set(facets) == {"sources", "tags"}
+
+    def test_people_export_needs_a_recent_password(self):
+        s = api_login(*ADMIN)
+        s.auto_step_up = False
+        r = s.get("/api/admin/users?format=csv")
+        assert (r.status_code, r.json()["code"]) == (403, "step_up_required")
+
+    def test_person_view_has_no_transaction_data(self, admin_api):
+        me = admin_api.get("/api/auth/me").json()
+        body = admin_api.get(f"/api/admin/users/{me['id']}").json()
+        assert {"subscription", "activation", "timeline", "logins", "notes", "tags", "emails"} <= set(body)
+        assert not re.search(r"description_|merchant_key|\.pdf\b|\.csv\b", json.dumps(body))
+
     def test_non_admins_are_refused(self, u1):
-        for path in ("/api/admin/metrics/overview", "/api/admin/search?q=a"):
+        for path in ("/api/admin/metrics/overview", "/api/admin/search?q=a", "/api/admin/users/facets"):
             assert u1.get(path).status_code == 403
 
 
@@ -112,6 +134,21 @@ class TestShell:
         page.keyboard.press("Enter")
         page.locator(".drawer").wait_for()
         assert page.url.endswith("#users")
+        page.keyboard.press("Escape")
+        assert page.errors == []
+
+    def test_people_filters_live_in_the_url_and_rows_open_the_person(self, page):
+        page.goto(f"{BASE}/admin.html#users")
+        page.locator("#users-table tr[data-id]").first.wait_for()
+        page.locator('[data-act="f-status"]').click()
+        page.locator(".menu-item", has_text="Everyone").click()
+        page.wait_for_function("location.search.includes('status=all')")
+        page.locator("#users-table tr[data-id]").first.wait_for()
+        page.locator("#users-table tr[data-id] td:nth-child(3)").first.click()
+        page.locator(".drawer .p360-tabs").wait_for()
+        for tab in ("billing", "history", "notes", "summary"):
+            page.locator(f'[data-p360-tab="{tab}"]').click()
+            assert page.locator("#p360-tab").inner_text().strip()
         page.keyboard.press("Escape")
         assert page.errors == []
 

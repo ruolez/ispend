@@ -259,6 +259,15 @@ five-minute `metric_cache`, `as_of` stamp).
   applied). `billing_reconcile.run` (Billing tab → Revenue records, and daily from `ops_tick`) fixes drift
   and imports pre-ledger history from Stripe's timestamps. `subscriptions.ent_state` caches
   `entitlement.evaluate()` for SQL filters; `ops_tick` refreshes it hourly.
+- **People** (`admin-users.js`, `admin-user360.js`, backend `admin_users.py`). The list is paged
+  server-side (`GET /api/admin/users?page&per_page&…filters`, `COUNT(*) OVER()`, extras computed for the
+  page only); every filter is a query key (`FILTER_KEYS`) so KPI tiles and cohort cells can link to a
+  filtered list. Bulk actions (`POST /users/bulk`, ≤ 500, step-up) take explicit ids or the list's query
+  string ("select all N matching"). Saved views are the admin's `admin_views` preference. The person
+  drawer (`openUserDrawer(id)`, `?user=<id>`) shows access and payments, activation, counts, story,
+  sign-ins, emails, notes (`admin_notes`) and tags (`admin_tags`); its payload's key set is pinned by a
+  test. Password help is an emailed reset link or invitation (`auth_tokens.kind = 'invite'`, accepted by
+  reset.html); typing a password for someone is the fallback and signs them out everywhere.
 - **Usage and operations data** (Phase 3). `activity.py` turns successful requests into one
   `user_activity_days` row per person per day (bits: seen, import, categorize, report, dashboard, upload;
   "active" = import|categorize|report) from an `after_request` hook keyed on the Flask rule — a new
@@ -288,7 +297,7 @@ five-minute `metric_cache`, `as_of` stamp).
   with the key — panels use it to drop viewport-fixed state (billing's save bar, backup's poll timer).
   `r` refreshes the current section (`AdminPanels.refresh()`), `g o/u/l/…` jump between sections.
 - **Activity.** Rows render `subject.verb` actions as a sentence (`AUDIT_SUBJECT`/`AUDIT_VERB`/
-  `AUDIT_EXACT` in `admin.js`; unknown verbs fall back to the prettified action) with the family's icon,
+  `AUDIT_EXACT` in `admin-activity.js`; unknown verbs fall back to the prettified action) with the family's icon,
   the raw action in the tooltip, `detail` as key/value chips, and day headers (Today / Yesterday / date).
   Filtering still sends the raw action, so nothing becomes unsearchable. The username on a row filters
   the log to that user; the chip in the toolbar clears it.

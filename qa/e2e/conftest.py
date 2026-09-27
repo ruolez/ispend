@@ -160,7 +160,7 @@ def _purge_user(admin_session, user_id, username, required=True):
 
 
 def _ensure_user(admin_session, username, password):
-    users = admin_session.get("/api/admin/users?status=all").json()["items"]
+    users = admin_session.get("/api/admin/users", params={"status": "all", "q": username}).json()["items"]
     existing = next((u for u in users if u["username"] == username), None)
     if existing:
         # a previous run was interrupted: start from a clean slate
