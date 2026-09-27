@@ -3,17 +3,31 @@
 AdminPanels.register('retention', {
   label: 'Retention', icon: 'archive', group: 'settings',
   sub: 'How long the activity log, admin actions and deleted accounts are kept',
-  markup: '<section class="settings-section"><div id="ov-housekeeping"></div></section>',
+  markup: `<section class="settings-section"><div id="ov-housekeeping"></div></section>
+    <section class="settings-section"><div class="adm-sec-head"><h2>Erased accounts</h2></div>
+      <div class="sub">People deleted at their own request or by an administrator. Only these anonymous records remain.</div>
+      <div id="rt-erasures"></div></section>`,
   load: loadAdminRetention,
 });
 
 async function loadAdminRetention() {
   $('#ov-housekeeping').innerHTML = ui.skeletonList(3);
   try {
-    renderHousekeeping(await api('/api/admin/settings'));
+    const [settings, erasures] = await Promise.all([api('/api/admin/settings'), api('/api/admin/erasures')]);
+    renderHousekeeping(settings);
+    renderErasures(erasures);
   } catch (err) {
     $('#ov-housekeeping').innerHTML = ui.errorBox(err.message);
   }
+}
+
+function renderErasures(rows) {
+  $('#rt-erasures').innerHTML = rows.length
+    ? `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>When</th><th>Account</th><th>By</th><th>Reason</th><th class="right">Transactions</th></tr></thead>
+      <tbody>${rows.map((e) => `<tr><td>${esc(fmtDateTime(e.created_at))}</td><td class="text-3">#${e.erased_user_id}</td>
+        <td>${e.requested_by === 'self' ? 'Themselves' : esc(e.admin || 'an administrator')}${e.stripe_canceled ? ' <span class="badge badge-neutral">subscription cancelled</span>' : ''}</td>
+        <td class="text-3">${esc(e.reason || '—')}</td><td class="right num">${fmtNumber((e.counts || {}).transactions || 0)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="hint">Nobody has been erased.</div>';
 }
 
 function renderHousekeeping(h) {

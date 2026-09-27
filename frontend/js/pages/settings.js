@@ -5,6 +5,7 @@ const TAB_META = {
   ai: { label: 'AI', icon: 'sparkles' },
   appearance: { label: 'Preferences', icon: 'sliders' },
   account: { label: 'My account', icon: 'user' },
+  data: { label: 'Your data', icon: 'download' },
 };
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
 const state = { me: null, accounts: [], institutions: [], layouts: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
@@ -36,7 +37,7 @@ function showTab() {
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   setPageTitle(TAB_META[tab].label);
-  ({ accounts: () => { loadAccounts(); loadLayouts(); }, ai: loadAI, appearance: renderAppearance, account: renderAccount })[tab]();
+  ({ accounts: () => { loadAccounts(); loadLayouts(); }, ai: loadAI, appearance: renderAppearance, account: renderAccount, data: renderData })[tab]();
 }
 
 /* ---------- Accounts ---------- */
@@ -442,3 +443,52 @@ async function onAction(e) {
     default: return null;
   }
 }
+
+/* ---------- Your data ---------- */
+let dataPoll = null;
+
+async function renderData() {
+  const host = $('#data-panel');
+  clearTimeout(dataPoll);
+  let exports = [];
+  try { exports = await api('/api/auth/me/exports'); } catch (err) { host.innerHTML = ui.errorBox(err.message); return; }
+  const busy = exports.some((x) => x.status === 'queued' || x.status === 'running');
+  const ready = exports.filter((x) => x.status === 'done');
+  const isAdmin = state.me.role === 'admin';
+  host.innerHTML = `
+    <div class="setting-row"><div class="min-w-0"><div class="title">Download everything</div>
+      <div class="desc">One zip with your accounts, transactions (also as a spreadsheet), categories, rules, budgets, settings and the statement files you uploaded. We email you when it is ready; the download works for 7 days.</div></div>
+      <button type="button" class="btn btn-secondary" data-act="request-export" ${busy ? 'disabled' : ''}>${icon('download')}<span class="label">${busy ? 'Preparing…' : 'Prepare a download'}</span></button></div>
+    ${ready.length ? `<div class="more-list mt-2">${ready.map((x) => `<a class="more-row" href="/api/auth/me/exports/${x.id}/download">
+      ${icon('file', 'ico-sm')}<span class="grow">Your data, ${esc(fmtDateLong(x.created_at))} <span class="text-3">· ${esc(fmtBytes(x.size_bytes))}</span></span>
+      <span class="text-3">until ${esc(fmtDate(x.expires_at))}</span>${icon('download', 'ico-sm')}</a>`).join('')}</div>` : ''}
+    <div class="setting-row mt-4"><div class="min-w-0"><div class="title text-danger">Delete my account</div>
+      <div class="desc">${isAdmin ? 'Administrators cannot delete their own account here. Ask another administrator.'
+        : 'Deletes your account, every statement and transaction, and cancels your subscription. This cannot be undone — download a copy first if you might want it.'}</div></div>
+      <button type="button" class="btn btn-danger-solid" data-act="delete-me" ${isAdmin ? 'disabled' : ''}>Delete account</button></div>`;
+  if (busy) dataPoll = setTimeout(() => { if (location.hash === '#data') renderData(); }, 4000);
+}
+
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-act="request-export"], [data-act="delete-me"]');
+  if (!el) return;
+  if (el.dataset.act === 'request-export') {
+    await ui.busy(el, async () => {
+      await api('/api/auth/me/exports', { method: 'POST', body: {} });
+      toast('Preparing your download — we will email you when it is ready', { type: 'success' });
+      renderData();
+    });
+    return;
+  }
+  const m = ui.modal({
+    title: 'Delete your account?',
+    html: `<p class="mb-4">Everything goes: accounts, statements, transactions, categories, rules, budgets and settings, and your subscription is cancelled. <b>This cannot be undone.</b></p>
+      <div class="field"><label for="del-pw">Your password</label><input id="del-pw" class="input" type="password" autocomplete="current-password" autofocus></div>
+      <div class="field"><label for="del-confirm">Type <b>DELETE</b> to confirm</label><input id="del-confirm" class="input" autocomplete="off" spellcheck="false"></div>`,
+    actions: [{ label: 'Cancel' }, { label: 'Delete everything', danger: true, onClick: async () => {
+      await api('/api/auth/me', { method: 'DELETE', body: { password: $('#del-pw', m.el).value, confirm: $('#del-confirm', m.el).value.trim() } });
+      clearUserState();
+      location.href = '/?deleted=1';
+    } }],
+  });
+});

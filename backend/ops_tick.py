@@ -60,7 +60,10 @@ def tick(now=None):
     import activity
     import admin_metrics
 
+    import privacy
+
     out = {"ent_states_changed": ledger.refresh_all_ent_states(), "pruned": prune(),
+           "exports_expired": privacy.prune_exports(),
            "snapshot": admin_metrics.snapshot(activity.today())}
     if billing.enabled():
         import billing_reconcile

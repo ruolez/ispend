@@ -686,6 +686,68 @@ def random_password():
     return secrets.token_urlsafe(24)
 
 
+# ---------- data rights ----------
+
+@bp.post("/users/<int:user_id>/export")
+@admin_required
+@step_up_required
+def export_for_user(user_id):
+    """Prepared for the person, not the admin: the link goes to their email and opens only in
+    their own session. The admin sees that it happened, never the contents."""
+    import privacy
+    row, err = _require(user_id)
+    if err:
+        return err
+    if not row.get("email"):
+        return api_error("This account has no email address to send the download link to")
+    busy = db.query("SELECT 1 FROM data_exports WHERE user_id = %s AND status IN ('queued', 'running')",
+                    (user_id,), one=True)
+    if busy:
+        return api_error("An export is already being prepared for this person.", 409)
+    export_id = privacy.request_export(user_id, session["user_id"])
+    audit("admin.export_requested", {"id": export_id}, target=user_id)
+    return jsonify({"id": export_id}), 202
+
+
+@bp.get("/users/<int:user_id>/exports")
+@admin_required
+def exports_for_user(user_id):
+    import privacy
+    rows = db.query("SELECT * FROM data_exports WHERE user_id = %s ORDER BY id DESC LIMIT 5", (user_id,)) or []
+    return jsonify([privacy.export_json(r) for r in rows])
+
+
+@bp.post("/users/<int:user_id>/erase")
+@admin_required
+@step_up_required
+def erase_user(user_id):
+    import privacy
+    if user_id == session["user_id"]:
+        return api_error("You cannot erase your own account")
+    row, err = _require(user_id)
+    if err:
+        return err
+    data = json_body()
+    if data.get("confirm") != row["username"]:
+        return api_error("Type the username to confirm", 409)
+    try:
+        record = privacy.erase(user_id, "admin", admin_id=session["user_id"], reason=data.get("reason"))
+    except privacy.EraseError as e:
+        return api_error(str(e), e.status)
+    audit("user.erase", {"erasure_id": record["id"], "stripe_canceled": record["stripe_canceled"]})
+    return jsonify({"ok": True, "erasure": record})
+
+
+@bp.get("/erasures")
+@admin_required
+def list_erasures():
+    rows = db.query(
+        """SELECT e.id, e.erased_user_id, e.requested_by, e.reason, e.stripe_canceled, e.counts, e.files_removed,
+                  e.bytes_removed, e.created_at, a.username AS admin
+             FROM erasures e LEFT JOIN users a ON a.id = e.admin_id ORDER BY e.id DESC LIMIT 100""") or []
+    return jsonify(rows_json(rows))
+
+
 # ---------- notes ----------
 
 @bp.post("/users/<int:user_id>/notes")

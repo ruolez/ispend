@@ -759,3 +759,75 @@ def update_email():
     mailer.send_async("verify_email", email, user_id=user["id"], username=user["username"],
                       link=f"{_base_url()}/verify.html?token={token}")
     return jsonify({"ok": True, "email": email})
+
+
+# ---------- Your data: export and account deletion ----------
+
+MAX_EXPORTS_PER_DAY = 3
+
+
+@bp.post("/me/exports")
+@login_required
+def request_my_export():
+    import privacy
+    uid = session["user_id"]
+    recent = db.query(
+        """SELECT COUNT(*) FILTER (WHERE status IN ('queued', 'running')) AS busy,
+                  COUNT(*) FILTER (WHERE created_at > now() - interval '1 day') AS today
+             FROM data_exports WHERE user_id = %s""", (uid,), one=True) or {}
+    if recent.get("busy"):
+        return api_error("An export is already being prepared.", 409)
+    if (recent.get("today") or 0) >= MAX_EXPORTS_PER_DAY:
+        return api_error("You can download your data three times a day. Try again tomorrow.", 429)
+    export_id = privacy.request_export(uid, uid)
+    audit("user.export_requested", {"id": export_id})
+    return jsonify({"id": export_id}), 202
+
+
+@bp.get("/me/exports")
+@login_required
+def my_exports():
+    import privacy
+    rows = db.query("SELECT * FROM data_exports WHERE user_id = %s ORDER BY id DESC LIMIT 5",
+                    (session["user_id"],)) or []
+    return jsonify([privacy.export_json(r) for r in rows])
+
+
+@bp.get("/me/exports/<int:export_id>/download")
+@login_required
+def download_my_export(export_id):
+    import os
+
+    from flask import send_file
+    row = db.query("""SELECT * FROM data_exports WHERE id = %s AND user_id = %s AND status = 'done'
+                        AND expires_at > now()""", (export_id, session["user_id"]), one=True)
+    if not row or not row.get("file_path") or not os.path.isfile(row["file_path"]):
+        return api_error("This download has expired. Ask for a new one.", 404)
+    db.execute("UPDATE data_exports SET downloaded_at = COALESCE(downloaded_at, now()) WHERE id = %s", (export_id,))
+    audit("user.export_downloaded", {"id": export_id})
+    stamp = row["created_at"].strftime("%Y-%m-%d")
+    return send_file(row["file_path"], as_attachment=True, download_name=f"ispend-data-{stamp}.zip",
+                     mimetype="application/zip")
+
+
+@bp.delete("/me")
+@login_required
+def delete_my_account():
+    """Self-service erasure: the password and the typed word, then everything goes."""
+    import privacy
+    data = json_body()
+    uid = session["user_id"]
+    user = db.query("SELECT id, role, password_hash FROM users WHERE id = %s", (uid,), one=True)
+    if not check_password_hash(user["password_hash"], str(data.get("password") or "")):
+        return api_error("That password is not right.")
+    if data.get("confirm") != "DELETE":
+        return api_error("Type DELETE to confirm.")
+    if user["role"] == "admin":
+        return api_error("Administrators cannot delete their own account here. Ask another administrator.", 409)
+    try:
+        record = privacy.erase(uid, "self")
+    except privacy.EraseError as e:
+        return api_error(str(e), e.status)
+    audit("user.erase", {"erasure_id": record["id"], "self": True}, user_id=None)
+    session.clear()
+    return with_theme_cookie(jsonify({"ok": True}), None)

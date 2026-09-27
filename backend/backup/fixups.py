@@ -107,6 +107,7 @@ NO_FIXUP_NEEDED = {
     "020_perf_indexes.sql",
     "024_metrics.sql",
     "025_admin_crm.sql",
+    "026_privacy.sql",
 }
 
 

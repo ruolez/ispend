@@ -4,8 +4,11 @@
 
 Read-only against the admin account: nothing here creates, locks or deletes anyone.
 """
+import io
 import json
 import re
+import time
+import zipfile
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -20,6 +23,39 @@ TILE_KEYS = ["mrr", "paying", "trialing", "trials_ending", "signups", "activatio
 @pytest.fixture(scope="module")
 def admin_api():
     return api_login(*ADMIN)
+
+
+class TestDataRights:
+    def test_a_person_can_download_their_own_data(self, u1):
+        r = u1.post("/api/auth/me/exports", json={})
+        assert r.status_code in (202, 409, 429), r.text
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            done = [x for x in u1.get("/api/auth/me/exports").json() if x["status"] == "done"]
+            if done:
+                break
+            time.sleep(1)
+        assert done, "the export finished"
+        z = u1.get(f"/api/auth/me/exports/{done[0]['id']}/download")
+        assert z.status_code == 200 and z.headers["content-type"] == "application/zip"
+        names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+        assert {"README.txt", "transactions.csv", "accounts.json", "settings.json"} <= set(names)
+
+    def test_nobody_else_can_download_it(self, u1, admin_api):
+        mine = [x for x in u1.get("/api/auth/me/exports").json() if x["status"] == "done"]
+        if mine:
+            assert admin_api.get(f"/api/auth/me/exports/{mine[0]['id']}/download").status_code == 404
+
+    def test_an_admin_erases_an_account_for_good(self, admin_api):
+        r = admin_api.post("/api/admin/users", json={"username": "qa_erase_me", "password": "erase-me-pass1"})
+        assert r.status_code == 201, r.text
+        uid = r.json()["id"]
+        r = admin_api.post(f"/api/admin/users/{uid}/erase", json={"confirm": "wrong"})
+        assert r.status_code == 409
+        r = admin_api.post(f"/api/admin/users/{uid}/erase", json={"confirm": "qa_erase_me", "reason": "e2e"})
+        assert r.status_code == 200, r.text
+        assert admin_api.get(f"/api/admin/users/{uid}").status_code == 404
+        assert any(e["erased_user_id"] == uid for e in admin_api.get("/api/admin/erasures").json())
 
 
 class TestMetricsApi:

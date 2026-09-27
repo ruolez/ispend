@@ -277,6 +277,14 @@ five-minute `metric_cache`, `as_of` stamp).
   sign-ins, emails, notes (`admin_notes`) and tags (`admin_tags`); its payload's key set is pinned by a
   test. Password help is an emailed reset link or invitation (`auth_tokens.kind = 'invite'`, accepted by
   reset.html); typing a password for someone is the fallback and signs them out everywhere.
+- **Data rights** (`backend/privacy.py`). A person exports everything from Settings › Your data
+  (`POST/GET /api/auth/me/exports`, download in their own session only, 7 days) and deletes their account
+  there (`DELETE /api/auth/me`, password + typing DELETE; administrators cannot). An admin can have an
+  export emailed to the person or erase them (`/api/admin/users/<id>/export|erase`, step-up); erasure
+  cancels Stripe first and stops if Stripe refuses, scrubs names from the activity log, deletes the
+  account and files, and writes an anonymous `erasures` row. Every backed-up table must appear in
+  `privacy.EXPORTED` or `NOT_EXPORTED` — a test enforces it. Both routes are on the write allowlist so
+  a read-only account keeps its data rights.
 - **Usage and operations data** (Phase 3). `activity.py` turns successful requests into one
   `user_activity_days` row per person per day (bits: seen, import, categorize, report, dashboard, upload;
   "active" = import|categorize|report) from an `after_request` hook keyed on the Flask rule — a new

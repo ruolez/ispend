@@ -212,8 +212,30 @@ function personMenu(anchor) {
     { label: u.email ? 'Change email address…' : 'Add an email address…', icon: 'pencil', disabled: isMe, onClick: changeEmail },
     ...(u.email && !isMe ? [{ label: 'Send an invitation to set a password', icon: 'mail', onClick: () => personPost('invite', 'Invitation sent') }] : []),
     { divider: true },
+    { label: 'Email them a copy of their data', icon: 'download', disabled: !u.email, onClick: () => personPost('export', 'Preparing their data — they will get an email with the link') },
+    { label: 'Erase permanently…', icon: 'trash', danger: true, disabled: isMe, onClick: erasePerson },
+    { divider: true },
   ];
   ui.menu(anchor, [...extra, ...userMenuItems(u).filter((item) => item.label !== 'Open')]);
+}
+
+function erasePerson() {
+  const u = P360.data.user;
+  const m = ui.modal({
+    title: `Erase ${personLabel(u)} permanently?`,
+    html: `<p class="mb-4">Their account, statements, transactions, files and settings are deleted at once, any subscription is cancelled first,
+        and their name is removed from the activity log. Only anonymous bookkeeping (invoices, the revenue history) is kept. <b>This cannot be undone.</b></p>
+      <div class="field"><label for="er-reason">Reason (kept on the erasure record)</label><input id="er-reason" class="input" maxlength="500" placeholder="e.g. asked by email on 3 October"></div>
+      <div class="field"><label for="er-confirm">Type <b>${esc(u.username)}</b> to confirm</label><input id="er-confirm" class="input" autocomplete="off" spellcheck="false"></div>`,
+    actions: [{ label: 'Cancel' }, { label: 'Erase', danger: true, onClick: async () => {
+      if ($('#er-confirm', m.el).value.trim() !== u.username) { ui.fieldError($('#er-confirm', m.el), 'That does not match'); return false; }
+      await api(`/api/admin/users/${P360.id}/erase`, { method: 'POST', body: { confirm: u.username, reason: $('#er-reason', m.el).value.trim() } });
+      toast(`${personLabel(u)} erased`, { type: 'success' });
+      if (P360.drawer) P360.drawer.forceClose();
+      afterChange();
+      return undefined;
+    } }],
+  });
 }
 
 async function personPost(path, message) {

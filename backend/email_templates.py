@@ -93,6 +93,18 @@ TEMPLATES = {
         "text": ("Hi {username},\n\nAn iSpend account has been set up for you. Choose a password to start "
                  "using it:\n{link}\n\nThe link works once and for the next 7 days.\n"),
     },
+    "export_ready": {
+        "subject": "Your iSpend data is ready to download",
+        "text": ("Hi {username},\n\nThe copy of your iSpend data you asked for is ready. Sign in and download "
+                 "it from Settings within the next 7 days:\n{link}\n\n"
+                 "If you did not ask for this, change your password.\n"),
+    },
+    "account_deleted": {
+        "subject": "Your iSpend account has been deleted",
+        "text": ("Hi {username},\n\nYour iSpend account and everything in it — statements, transactions, "
+                 "categories and rules — has been deleted, and any subscription was cancelled.\n\n"
+                 "If you did not ask for this, reply to this email.\n"),
+    },
     "test": {
         "subject": "iSpend test email",
         "text": "This is a test message from iSpend. If it arrived, email is working.\n",

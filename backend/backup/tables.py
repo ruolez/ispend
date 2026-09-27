@@ -19,6 +19,7 @@ TABLE_ORDER = [
     "payments",              # same
     "metric_daily",
     "admin_tags",
+    "erasures",              # anonymous: erased_user_id is not a foreign key
     # level 1 - depend on users only
     "subscriptions",
     "stripe_events",
@@ -36,6 +37,7 @@ TABLE_ORDER = [
     "signup_attribution",
     "admin_notes",
     "user_admin_tags",       # users + admin_tags
+    "data_exports",
     # level 2 - depend on users + accounts/categories
     "rules",
     "statements",
