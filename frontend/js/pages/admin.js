@@ -1,45 +1,12 @@
-/* Admin console: instance statistics, the user lifecycle and the activity log.
-   Billing and backup mount their own tabs through window.AdminPanels.register(). */
+/* Admin › Users and Admin › Activity: the user lifecycle and the activity log.
+   The shell (admin-shell.js) owns navigation and routing; this file registers two sections. */
 
 const AD = {
-  me: null, days: 90, overview: null,
+  me: null,
   users: [], retention: 30, purgeDue: 0,
   filters: { status: '', role: '', q: '', sort: 'id', dir: 'asc' },
   audit: { items: [], cursor: null, action: '', q: '', actions: null },
-  charts: {},
-};
-
-const TAB_META = {
-  overview: { label: 'Overview', icon: 'activity', sub: 'How this site has been used over the selected range', load: loadOverview },
-  users: { label: 'Users', icon: 'users', sub: 'Everyone with an account here, their data and what state it is in', load: loadUsers },
-  activity: { label: 'Activity', icon: 'clock', sub: 'Everything that has happened here, newest first', load: loadActivity },
-};
-
-/* Composition hook: a sibling feature adds a tab without editing this file.
-   AdminPanels.register('backup', { label, icon, sub, actions, load(hostEl) }) plus one <script> in admin.html. */
-window.AdminPanels = {
-  register(tab, { label, icon: ico, sub, actions, load }) {
-    TAB_META[tab] = { label, icon: ico, sub, load, external: true };
-    const nav = document.getElementById('admin-nav');
-    if (!nav || nav.querySelector(`[data-tab="${tab}"]`)) return;
-    const a = document.createElement('a');
-    a.className = 'nav-item';
-    a.href = `#${tab}`;
-    a.dataset.tab = tab;
-    a.innerHTML = `${icon(ico)}<span class="label">${esc(label)}</span>`;
-    nav.appendChild(a);
-    const panel = document.createElement('section');
-    panel.className = 'tab-panel';
-    panel.dataset.panel = tab;
-    document.getElementById('admin-panels').appendChild(panel);
-    if (!actions) return;
-    const group = document.createElement('div');
-    group.className = 'adm-actions';
-    group.dataset.actions = tab;
-    group.hidden = true;
-    group.innerHTML = actions;
-    document.getElementById('admin-actions').appendChild(group);
-  },
+  wired: false,
 };
 
 const STATUS_LABEL = { active: 'Active', locked: 'Locked', deleted: 'Trash' };
@@ -47,23 +14,52 @@ const STATUS_COLOR = { active: 'success', locked: 'warning', deleted: 'text-4' }
 const STATUS_FILTERS = [['', 'Active & locked'], ['active', 'Active'], ['locked', 'Locked'], ['deleted', 'Trash'], ['all', 'All']];
 const ROLE_FILTERS = [['', 'Any role'], ['admin', 'Admins'], ['user', 'Users']];
 
-initNav('admin').then(async (me) => {
-  AD.me = me;
-  // /admin.html is a static file nginx serves to anyone; every endpoint is admin-only, but the
-  // page still has to explain itself rather than render a wall of failed requests.
-  if (me.role !== 'admin') return renderGate();
 
-  $('#admin-layout').hidden = false;
-  $$('#admin-nav .nav-item').forEach((a) => {
-    const t = TAB_META[a.dataset.tab];
-    a.innerHTML = `${icon(t.icon)}<span class="label">${t.label}</span>`;
-  });
-  $('[data-act="refresh"]').innerHTML = `${icon('refresh')}<span class="label">Refresh</span>`;
+AdminPanels.register('users', {
+  label: 'Users', icon: 'users', group: 'insights',
+  sub: 'Everyone with an account here, their access and what state it is in',
+  actions: '<button type="button" class="btn btn-primary" data-act="add-user" aria-label="Add user"></button>',
+  markup: `
+    <div id="users-notice"></div>
+    <div class="tbl-toolbar" id="users-toolbar">
+      <div class="input-group adm-search"><span class="ico-wrap"></span>
+        <input id="u-search" class="input input-sm" type="search" placeholder="Search users…" aria-label="Search users"></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="u-status-btn" aria-haspopup="menu"></button>
+      <button type="button" class="btn btn-secondary btn-sm" id="u-role-btn" aria-haspopup="menu"></button>
+      <button type="button" class="btn btn-ghost btn-sm" id="u-clear" data-act="clear-filters" hidden>Clear</button>
+    </div>
+    <div class="tbl-summary" id="users-summary"></div>
+    <div id="users-table"></div>`,
+  load: () => { wireAdminLists(); openUserFromQuery(); return loadUsers(); },
+});
+
+AdminPanels.register('activity', {
+  label: 'Activity', icon: 'clock', group: 'operations',
+  sub: 'Everything that has happened here, newest first',
+  actions: '<a class="btn btn-secondary" id="a-export" href="/api/admin/audit?format=csv" download data-admin-download></a>',
+  markup: `
+    <div class="tbl-toolbar" id="audit-toolbar">
+      <div class="input-group adm-search"><span class="ico-wrap"></span>
+        <input id="a-search" class="input input-sm" type="search" placeholder="Search actions…" aria-label="Search activity"></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="a-action-btn" aria-haspopup="menu"></button>
+      <button type="button" class="btn btn-secondary btn-sm" id="a-admin-btn" data-act="toggle-admin-only" aria-pressed="false"></button>
+      <button type="button" class="btn btn-secondary btn-sm" id="a-user-chip" data-act="clear-audit-user" hidden></button>
+    </div>
+    <div class="tbl-summary" id="audit-summary"></div>
+    <div id="audit-list"></div>
+    <div class="row center mt-4"><button type="button" class="btn btn-secondary btn-sm" data-act="audit-more" hidden>Load more</button></div>`,
+  load: () => { wireAdminLists(); return loadActivity(); },
+});
+
+/* Once, the first time either section opens: both live in the DOM from the start. */
+function wireAdminLists() {
+  if (AD.wired) return;
+  AD.wired = true;
+  AD.me = window.currentUser;
   $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add user</span>`;
   $('#a-export').innerHTML = `${icon('download')}<span class="label">Export CSV</span>`;
   $$('.adm-search .ico-wrap').forEach((el) => { el.innerHTML = icon('search'); });
-
-  ui.segmented($('#range-seg'), { onChange: (btn) => { AD.days = Number(btn.dataset.days); loadOverview({ force: true }); } });
+  if (qs().admin === '1') AD.audit.adminOnly = true;
   $('#u-search').addEventListener('input', debounce(() => { AD.filters.q = $('#u-search').value.trim(); loadUsers(); }, 250));
   $('#a-search').addEventListener('input', debounce(() => { AD.audit.q = $('#a-search').value.trim(); loadActivity(); }, 250));
   // A row is a link to the user; the username inside it carries the same action for the keyboard.
@@ -72,250 +68,16 @@ initNav('admin').then(async (me) => {
     const tr = e.target.closest('tr[data-id]');
     if (tr) openUserDrawer(Number(tr.dataset.id));
   });
-  paintFilterButtons();
-
-  window.addEventListener('hashchange', showTab);
   document.body.addEventListener('click', onAction);
-  ui.shortcuts.register('g u', () => { location.hash = '#users'; }, { description: 'Admin: users' });
-  ui.shortcuts.register('r', refreshCurrent, { description: 'Admin: refresh this tab' });
-  window.PAGE_SHORTCUTS = [{ title: 'Admin', items: [['r', 'Refresh this tab'], ['g u', 'Users']] }];
-  showTab();
-  return me;
-});
-
-function renderGate() {
-  $('#admin-gate').innerHTML = ui.emptyState({
-    icon: 'lock', title: 'Admins only',
-    body: 'This page manages everyone’s accounts. Ask an administrator if you need access.',
-    action: { label: 'Back to dashboard', href: '/index.html' },
-  });
+  paintFilterButtons();
 }
 
-function currentTab() {
-  const tab = (location.hash || '#overview').slice(1);
-  return TAB_META[tab] ? tab : 'overview';
-}
-
-/* One refresh for every tab, so `r` and the Refresh button mean the same thing everywhere. */
-function refreshCurrent() {
-  const tab = currentTab();
-  const meta = TAB_META[tab];
-  if (tab === 'overview') return loadOverview({ force: true });
-  return meta.external ? meta.load($(`[data-panel="${tab}"]`)) : meta.load();
-}
-
-function showTab() {
-  // Tab switches are same-document hash changes, so a row menu opened on the previous tab would
-  // otherwise stay on screen anchored to a row that is no longer visible. Bounded, because a
-  // drawer's close() is async and can decline to pop its layer (an unsaved-changes prompt).
-  for (let i = 0; ui.layers.length && i < 8; i++) ui.closeTop();
-  const tab = currentTab();
-  const meta = TAB_META[tab];
-  $$('#admin-nav .nav-item').forEach((a) => {
-    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
-    else a.removeAttribute('aria-current');
-  });
-  $$('#admin-panels .tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
-  const groups = $$('#admin-actions .adm-actions');
-  groups.forEach((g) => { g.hidden = g.dataset.actions !== tab; });
-  $('#admin-actions').hidden = !groups.some((g) => g.dataset.actions === tab);
-  $('#admin-sub').textContent = meta.sub;
-  setPageTitle(meta.label);
-  window.dispatchEvent(new CustomEvent('ispend:admin-tab', { detail: tab }));
-  if (meta.external) return meta.load($(`[data-panel="${tab}"]`));
-  return meta.load();
-}
-
-/* ---------- Overview ---------- */
-
-const STAT_SKELETON = Array.from({ length: 4 }, () =>
-  `<div class="stat is-loading"><div class="stat-label">&nbsp;</div><div class="stat-value">0</div>${ui.skeleton('120px', '26px')}</div>`).join('');
-
-async function loadOverview({ force = false } = {}) {
-  if (AD.overview && !force) return renderOverview(AD.overview);
-  $('#ov-stats').innerHTML = STAT_SKELETON;
-  $('#ov-error').innerHTML = '';
-  try {
-    AD.overview = await api(`/api/admin/stats/overview?days=${AD.days}${force ? '&refresh=1' : ''}`);
-  } catch (err) {
-    $('#ov-stats').innerHTML = '';
-    $('#ov-error').innerHTML = ui.errorBox(err.message, { retry: 'reload-overview' });
-    return undefined;
-  }
-  return renderOverview(AD.overview);
-}
-
-function renderOverview(d) {
-  const u = d.users || {};
-  const t = d.totals || {};
-  const stats = [
-    ['Users', fmtNumber(u.total || 0), `${fmtNumber(u.active || 0)} active · ${fmtNumber(u.locked || 0)} locked${u.deleted ? ` · ${fmtNumber(u.deleted)} in trash` : ''}`],
-    ['Signed in · 30 days', fmtNumber(u.active_30d || 0), `${fmtNumber(u.active_by_activity_30d || 0)} also imported or edited something`],
-    ['Transactions', fmtNumber(t.transactions || 0), t.first_txn_date ? `${fmtDate(t.first_txn_date, { year: true })} – ${fmtDate(t.last_txn_date, { year: true })}` : 'No data yet'],
-    ['Statements', fmtNumber(t.statements || 0), `${fmtNumber(u.new_30d || 0)} new users in 30 days`],
-  ];
-  $('#ov-stats').innerHTML = stats.map(([label, value, sub]) =>
-    `<div class="stat"><div class="stat-label">${esc(label)}</div><div class="stat-value">${esc(value)}</div>
-     <div class="stat-delta"><span class="stat-delta-vs">${esc(sub)}</span></div></div>`).join('');
-  renderUsersChart(d);
-  renderImportChart(d);
-  renderAI(d.ai || {});
-  renderStorage(d.storage || {});
-  renderProfiles(d.imports || {});
-  renderHousekeeping(d.housekeeping || {}, d.generated_at);
-}
-
-/* Counts, not money: barOptions/lineOptions format ticks and tooltips as currency, so the
-   number callbacks are replaced here. */
-function countScales(t, { stacked = false } = {}) {
-  return {
-    interaction: { mode: 'index', intersect: false },
-    plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtNumber(c.parsed.y)}` } } },
-    scales: {
-      x: { stacked, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
-      y: { stacked, beginAtZero: true, border: { display: false }, ticks: { precision: 0, callback: (v) => fmtNumber(v) } },
-    },
-  };
-}
-
-function renderUsersChart(d) {
-  const signups = d.series.signups || [];
-  const logins = d.series.logins || [];
-  const labels = signups.map((r) => fmtDate(r.t));
-  const loginBy = new Map(logins.map((r) => [r.t, r.users]));
-  AD.charts.users = makeChart($('#ch-users'), () => {
-    const a = catColor('c1'); const b = catColor('c5');
-    return {
-      type: 'line',
-      data: { labels, datasets: [
-        { label: 'Signups', data: signups.map((r) => r.n), borderColor: a, backgroundColor: (c) => charts.gradientFill(c.chart.ctx, a, { from: 0.25 }), fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-        { label: 'Users signing in', data: signups.map((r) => loginBy.get(r.t) || 0), borderColor: b, backgroundColor: charts.withAlpha(b, 0.1), fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-      ] },
-      options: countScales(),
-    };
-  });
-  charts.htmlLegend($('#lg-users'), AD.charts.users);
-}
-
-function renderImportChart(d) {
-  const txns = d.series.transactions || [];
-  const stmts = new Map((d.series.statements || []).map((r) => [r.t, r.n]));
-  AD.charts.imp = makeChart($('#ch-import'), () => {
-    const a = catColor('c3'); const b = catColor('c8');
-    return {
-      type: 'bar',
-      data: { labels: txns.map((r) => fmtDate(r.t)), datasets: [
-        { label: 'Transactions', data: txns.map((r) => r.n), backgroundColor: a, borderRadius: 3 },
-        { label: 'Statements', data: txns.map((r) => stmts.get(r.t) || 0), backgroundColor: b, borderRadius: 3 },
-      ] },
-      options: countScales({ stacked: false }),
-    };
-  });
-  charts.htmlLegend($('#lg-import'), AD.charts.imp);
-}
-
-/* Small labelled figures. One helper so every KPI row on the page lines up the same way. */
-function kpis(items, extraClass = '') {
-  return `<div class="adm-kpis ${extraClass}">${items.map(([l, v, cls]) =>
-    `<div><div class="l">${esc(l)}</div><div class="v ${cls || ''}">${v}</div></div>`).join('')}</div>`;
-}
-
-function bar(label, value, max, hint) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
-  return `<div class="adm-bar-row">
-    <div class="adm-bar-head"><span class="text-1">${esc(label)}</span><span class="text-3 num">${esc(hint)}</span></div>
-    <div class="progress"><span style="width:${pct}%"></span></div></div>`;
-}
-
-function renderAI(ai) {
-  if (!ai.calls) {
-    $('#ov-ai').innerHTML = ui.emptyState({ icon: 'sparkles', title: 'No AI calls in this range',
-      body: 'Category suggestions and written insights show up here once someone uses them.' });
-    return;
-  }
-  const models = ai.by_model || [];
-  const max = Math.max(...models.map((m) => m.calls), 1);
-  $('#ov-ai').innerHTML = `
-    ${kpis([
-      ['Calls', fmtNumber(ai.calls)],
-      ['Tokens', fmtNumber((ai.prompt_tokens || 0) + (ai.completion_tokens || 0))],
-      ['Errors', fmtPct(ai.error_rate || 0), ai.errors ? 'text-danger' : ''],
-      ['Avg time', ai.avg_ms ? `${fmtNumber(Math.round(ai.avg_ms))}<span class="u"> ms</span>` : '—'],
-    ])}
-    <div class="section-label mt-6 mb-2">By model</div>
-    <div class="adm-bars">${models.map((m) => bar(m.model, m.calls, max, `${fmtNumber(m.calls)} · ${fmtNumber(m.tokens)} tok`)).join('')}</div>
-    <div class="hint mt-3">Token counts only. Prices live in the OpenRouter catalogue and change, so no cost is estimated here.</div>`;
-}
-
-function renderStorage(s) {
-  if (!s.disk_scan_ok) {
-    $('#ov-storage').innerHTML = `${ui.errorBox('The statements volume could not be read, so only the database figure is available.')}
-      ${kpis([['Uploaded originals', fmtBytes(s.source_bytes || 0)], ['Files', fmtNumber(s.unique_files || 0)]], 'mt-4')}`;
-    return;
-  }
-  const total = s.disk_bytes || 0;
-  const srcPct = total ? Math.round(((s.source_bytes || 0) / total) * 100) : 0;
-  $('#ov-storage').innerHTML = `
-    ${kpis([
-      ['On disk', fmtBytes(total)],
-      ['Uploaded originals', fmtBytes(s.source_bytes || 0)],
-      ['OCR & orphans', fmtBytes(s.derived_bytes || 0)],
-      ['Files', fmtNumber(s.unique_files || 0)],
-    ])}
-    <div class="adm-storage-bar mt-4" role="img" aria-label="Uploaded originals ${srcPct}% of disk use">
-      <i style="width:${srcPct}%;background:var(--c1)"></i><i style="width:${100 - srcPct}%;background:var(--c9)"></i>
-    </div>
-    <div class="adm-legend mt-2">
-      <span><i class="dot" style="--c:var(--c1)"></i>Uploaded originals ${fmtPct(srcPct / 100)}</span>
-      <span><i class="dot" style="--c:var(--c9)"></i>OCR &amp; orphans ${fmtPct((100 - srcPct) / 100)}</span>
-    </div>
-    <div class="hint mt-3">“On disk” is measured by scanning the volume, so it counts OCR output and any orphaned files.
-      “Uploaded originals” comes from the database and is de-duplicated by content hash.</div>`;
-}
-
-function renderProfiles(imports) {
-  const rows = imports.by_profile || [];
-  if (!rows.length) {
-    $('#ov-profiles').innerHTML = ui.emptyState({ icon: 'file-text', title: 'No statements imported yet',
-      body: 'Each bank shows up here with the number of statements it has read.' });
-    return;
-  }
-  const max = Math.max(...rows.map((r) => r.n), 1);
-  $('#ov-profiles').innerHTML = `<div class="adm-bars">${rows.map((r) => bar(
-    r.profile, r.n, max,
-    `${fmtNumber(r.n)}${r.ocr ? ` · ${fmtNumber(r.ocr)} OCR` : ''}${r.errors ? ` · ${fmtNumber(r.errors)} failed` : ''}`)).join('')}</div>
-    <div class="section-label mt-6 mb-2">File types</div>
-    <div class="adm-kinds">${(imports.by_kind || []).map((k) => `<span class="badge badge-neutral">${esc(k.kind)} · ${fmtNumber(k.n)}</span>`).join(' ')}</div>`;
-}
-
-function renderHousekeeping(h, generatedAt) {
-  $('#ov-measured').textContent = `Measured ${fmtRelative(generatedAt)}`;
-  $('#ov-housekeeping').innerHTML = `
-    <div class="setting-row">
-      <div><div class="title">Activity log retention</div>
-        <div class="desc">${fmtNumber(h.audit_rows || 0)} entries${h.oldest_audit_at ? `, oldest ${fmtRelative(h.oldest_audit_at)}` : ''}. What people do in their own accounts; older entries are pruned as new ones are written.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" inputmode="numeric" min="7" max="3650" aria-label="How long to keep the activity log, in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
-    </div>
-    <div class="setting-row">
-      <div><div class="title">Admin action retention</div>
-        <div class="desc">What administrators did — locks, deletions, billing changes, exports. Kept longer so “who changed my account” can always be answered.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-admin-audit" class="input input-sm num-input" type="number" inputmode="numeric" min="7" max="3650" aria-label="How long to keep admin actions, in days" value="${h.admin_audit_retention_days}"><span class="text-3">days</span></div>
-    </div>
-    <div class="setting-row">
-      <div><div class="title">Trash retention</div>
-        <div class="desc">Deleted users are listed for purging after this long. Nothing is ever purged automatically — you always confirm.</div></div>
-      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-trash" class="input input-sm num-input" type="number" inputmode="numeric" min="0" max="3650" aria-label="Trash retention in days" value="${h.deleted_user_retention_days}"><span class="text-3">days</span></div>
-    </div>
-    <div class="row-between mt-4"><span class="hint" id="hk-state">Saved</span>
-      <button type="button" class="btn btn-secondary btn-sm" data-act="save-housekeeping" disabled>Save</button></div>`;
-  const mark = () => {
-    const changed = Number($('#hk-audit').value) !== h.audit_retention_days
-      || Number($('#hk-admin-audit').value) !== h.admin_audit_retention_days
-      || Number($('#hk-trash').value) !== h.deleted_user_retention_days;
-    $('[data-act="save-housekeeping"]').disabled = !changed;
-    $('#hk-state').textContent = changed ? 'Unsaved changes' : 'Saved';
-  };
-  ['#hk-audit', '#hk-admin-audit', '#hk-trash'].forEach((sel) => $(sel).addEventListener('input', mark));
+/* ?user=<id> opens that person (the command palette and links from other sections use it). */
+function openUserFromQuery() {
+  const open = Number(qs().user);
+  if (!open) return;
+  setQs({ user: undefined }, { merge: true });
+  openUserDrawer(open);
 }
 
 /* ---------- Users ---------- */
@@ -331,6 +93,10 @@ function paintFilterButtons() {
   $('#u-clear').hidden = !(f.status || f.role || f.q);
   $('#a-action-btn').innerHTML = `${icon('filter')}<span class="label">${esc(AD.audit.action ? auditTitle(AD.audit.action) : 'All actions')}</span>`;
   $('#a-action-btn').classList.toggle('is-on', !!AD.audit.action);
+  const adminBtn = $('#a-admin-btn');
+  adminBtn.innerHTML = `${icon('shield')}<span class="label">Admin actions only</span>`;
+  adminBtn.setAttribute('aria-pressed', String(!!AD.audit.adminOnly));
+  adminBtn.classList.toggle('is-on', !!AD.audit.adminOnly);
   // Reached from a user's "See all activity"; without a visible chip the filter is invisible and stuck.
   const chip = $('#a-user-chip');
   const name = AD.audit.userId && (AD.users.find((u) => u.id === AD.audit.userId) || {}).username;
@@ -748,7 +514,8 @@ async function loadActivity({ more = false } = {}) {
     AD.audit.cursor = null;
   }
   const qs = toQuery({ action: AD.audit.action || undefined, q: AD.audit.q || undefined,
-    user_id: AD.audit.userId || undefined, cursor: more ? AD.audit.cursor : undefined, limit: 50 });
+    user_id: AD.audit.userId || undefined, admin: AD.audit.adminOnly ? 1 : undefined,
+    cursor: more ? AD.audit.cursor : undefined, limit: 50 });
   let data;
   try {
     data = await api(`/api/admin/audit${qs}`);
@@ -760,7 +527,7 @@ async function loadActivity({ more = false } = {}) {
   AD.audit.items = more ? AD.audit.items.concat(data.items) : data.items;
   AD.audit.cursor = data.next_cursor;
   $('[data-act="audit-more"]').hidden = !data.next_cursor;
-  $('#a-export').href = `/api/admin/audit${toQuery({ action: AD.audit.action || undefined, q: AD.audit.q || undefined, user_id: AD.audit.userId || undefined, format: 'csv' })}`;
+  $('#a-export').href = `/api/admin/audit${toQuery({ action: AD.audit.action || undefined, q: AD.audit.q || undefined, user_id: AD.audit.userId || undefined, admin: AD.audit.adminOnly ? 1 : undefined, format: 'csv' })}`;
   paintFilterButtons();
   const n = AD.audit.items.length;
   $('#audit-summary').innerHTML = n
@@ -800,8 +567,6 @@ async function onAction(e) {
   const act = el.dataset.act;
   const u = AD.users.find((x) => x.id === Number(el.dataset.id));
   switch (act) {
-    case 'refresh': return ui.busy(el, () => loadOverview({ force: true }));
-    case 'reload-overview': return loadOverview({ force: true });
     case 'reload-users': return loadUsers();
     case 'reload-audit': return loadActivity();
     case 'add-user': return openAddUser();
@@ -834,16 +599,11 @@ async function onAction(e) {
       AD.audit.userId = null;
       paintFilterButtons();
       return loadActivity();
-    case 'save-housekeeping':
-      return ui.busy(el, async () => {
-        await api('/api/admin/settings', { method: 'PUT', body: {
-          audit_retention_days: Number($('#hk-audit').value),
-          admin_audit_retention_days: Number($('#hk-admin-audit').value),
-          deleted_user_retention_days: Number($('#hk-trash').value),
-        } });
-        toast('Housekeeping saved', { type: 'success' });
-        loadOverview({ force: true });
-      });
+    case 'toggle-admin-only':
+      AD.audit.adminOnly = !AD.audit.adminOnly;
+      setQs({ admin: AD.audit.adminOnly ? '1' : undefined }, { merge: true });
+      paintFilterButtons();
+      return loadActivity();
     default: return undefined;
   }
 }
@@ -859,3 +619,4 @@ document.addEventListener('click', (e) => {
     openActionFilter($('#a-action-btn'));
   }
 });
+

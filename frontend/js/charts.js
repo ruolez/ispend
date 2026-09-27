@@ -144,13 +144,13 @@ const charts = (() => {
   window.addEventListener('ispend:theme', rerenderAll);
 
   /* HTML legend: container gets .legend-item buttons; toggling hides datasets (bar/line) or slices (doughnut). */
-  function htmlLegend(container, chart, { onClick, values, currency = 'USD', list = false } = {}) {
+  function htmlLegend(container, chart, { onClick, values, currency = 'USD', list = false, format = 'money' } = {}) {
     const isPie = chart.config.type === 'doughnut' || chart.config.type === 'pie';
     const items = isPie
       ? chart.data.labels.map((l, i) => ({ i, label: l, color: chart.data.datasets[0].backgroundColor[i], value: chart.data.datasets[0].data[i] }))
       : chart.data.datasets.map((d, i) => ({ i, label: d.label, color: Array.isArray(d.backgroundColor) ? d.backgroundColor[0] : (d.borderColor || d.backgroundColor), value: values && values[i] }));
     container.classList.toggle('legend-list', !!list);
-    container.innerHTML = items.map((it) => `<button type="button" class="legend-item" data-i="${it.i}"><span class="legend-name"><i class="dot" style="--c:${it.color}"></i><span class="truncate">${esc(it.label)}</span></span>${it.value != null ? `<span class="legend-val">${fmtMoney(it.value, currency)}</span>` : ''}</button>`).join('');
+    container.innerHTML = items.map((it) => `<button type="button" class="legend-item" data-i="${it.i}"><span class="legend-name"><i class="dot" style="--c:${it.color}"></i><span class="truncate">${esc(it.label)}</span></span>${it.value != null ? `<span class="legend-val">${format === 'count' ? fmtNumber(it.value) : fmtMoney(it.value, currency)}</span>` : ''}</button>`).join('');
     container.onclick = (e) => {
       const b = e.target.closest('[data-i]'); if (!b) return;
       const i = Number(b.dataset.i);
@@ -188,6 +188,18 @@ const charts = (() => {
       scales: {
         x: { stacked, grid: { display: horizontal }, border: { display: !horizontal }, ticks: horizontal ? currencyTicks(currency) : { maxRotation: 0, autoSkip: true } },
         y: { stacked, beginAtZero: true, grid: { display: !horizontal }, border: { display: false }, ticks: horizontal ? {} : currencyTicks(currency) },
+      },
+    };
+  }
+  /* Counts, not money (people, sign-ups): the same look as barOptions/lineOptions without currency. */
+  function countOptions(t, { stacked = false, pct = false } = {}) {
+    const f = (v) => (pct ? fmtPct(v, { decimals: 0 }) : fmtNumber(v));
+    return {
+      interaction: { mode: 'index', intersect: false },
+      plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.parsed.y == null ? '—' : f(c.parsed.y)}` } } },
+      scales: {
+        x: { stacked, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+        y: { stacked, beginAtZero: true, border: { display: false }, ticks: { precision: 0, callback: f } },
       },
     };
   }
@@ -229,6 +241,6 @@ const charts = (() => {
       + `<path d="${d}" fill="none" style="stroke:${color}" stroke-width="${stroke}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
 
-  return { theme, css, sparkSvg, applyChartDefaults, tapToDrill, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, quietly, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions };
+  return { theme, css, sparkSvg, applyChartDefaults, tapToDrill, catColor, withAlpha, gradientFill, currencyTicks, currencyTooltip, makeChart, destroyChart, quietly, rerenderAll, htmlLegend, donutCenterPlugin, barOptions, lineOptions, countOptions };
 })();
 const { makeChart, destroyChart, catColor } = charts;

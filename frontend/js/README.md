@@ -218,9 +218,19 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 `setQs()` also calls `rememberQuery()`: each page's last query (minus transient keys such as `open`, `statement`) is kept in sessionStorage. `initNav()` calls `restoreQuery()` before page scripts read `qs()`, and sidebar links carry `savedQuery(href)`, so filters, sorts, ranges and tabs survive navigating away and back within the session. Pages read state from `qs()` as before; nothing else to do.
 
 ## Admin
-`/admin.html` (nav group "Admin", `g a`) is admin-only and mounts the same tabbed layout as Settings
-(`.settings-layout` / `.settings-nav` / `.settings-section` / `.setting-row`, now in **app.css** so both
-pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sign-ups & email, Backup.
+`/admin.html` is a console with its own shell: `initNav('<section>', {groups, footer, bottom, more,
+brandBadge, searchLabel, title})` swaps the app's navigation for the admin's (Insights · Operations ·
+Settings groups, "Back to app" in the footer, Overview/Revenue/Users/Activity on the phone bar) and
+`window.PALETTE` makes ⌘K search people (`GET /api/admin/search`) instead of transactions.
+`js/pages/admin-shell.js` owns the registry, routing, the period picker and the KPI tile; each section is
+one file that calls `AdminPanels.register(key, {label, icon, group, sub, ranged, markup, actions,
+load(host, ctx)})`. The hash is the section, the query holds filters and the period
+(`?range=90d&cmp=1`), so views bookmark and survive a reload; admin nav links are hash-only so switching
+keeps the query. `ctx.range` is the period as an API query string, `ctx.isCurrent()` guards late
+responses. `adminTiles(tiles)` renders the server's tile objects (value, prev, delta, `good` direction —
+a rising cancellation count is red — `agg`-thinned sparkline, help tooltip, optional drill link).
+Numbers come from `/api/admin/metrics/*` (`backend/admin_metrics.py`, periods from `admin_range.py`,
+five-minute `metric_cache`, `as_of` stamp).
 
 - **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
   the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
@@ -264,20 +274,19 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sig
   typed; the server re-validates the phrase. Restore returns a user to `locked` if they were locked
   before deletion. Locked and deleted produce the same 403 message on login so a password holder cannot
   tell them apart; a wrong password stays a generic 401.
-- **Composition.** A sibling feature adds a tab with
-  `window.AdminPanels.register(tab, { label, icon, sub, actions, load(hostEl) })` plus one `<script>` in
-  `admin.html` — no edits to `admin.js`. `sub` is the page subtitle for that tab; `actions` is HTML for a
-  page-head action group (`.adm-actions[data-actions=<tab>]`, hidden until the tab is current), so every
-  tab's primary buttons sit in the same place. `js/pages/admin-backup.js` is the worked example.
+- **Composition.** A new section is one file plus one `<script>` in `admin.html`; `actions` is HTML for a
+  page-head action group (`.adm-actions[data-actions=<key>]`, hidden until the section is current), so
+  every section's primary buttons sit in the same place. `js/pages/admin-backup.js` and
+  `admin-overview.js` are the worked examples.
   Tabs that edit server settings share `js/pages/_adminform.js`: `secHead(title, badge)`,
   `configField(prefix, key, meta, labels, hints)` for one `{value, set, locked}` row,
   `collectConfigFields(prefix, keys)` (skips disabled inputs and the secret mask) and
   `adminDirtyBar(tab, {saveAct, discardAct, unsavedText})`. Every panel is in the DOM at once, so each
   tab keeps its own id prefix (`ab-` billing, `as-` sign-ups) and never reads another tab's inputs.
-- **Tab plumbing.** `showTab()` sets `aria-current="page"` on the nav item, swaps `#admin-sub`, reveals
-  that tab's action group and fires `window` event `ispend:admin-tab` with the tab name — panels use it to
-  drop viewport-fixed state (billing's save bar, backup's poll timer) when their tab goes away. `r`
-  refreshes whichever tab is showing (`refreshCurrent()`), `g u` jumps to Users.
+- **Section plumbing.** `adminShow()` sets `aria-current="page"` on the sidebar and phone-bar items, swaps
+  the title and subtitle, reveals that section's action group and fires `window` event `ispend:admin-tab`
+  with the key — panels use it to drop viewport-fixed state (billing's save bar, backup's poll timer).
+  `r` refreshes the current section (`AdminPanels.refresh()`), `g o/u/l/…` jump between sections.
 - **Activity.** Rows render `subject.verb` actions as a sentence (`AUDIT_SUBJECT`/`AUDIT_VERB`/
   `AUDIT_EXACT` in `admin.js`; unknown verbs fall back to the prettified action) with the family's icon,
   the raw action in the tooltip, `detail` as key/value chips, and day headers (Today / Yesterday / date).
@@ -295,9 +304,9 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sig
   `GET /restore/:id?token=` — the last one is not admin-gated because a restore signs the admin out
   partway through; the token issued when it started is kept in `sessionStorage` so the page can still
   report the outcome.
-- **Charts** on Overview are counts, not money: `countScales()` replaces the currency ticks/tooltips from
-  `charts.barOptions` / `charts.lineOptions`. All four series are gap-filled server-side so both charts
-  share one x-axis.
+- **Charts** of people are counts, not money: `charts.countOptions()` (and `htmlLegend(..., {format:
+  'count'})`). Series are bucketed server-side (day ≤ 31 days, week ≤ 186, month beyond) so every chart
+  in a section shares one x-axis.
 - Storage is reported twice on purpose: `disk_bytes` (a volume scan — exact, includes OCR output and
   orphans) and `source_bytes` (the DB's view, de-duplicated by `file_sha256`). AI usage is reported in
   tokens, never dollars.

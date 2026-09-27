@@ -9,7 +9,7 @@ table without updating this file fails loudly instead of silently dropping data 
 # schema_migrations is the target's own record of what ran there; restoring the source's rows
 # would either conflict or erase the target's knowledge of its schema. backup_jobs tracks the
 # restore that is running. Neither is ever exported or truncated.
-EXCLUDED = {"schema_migrations", "backup_jobs", "app_errors"}
+EXCLUDED = {"schema_migrations", "backup_jobs", "app_errors", "metric_cache"}
 
 TABLE_ORDER = [
     # level 0 - no dependencies
@@ -17,6 +17,7 @@ TABLE_ORDER = [
     "settings",
     "subscription_events",   # user_id is not a foreign key: revenue history outlives the user
     "payments",              # same
+    "metric_daily",
     # level 1 - depend on users only
     "subscriptions",
     "stripe_events",
@@ -61,13 +62,14 @@ PK = {
     "transaction_tags": "transaction_id, tag_id",
     "user_activity_days": "user_id, day",
     "signup_attribution": "user_id",
+    "metric_daily": "day, metric, dim",
 }
 DEFAULT_PK = "id"
 
 # Tables with a SERIAL id whose sequence must be advanced after an id-preserving restore.
 NO_SEQUENCE = {"settings", "subscriptions", "stripe_events",
                "recurring_dismissals", "anomaly_dismissals", "transaction_tags",
-               "user_activity_days", "signup_attribution"}
+               "user_activity_days", "signup_attribution", "metric_daily"}
 
 # The one trigger that rewrites values on insert. Disabled during a restore (table ownership is
 # enough; no superuser needed) so is_transfer/is_excluded come back exactly as they were saved

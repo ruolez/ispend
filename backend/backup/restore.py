@@ -266,6 +266,8 @@ def restore_archive(path, progress=None, delete_extra_files=False, fast=False):
                     _restore_sequences(cur)
                     fixups.run(cur, plan.missing_migrations)
                     _rotate_session_epoch(cur)
+                    # Computed from the data that was just replaced.
+                    cur.execute("DELETE FROM metric_cache")
 
                     if mode == "replica":
                         cur.execute("SET session_replication_role = origin")

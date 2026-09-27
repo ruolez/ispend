@@ -19,89 +19,19 @@
   <script src="/js/pwa.js"></script>
 </head>
 <body>
-  <main id="main" class="main main--wide">
+  <main id="main" class="main main--wide adm-main">
     <div class="page-head">
-      <div><h1>Admin</h1><div class="page-sub" id="admin-sub">Users, usage and how the site is doing</div></div>
+      <div><h1 id="admin-title">Admin</h1><div class="page-sub" id="admin-sub"></div></div>
       <div class="page-actions" id="admin-actions" hidden>
-        <div class="adm-actions" data-actions="overview" hidden>
-          <div class="seg" id="range-seg" aria-label="Time range">
-            <button type="button" class="seg-btn" data-days="7">7d</button>
-            <button type="button" class="seg-btn" data-days="30">30d</button>
-            <button type="button" class="seg-btn active" data-days="90">90d</button>
-            <button type="button" class="seg-btn" data-days="365">1y</button>
-          </div>
-          <button type="button" class="btn btn-secondary" data-act="refresh"></button>
-        </div>
-        <div class="adm-actions" data-actions="users" hidden>
-          <button type="button" class="btn btn-primary" data-act="add-user"></button>
-        </div>
-        <div class="adm-actions" data-actions="activity" hidden>
-          <a class="btn btn-secondary" id="a-export" href="/api/admin/audit?format=csv" download data-admin-download></a>
+        <div class="adm-range" id="adm-range-group" hidden>
+          <button type="button" class="btn btn-secondary" id="adm-range" aria-haspopup="dialog" aria-label="Period"></button>
+          <button type="button" class="btn btn-secondary" id="adm-compare" aria-pressed="false" data-tip="Compare with the period before"></button>
         </div>
       </div>
     </div>
 
     <div id="admin-gate"></div>
-
-    <div class="settings-layout" id="admin-layout" hidden>
-      <nav class="settings-nav" id="admin-nav" aria-label="Admin sections">
-        <a class="nav-item" href="#overview" data-tab="overview"></a>
-        <a class="nav-item" href="#users" data-tab="users"></a>
-        <a class="nav-item" href="#activity" data-tab="activity"></a>
-      </nav>
-
-      <div id="admin-panels">
-        <section class="tab-panel" data-panel="overview">
-          <div id="ov-error"></div>
-          <div class="stat-grid" id="ov-stats"></div>
-          <div class="grid grid-2 mt-4">
-            <section class="card chart-card">
-              <header class="card-head"><h2>Signups &amp; sign-ins</h2></header>
-              <div class="chart-body" style="--h:220px"><canvas id="ch-users"></canvas></div>
-              <div class="chart-legend" id="lg-users"></div>
-            </section>
-            <section class="card chart-card">
-              <header class="card-head"><h2>Imported</h2></header>
-              <div class="chart-body" style="--h:220px"><canvas id="ch-import"></canvas></div>
-              <div class="chart-legend" id="lg-import"></div>
-            </section>
-          </div>
-          <div class="grid grid-2 mt-4">
-            <section class="card"><header class="card-head"><h2>AI usage</h2></header><div class="card-body" id="ov-ai"></div></section>
-            <section class="card"><header class="card-head"><h2>Storage</h2></header><div class="card-body" id="ov-storage"></div></section>
-          </div>
-          <div class="grid grid-2 mt-4">
-            <section class="card"><header class="card-head"><h2>Bank profiles</h2></header><div class="card-body" id="ov-profiles"></div></section>
-            <section class="card"><header class="card-head"><h2>Housekeeping</h2><span class="hint" id="ov-measured"></span></header><div class="card-body" id="ov-housekeeping"></div></section>
-          </div>
-        </section>
-
-        <section class="tab-panel" data-panel="users">
-          <div id="users-notice"></div>
-          <div class="tbl-toolbar" id="users-toolbar">
-            <div class="input-group adm-search"><span class="ico-wrap"></span>
-              <input id="u-search" class="input input-sm" type="search" placeholder="Search users…" aria-label="Search users"></div>
-            <button type="button" class="btn btn-secondary btn-sm" id="u-status-btn" aria-haspopup="menu"></button>
-            <button type="button" class="btn btn-secondary btn-sm" id="u-role-btn" aria-haspopup="menu"></button>
-            <button type="button" class="btn btn-ghost btn-sm" id="u-clear" data-act="clear-filters" hidden>Clear</button>
-          </div>
-          <div class="tbl-summary" id="users-summary"></div>
-          <div id="users-table"></div>
-        </section>
-
-        <section class="tab-panel" data-panel="activity">
-          <div class="tbl-toolbar" id="audit-toolbar">
-            <div class="input-group adm-search"><span class="ico-wrap"></span>
-              <input id="a-search" class="input input-sm" type="search" placeholder="Search actions…" aria-label="Search activity"></div>
-            <button type="button" class="btn btn-secondary btn-sm" id="a-action-btn" aria-haspopup="menu"></button>
-            <button type="button" class="btn btn-secondary btn-sm" id="a-user-chip" data-act="clear-audit-user" hidden></button>
-          </div>
-          <div class="tbl-summary" id="audit-summary"></div>
-          <div id="audit-list"></div>
-          <div class="row center mt-4"><button type="button" class="btn btn-secondary btn-sm" data-act="audit-more" hidden>Load more</button></div>
-        </section>
-      </div>
-    </div>
+    <div id="admin-layout" hidden><div id="admin-panels"></div></div>
     <div class="sr-only" aria-live="polite" id="admin-live"></div>
   </main>
   <script src="/js/api.js"></script>
@@ -113,10 +43,14 @@
   <script src="/vendor/chart.umd.js"></script>
   <script src="/js/charts.js"></script>
   <script src="/js/nav.js"></script>
-  <script src="/js/pages/admin.js"></script>
+  <script src="/js/pages/admin-shell.js"></script>
   <script src="/js/pages/_adminform.js"></script>
+  <script src="/js/pages/admin-overview.js"></script>
+  <script src="/js/pages/admin.js"></script>
+  <script src="/js/pages/admin-imports.js"></script>
   <script src="/js/pages/admin-billing.js"></script>
   <script src="/js/pages/admin-signups.js"></script>
+  <script src="/js/pages/admin-retention.js"></script>
   <script src="/js/pages/admin-backup.js"></script>
 </body>
 </html>

@@ -42,7 +42,8 @@ ROUTES = [
     ("post", "/api/admin/users/5/restore"), ("delete", "/api/admin/users/5"),
     ("get", "/api/admin/stats/overview"), ("get", "/api/admin/audit"),
     ("get", "/api/admin/audit/actions"), ("get", "/api/admin/settings"),
-    ("put", "/api/admin/settings"),
+    ("put", "/api/admin/settings"), ("get", "/api/admin/search?q=a"),
+    ("get", "/api/admin/step-up/status"), ("post", "/api/admin/step-up"),
 ]
 
 

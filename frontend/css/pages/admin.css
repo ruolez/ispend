@@ -119,3 +119,47 @@
   .adm-audit-who .row-link { max-width: none; }
   #audit-list .adm-audit { padding: 0 var(--sp-4) var(--sp-2); }
 }
+
+/* ---------- Admin shell ---------- */
+/* The console has its own navigation; the brand says which side of iSpend this is. */
+.sb-brand:has(.sb-badge) .sb-name { flex: 0 0 auto; }
+.sb-badge { margin-right: auto; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--fs-xs); }
+html[data-sidebar="rail"] .sb-badge { display: none; }
+
+/* Period picker and the compare switch share the page head with each section's own buttons. */
+#admin-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+.adm-range { display: flex; align-items: center; gap: var(--sp-2); }
+.adm-range .btn.is-on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.adm-range-menu { width: 300px; }
+.adm-range-custom { padding: var(--sp-2) 10px var(--sp-3); }
+.adm-range-custom .menu-label { padding-left: 0; }
+.adm-range-custom .input { flex: 1 1 0; min-width: 0; }
+
+/* KPI tiles: a whole tile is the link to the people behind the number when there is one. */
+.adm-tiles { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+a.adm-kpi { color: inherit; text-decoration: none; }
+@media (hover: hover) { a.adm-kpi:hover { border-color: var(--border-strong); box-shadow: var(--sh-2); } }
+a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.adm-kpi .stat-label { display: flex; align-items: center; gap: 4px; }
+.adm-kpi .stat-delta { flex-wrap: wrap; }
+.adm-kpi.has-spark .stat-delta { padding-right: 100px; }
+.adm-help { display: inline-flex; color: var(--text-4); cursor: help; }
+@media (hover: hover) { .adm-help:hover { color: var(--text-2); } }
+.adm-help:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+.adm-asof { color: var(--text-4); font-size: var(--fs-xs); }
+.adm-alerts { padding: var(--sp-1) 0; }
+.adm-alert { display: flex; align-items: center; gap: var(--sp-3); padding: 10px var(--sp-4); color: var(--text-1); text-decoration: none; font-size: var(--fs-sm); }
+.adm-alert + .adm-alert { border-top: 1px solid var(--border); }
+@media (hover: hover) { .adm-alert:hover { background: var(--surface-2); text-decoration: none; } }
+.adm-alert--danger > .ico:first-child { color: var(--danger-text); }
+.adm-alert--warning > .ico:first-child { color: var(--warning); }
+.adm-alert--info > .ico:first-child { color: var(--accent); }
+
+@media (max-width: 640px) {
+  #admin-actions { justify-content: flex-start; width: 100%; }
+  .adm-range { width: 100%; }
+  .adm-range #adm-range { flex: 1 1 auto; justify-content: flex-start; }
+  .adm-kpi.has-spark .stat-delta { padding-right: 0; }
+  .adm-tiles { grid-template-columns: 1fr 1fr; }
+  .adm-kpi .stat-delta-vs { display: none; }
+}

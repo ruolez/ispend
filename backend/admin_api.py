@@ -85,6 +85,26 @@ def step_up():
     return auth.step_up(json_body().get("password"))
 
 
+# ---------- Search (the admin command palette) ----------
+
+@bp.get("/search")
+@admin_required
+def search():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"users": []})
+    uid = int(q.lstrip("#")) if q.lstrip("#").isdigit() else None
+    rows = db.query(
+        """SELECT u.id, u.username, u.email, u.status, u.role, s.ent_state
+             FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
+            WHERE u.id = %(id)s OR u.username ILIKE %(like)s OR u.email ILIKE %(like)s
+            ORDER BY (u.id = %(id)s) DESC NULLS LAST, (lower(u.email) = lower(%(q)s)) DESC NULLS LAST,
+                     u.last_seen_at DESC NULLS LAST, u.id
+            LIMIT 8""",
+        {"id": uid, "like": f"%{q}%", "q": q}) or []
+    return jsonify({"users": rows_json(rows)})
+
+
 # ---------- Users ----------
 
 _LIST_USERS_SQL = """
@@ -656,9 +676,13 @@ ADMIN_SETTINGS = {
 @bp.get("/settings")
 @admin_required
 def get_admin_settings():
+    house = db.query("SELECT COUNT(*) AS audit_rows, MIN(created_at) AS oldest_audit_at FROM audit_log",
+                     one=True) or {}
     return jsonify({"audit_retention_days": audit_retention_days(),
                     "admin_audit_retention_days": admin_audit_retention_days(),
-                    "deleted_user_retention_days": _retention_days()})
+                    "deleted_user_retention_days": _retention_days(),
+                    "audit_rows": house.get("audit_rows", 0),
+                    "oldest_audit_at": iso(house.get("oldest_audit_at"))})
 
 
 @bp.put("/settings")

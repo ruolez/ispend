@@ -57,7 +57,11 @@ def tick(now=None):
     if not billing_tick.claim(LEASE_KEY):
         return {"skipped": "another worker holds the lease"}
     now = now or datetime.now(timezone.utc)
-    out = {"ent_states_changed": ledger.refresh_all_ent_states(), "pruned": prune()}
+    import activity
+    import admin_metrics
+
+    out = {"ent_states_changed": ledger.refresh_all_ent_states(), "pruned": prune(),
+           "snapshot": admin_metrics.snapshot(activity.today())}
     if billing.enabled():
         import billing_reconcile
 

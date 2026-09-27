@@ -68,17 +68,28 @@ function paintPinnedViews(me) {
     anchor.after(a);
   });
 }
+function itemHref(i) {
+  // Hash links (the admin's sections) keep the page's current query instead of a remembered one.
+  return i.href.startsWith('#') ? i.href : `${i.href}${savedQuery(i.href)}`;
+}
 function navItemHtml(i, activePage) {
-  return `<a href="${i.href}${esc(savedQuery(i.href))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
+  return `<a href="${esc(itemHref(i))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
-async function initNav(activePage) {
+/* opts (the admin console uses these to reuse the whole shell with its own destinations):
+   groups, footer, bottom, more — nav items in NAV_GROUPS' shape; brandBadge; searchLabel; title.
+   Without opts this is the app's own navigation. */
+async function initNav(activePage, opts = {}) {
   restoreQuery();
-  const active = NAV_ITEMS.find((i) => i.page === activePage);
+  const groups = opts.groups || NAV_GROUPS;
+  const navItems = opts.groups ? groups.flatMap((g) => g.items).concat(opts.footer || []) : NAV_ITEMS;
+  window.NAV_SHELL = { items: navItems, bottom: opts.bottom, more: opts.more };
+  const active = navItems.find((i) => i.page === activePage);
   document.body.dataset.page = activePage;
   /* setPageTitle('Sep 2026 · Chase') → "Dashboard · Sep 2026 · Chase · iSpend"; pages call it when their state changes. */
-  window.setPageTitle = (sub) => { document.title = `${[active ? active.label : 'iSpend', sub].filter(Boolean).join(' · ')} · iSpend`; };
+  const titleBase = opts.title || (active ? active.label : 'iSpend');
+  window.setPageTitle = (sub) => { document.title = `${[titleBase, sub].filter(Boolean).join(' · ')} · iSpend`; };
   setPageTitle('');
 
   // Skip link + sidebar
@@ -90,15 +101,15 @@ async function initNav(activePage) {
   sb.innerHTML = `
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
-      <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>
+      <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>${opts.brandBadge ? `<span class="badge badge-accent sb-badge">${esc(opts.brandBadge)}</span>` : ''}
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
-        ${NAV_GROUPS.map((g) => `<div class="sb-group" ${g.adminOnly ? 'data-admin-only hidden' : ''}><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
+        ${groups.map((g) => `<div class="sb-group" ${g.adminOnly ? 'data-admin-only hidden' : ''}><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
-        ${navItemHtml({ ...NAV_BILLING, billingOnly: true }, activePage)}
-        ${navItemHtml(NAV_SETTINGS, activePage)}
+        ${opts.footer ? opts.footer.map((i) => navItemHtml(i, activePage)).join('')
+    : `${navItemHtml({ ...NAV_BILLING, billingOnly: true }, activePage)}${navItemHtml(NAV_SETTINGS, activePage)}`}
       </div>
     </aside>`;
   Array.from(sb.children).forEach((c) => document.body.prepend(c));
@@ -111,7 +122,7 @@ async function initNav(activePage) {
     <header class="topbar" id="topbar">
       <button type="button" class="btn btn-icon btn-ghost tb-menu" id="tb-menu" aria-label="Open menu">${icon('menu')}</button>
       <div class="tb-title" id="tb-title">${esc(active ? active.label : 'iSpend')}</div>
-      <button type="button" class="tb-search" id="tb-search" aria-label="Search (⌘K)">${icon('search')}<span>Search transactions…</span><kbd>⌘K</kbd></button>
+      <button type="button" class="tb-search" id="tb-search" aria-label="Search (⌘K)">${icon('search')}<span>${esc(opts.searchLabel || 'Search transactions…')}</span><kbd>⌘K</kbd></button>
       <div class="tb-actions">
         <button type="button" class="btn btn-icon btn-ghost" id="tb-theme" aria-label="Toggle theme">${icon('sun')}</button>
         <button type="button" class="tb-avatar-btn" id="tb-user" aria-haspopup="menu" aria-label="Account menu"><span class="avatar" id="tb-avatar"></span><span class="tb-username text-2 fs-base" id="tb-username"></span>${icon('chevron-down', 'ico-sm text-3')}</button>
@@ -122,14 +133,15 @@ async function initNav(activePage) {
 
   // Mobile bottom nav
   const bn = document.createElement('nav'); bn.className = 'bottomnav'; bn.setAttribute('aria-label', 'Primary');
-  bn.innerHTML = BOTTOM_NAV.map((p) => NAV_ITEMS.find((i) => i.page === p)).map((i) => `<a href="${i.href}${esc(savedQuery(i.href))}" class="bn-item" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.label)}</span></a>`).join('')
-    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${BOTTOM_NAV.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}</span><span class="bn-label">More</span></button>`;
+  const bottom = opts.bottom || BOTTOM_NAV;
+  bn.innerHTML = bottom.map((p) => navItems.find((i) => i.page === p)).filter(Boolean).map((i) => `<a href="${esc(itemHref(i))}" class="bn-item" data-page="${i.page}" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.short || i.label)}</span></a>`).join('')
+    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${bottom.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}</span><span class="bn-label">More</span></button>`;
   document.body.appendChild(bn);
   // The tapped tab takes the highlight at once, while the next screen loads; a back/forward restore
   // brings this page back as it was, so the highlight is handed back too.
   bn.addEventListener('click', (e) => {
     const a = e.target.closest('a.bn-item');
-    if (!a || a.getAttribute('aria-current') === 'page' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (!a || a.getAttribute('aria-current') === 'page' || a.getAttribute('href').startsWith('#') || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return;
     bn.classList.add('is-going'); a.classList.add('is-going');
   });
   window.addEventListener('pageshow', (e) => {
@@ -191,7 +203,7 @@ async function initNav(activePage) {
   ui.shortcuts.register(']', () => setSidebarMode('full'));
   ui.shortcuts.register('?', () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []), { description: 'Shortcuts' });
   ui.shortcuts.register('/', () => openPalette(), { description: 'Search' });
-  NAV_ITEMS.filter((i) => i.key).forEach((i) => ui.shortcuts.register(`g ${i.key}`, () => { location.href = i.href; },
+  navItems.filter((i) => i.key).forEach((i) => ui.shortcuts.register(`g ${i.key}`, () => { location.href = i.href; },
     { description: `Go to ${i.label}`, when: () => !i.adminOnly || (window.currentUser || {}).role === 'admin' }));
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); } });
 
@@ -227,14 +239,16 @@ async function initNav(activePage) {
   else $$('[data-billing-only]').forEach((el) => el.remove());
   paintBillingBanner(me);
   watchConnectivity();
-  refreshReviewPill();
-  window.addEventListener('ispend:transactions-changed', () => refreshReviewPill(true));
+  if (!opts.groups) {
+    refreshReviewPill();
+    window.addEventListener('ispend:transactions-changed', () => refreshReviewPill(true));
+  }
   // Back/forward restores the page as it was left: refresh the shared bits, and tell the page
   // (ispend:resume) so it can refetch data that may have changed elsewhere meanwhile.
   window.addEventListener('pageshow', (e) => {
     if (!e.persisted) return;
     store.get('me', '/api/auth/me', { force: true }).catch(() => {});
-    refreshReviewPill(true);
+    if (!opts.groups) refreshReviewPill(true);
     window.dispatchEvent(new CustomEvent('ispend:resume'));
   });
   paintPinnedViews(me);
@@ -406,11 +420,12 @@ function watchLargeTitle() {
 function openMoreSheet(activePage) {
   const me = window.currentUser || {};
   const allowed = (i) => (!i.adminOnly || me.role === 'admin') && (i.page !== 'billing' || (me.billing && me.billing.billing_enabled));
-  const items = MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).map((i) => (i.page === 'admin' ? { ...i, adminOnly: true } : i)).filter(allowed);
+  const shellMore = window.NAV_SHELL && window.NAV_SHELL.more;
+  const items = shellMore || MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).map((i) => (i.page === 'admin' ? { ...i, adminOnly: true } : i)).filter(allowed);
   const views = (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
   const mode = Theme.get();
   const html = `
-    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${i.href}${esc(savedQuery(i.href))}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span></a>`).join('')}</nav>
+    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span></a>`).join('')}</nav>
     ${views.length ? `<div class="section-label mt-4">Saved views</div><div class="more-list">${views.map((v) => `<a class="more-row" href="/transactions.html${esc(v.query)}&view=${encodeURIComponent(v.id)}">${icon('star', 'ico-sm')}<span class="grow truncate">${esc(v.name)}</span>${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}</div>` : ''}
     <div class="section-label mt-4">Appearance</div>
     <div class="seg more-theme" role="radiogroup" aria-label="Theme">${[['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="seg-btn${mode === k ? ' active' : ''}" role="radio" aria-checked="${mode === k}" data-theme-set="${k}">${icon(ic, 'ico-sm')}${l}</button>`).join('')}</div>
@@ -421,6 +436,7 @@ function openMoreSheet(activePage) {
       <button type="button" class="more-row danger" data-more="signout">${icon('log-out', 'ico-sm')}<span class="grow">Sign out</span></button>
     </div>`;
   const sh = ui.sheet({ title: 'More', html, className: 'more-sheet' });
+  sh.body.addEventListener('click', (e) => { if (e.target.closest('.more-tile[href^="#"]')) sh.close(); });
   ui.segmented(sh.body.querySelector('.more-theme'), { onChange: (btn) => setThemePref(btn.dataset.themeSet) });
   sh.body.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-more]');
@@ -497,7 +513,7 @@ function openPalette() {
   const wrap = document.createElement('div');
   wrap.className = 'palette-backdrop';
   wrap.innerHTML = `<div class="palette" role="dialog" aria-label="Search">
-      <div class="palette-input">${icon('search')}<input type="text" placeholder="${ui.isPhone() ? 'Search iSpend' : 'Search transactions, categories, pages…'}" aria-label="Search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palette-list" aria-haspopup="listbox" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
+      <div class="palette-input">${icon('search')}<input type="text" placeholder="${esc((window.PALETTE && window.PALETTE.placeholder) || (ui.isPhone() ? 'Search iSpend' : 'Search transactions, categories, pages…'))}" aria-label="Search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palette-list" aria-haspopup="listbox" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
       <div class="palette-list" id="palette-list" role="listbox" aria-label="Results"></div>
       <div class="sr-only" id="palette-live" aria-live="polite"></div></div>`;
   host.appendChild(wrap);
@@ -522,7 +538,25 @@ function openPalette() {
     .filter((i) => i.page !== 'billing' || (me.billing && me.billing.billing_enabled))
     .map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 
+  /* A page can replace what the palette finds (the admin console searches people, not
+     transactions): window.PALETTE = { placeholder, pages, actions, search(q) -> Promise<items> }. */
+  const custom = window.PALETTE;
+  async function searchCustom(q) {
+    const mySeq = ++seq;
+    q = q.trim();
+    const ql = q.toLowerCase();
+    const match = (it) => !ql || it.label.toLowerCase().includes(ql);
+    const base = [...(custom.pages || []).filter(match), ...(custom.actions || []).filter(match)];
+    render(base, q);
+    if (!custom.search || ql.length < 1) return;
+    try {
+      const found = await custom.search(q);
+      if (mySeq === seq) render([...found, ...base], q);
+    } catch { /* keep the static results */ }
+  }
+
   async function search(q) {
+    if (custom) return searchCustom(q);
     const mySeq = ++seq;
     q = q.trim();
     const ql = q.toLowerCase();
