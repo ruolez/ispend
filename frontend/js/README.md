@@ -242,6 +242,13 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sig
   sees them: ids, counts and enum-like values stay, names, file names, merchant keys and amounts become a
   "N private" chip (`hidden_fields`). Admin actions (`by_admin`) are shown whole. New audit detail keys
   are hidden by default — add a key to `STRING_KEYS` only if its values can never be user text.
+- **Revenue ledger.** Revenue pages never call Stripe. Webhooks, admin access changes and signups append to
+  `subscription_events` (status/plan/monthly value over time, `ledger.record_change`) and `payments`
+  (one row per invoice, upserted on its id; refunds found by charge or payment intent). `ledger.snapshot`
+  normalises a subscription to `mrr_cents` (active/past_due only, yearly ÷ 12, recurring discounts
+  applied). `billing_reconcile.run` (Billing tab → Revenue records, and daily from `ops_tick`) fixes drift
+  and imports pre-ledger history from Stripe's timestamps. `subscriptions.ent_state` caches
+  `entitlement.evaluate()` for SQL filters; `ops_tick` refreshes it hourly.
 - **User lifecycle.** `active → locked → active`, `active|locked → deleted` (soft, hidden, restorable),
   `deleted → purged` (irreversible). Purge is reachable **only** from the trash and needs the username
   typed; the server re-validates the phrase. Restore returns a user to `locked` if they were locked

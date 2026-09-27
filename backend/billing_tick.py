@@ -37,19 +37,20 @@ SELECT u.id, u.username, u.email, u.role, u.created_at,
 """
 
 
-def _claim():
+def claim(key=LEASE_KEY):
     """One atomic statement is the whole concurrency story: rowcount 1 means this worker won the
     hour. No new table, no advisory-lock lifetime to reason about, correct across replicas."""
     db.execute("INSERT INTO settings (key, value) VALUES (%s, '') ON CONFLICT (key) DO NOTHING",
-               (LEASE_KEY,))
+               (key,))
     n = db.execute(
         f"""UPDATE settings SET value = to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF'),
                                 updated_at = now()
              WHERE key = %s
                AND (value IS NULL OR value = ''
                     OR value::timestamptz < now() - interval '{LEASE}')""",
-        (LEASE_KEY,))
+        (key,))
     return bool(n)
+
 
 
 def _due(row, now):
@@ -82,7 +83,7 @@ def tick(base_url=""):
     import billing
     if not billing.enabled():
         return {"skipped": "billing not configured"}
-    if not _claim():
+    if not claim():
         return {"skipped": "another worker holds the lease"}
     now = datetime.now(timezone.utc)
     sent = {}
@@ -112,6 +113,13 @@ def _loop(app):
                 db.close_db()
         except Exception:
             log.warning("billing tick failed", exc_info=True)
+        try:
+            with app.app_context():
+                import ops_tick
+                ops_tick.tick()
+                db.close_db()
+        except Exception:
+            log.warning("ops tick failed", exc_info=True)
 
 
 def start(app):

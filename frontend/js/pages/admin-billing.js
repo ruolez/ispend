@@ -22,8 +22,9 @@ async function loadAdminBilling(host) {
   }
   host.innerHTML = ui.skeletonList(4);
   try {
-    [ABL.summary, ABL.config] = await Promise.all([
-      api('/api/admin/billing/summary'), api('/api/admin/billing/config')]);
+    [ABL.summary, ABL.config, ABL.reconcile] = await Promise.all([
+      api('/api/admin/billing/summary'), api('/api/admin/billing/config'),
+      api('/api/admin/billing/reconcile')]);
   } catch (err) {
     host.innerHTML = ui.errorBox(err.message, { retry: 'reload-admin-billing' });
     return;
@@ -67,6 +68,7 @@ function renderAdminBilling() {
         ${email.configured ? '' : 'Email is not set up, so nothing is sent — see Sign-ups &amp; email.'}</div>
       ${s.enabled ? `<button type="button" class="btn btn-secondary btn-sm mt-4" data-act="sync-stale">Sync stale subscriptions</button>` : ''}
     </section>
+    ${s.enabled ? reconcileSection(ABL.reconcile || {}) : ''}
 
     <section class="settings-section">
       ${secHead('Plan settings')}
@@ -154,6 +156,32 @@ function collectLanding() {
   };
 }
 
+/* The revenue pages read iSpend's own record of subscriptions and payments, kept by webhooks. This
+   is the check that it still agrees with Stripe, and the one-off import of older history. */
+function reconcileSection(r) {
+  const last = r.last;
+  const summary = !last ? 'Never compared with Stripe yet. The first comparison also imports the history of subscriptions that started before revenue tracking did.'
+    : last.error ? `The last comparison ${fmtRelative(last.started_at)} failed: ${last.error}`
+      : `Last compared ${fmtRelative(last.started_at)}: ${plural(last.checked, 'customer')} checked, ${plural(last.fixed.length, 'record')} corrected, ${plural(last.payments_added, 'payment')} added.`;
+  return `<section class="settings-section">
+    ${secHead('Revenue records', r.running ? ['Comparing…', 'badge-info'] : null)}
+    <div class="sub">${esc(summary)}</div>
+    <div class="row gap-2 mt-3">
+      <button type="button" class="btn btn-secondary btn-sm" data-act="reconcile-stripe" ${r.running ? 'disabled' : ''}>Compare with Stripe</button>
+      ${last ? `<button type="button" class="btn btn-ghost btn-sm" data-act="reconcile-stripe-full" ${r.running ? 'disabled' : ''}>Compare everything</button>` : ''}
+    </div>
+  </section>`;
+}
+
+async function startReconcile(el, full) {
+  return ui.busy(el, async () => {
+    await api('/api/admin/billing/reconcile', { method: 'POST', body: { full } });
+    toast('Comparing with Stripe — this runs in the background', { type: 'success' });
+    ABL.reconcile = await api('/api/admin/billing/reconcile');
+    renderAdminBilling();
+  });
+}
+
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
@@ -171,6 +199,8 @@ document.addEventListener('click', async (e) => {
         toast('Billing settings saved', { type: 'success' });
         loadAdminBilling(ABL.host);
       });
+    case 'reconcile-stripe': return startReconcile(el, false);
+    case 'reconcile-stripe-full': return startReconcile(el, true);
     case 'sync-stale':
       return ui.busy(el, async () => {
         const r = await api('/api/admin/billing/sync-stale', { method: 'POST', body: {} });

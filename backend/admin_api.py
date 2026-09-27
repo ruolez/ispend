@@ -190,6 +190,10 @@ def create_user():
                           VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
                        (row["id"], entitlement.trial_days()), commit=False)
         seed_categories.seed_for_user(db.get_db(), row["id"])
+    import ledger
+    ledger.record_admin(row["id"], "comped" if access == "comped" else "trial_started",
+                        {"created_by_admin": True})
+    ledger.refresh_ent_state(row["id"])
     audit("user.create", {"id": row["id"], "username": username, "role": role, "access": access},
           target=row["id"])
     return jsonify({"id": row["id"]}), 201

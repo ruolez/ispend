@@ -86,8 +86,8 @@ def install_stripe():
         Customer=types.SimpleNamespace(create=lambda **kw: {"id": "cus_fake"}),
         Price=types.SimpleNamespace(retrieve=lambda pid: {"unit_amount": 500, "currency": "usd",
                                                           "recurring": {"interval": "month"}}),
-        Subscription=types.SimpleNamespace(retrieve=lambda sid: {"id": sid, "status": "active",
-                                                                 "items": {"data": [{}]}}),
+        Subscription=types.SimpleNamespace(retrieve=lambda sid, **kw: {"id": sid, "status": "active",
+                                                                       "items": {"data": [{}]}}),
         checkout=types.SimpleNamespace(
             Session=types.SimpleNamespace(create=lambda **kw: {"url": "https://checkout.test/s"})),
         billing_portal=types.SimpleNamespace(

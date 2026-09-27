@@ -15,6 +15,8 @@ TABLE_ORDER = [
     # level 0 - no dependencies
     "users",
     "settings",
+    "subscription_events",   # user_id is not a foreign key: revenue history outlives the user
+    "payments",              # same
     # level 1 - depend on users only
     "subscriptions",
     "stripe_events",

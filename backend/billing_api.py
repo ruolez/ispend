@@ -1,6 +1,7 @@
 """User-facing billing: plan status, Checkout, the Billing Portal, and the Stripe webhook."""
 
 import logging
+import time
 
 from flask import Blueprint, jsonify, request, session
 
@@ -134,9 +135,11 @@ def webhook():
                 (event["id"], event["type"], int(event.get("created") or 0)), commit=False)
             if not inserted:
                 return jsonify({"received": True, "duplicate": True})
+            started = time.perf_counter()
             outcome, uid = billing.handle_event(event)
-            db.execute("UPDATE stripe_events SET status = %s, user_id = %s WHERE id = %s",
-                       (outcome, uid, event["id"]), commit=False)
+            db.execute("UPDATE stripe_events SET status = %s, user_id = %s, processing_ms = %s WHERE id = %s",
+                       (outcome, uid, int((time.perf_counter() - started) * 1000), event["id"]),
+                       commit=False)
     except billing.WebhookMismatch as e:
         log.error("Stripe webhook identity mismatch: %s", e)
         audit("billing.webhook_mismatch", {"event": event.get("id"), "detail": str(e)[:300]},

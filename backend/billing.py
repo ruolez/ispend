@@ -5,6 +5,7 @@ Hosted Checkout and Portal rather than embedded Elements: card data never touche
 frame-ancestors 'none' and X-Frame-Options: DENY.
 """
 
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -191,6 +192,11 @@ def create_portal_session(row):
 
 
 APPLY_SQL = """
+WITH old AS (
+  SELECT user_id AS o_uid, status AS o_status, plan AS o_plan, mrr_cents AS o_mrr,
+         cancel_at_period_end AS o_cape
+    FROM subscriptions WHERE user_id = %(uid)s FOR UPDATE
+)
 UPDATE subscriptions SET
   status = %(status)s,
   price_id = %(price_id)s,
@@ -199,6 +205,16 @@ UPDATE subscriptions SET
   trial_end = %(trial_end)s,
   current_period_end = %(cpe)s,
   cancel_at_period_end = %(cape)s,
+  currency = %(currency)s,
+  unit_amount_cents = %(unit_amount_cents)s,
+  quantity = %(quantity)s,
+  billing_interval = %(billing_interval)s,
+  interval_count = %(interval_count)s,
+  discount = %(discount)s,
+  mrr_cents = %(mrr_cents)s,
+  started_at = COALESCE(%(started_at)s, started_at),
+  canceled_at = %(canceled_at)s,
+  ended_at = %(ended_at)s,
   lapsed_at = CASE WHEN %(good)s THEN NULL ELSE COALESCE(lapsed_at, %(anchor)s) END,
   grace_until = CASE WHEN %(good)s THEN NULL
                      ELSE COALESCE(grace_until, %(anchor)s + make_interval(days => %(grace)s)) END,
@@ -208,28 +224,57 @@ UPDATE subscriptions SET
   trial_ended_email_at    = CASE WHEN %(good)s THEN NULL ELSE trial_ended_email_at END,
   last_event_at = GREATEST(last_event_at, %(event_created)s),
   synced_at = now(), updated_at = now()
-WHERE user_id = %(uid)s AND (%(event_created)s = 0 OR %(event_created)s >= last_event_at)
+FROM old
+WHERE user_id = old.o_uid AND (%(event_created)s = 0 OR %(event_created)s >= last_event_at)
+RETURNING old.o_status, old.o_plan, old.o_mrr, old.o_cape,
+          status, plan, mrr_cents, cancel_at_period_end, currency, stripe_subscription_id
 """
 
 
-def apply_subscription(user_id, sub, event_created=0):
-    """Write one Stripe subscription object onto our row. Out-of-order deliveries are dropped by
-    the WHERE clause; a manual refresh passes 0 to force itself through."""
-    import entitlement
+def _with_discounts(sub):
+    """The current API sends discounts as bare ids; the monthly value needs the coupon behind
+    them. Only then is Stripe asked again, so a subscription without a discount costs nothing."""
+    import ledger
 
+    if not ledger.unresolved_discounts(sub) or not sub.get("id"):
+        return sub
+    try:
+        return client().Subscription.retrieve(sub["id"], expand=["discounts"])
+    except Exception:
+        log.warning("could not expand discounts on %s; MRR ignores them", sub.get("id"))
+        return sub
+
+
+def apply_subscription(user_id, sub, event_created=0, source="webhook", event_id=None):
+    """Write one Stripe subscription object onto our row, and append what changed to the revenue
+    ledger. Out-of-order deliveries are dropped by the WHERE clause; a manual refresh passes 0 to
+    force itself through."""
+    import entitlement
+    import ledger
+
+    sub = _with_discounts(sub)
     status = sub.get("status") or "none"
     item = ((sub.get("items") or {}).get("data") or [{}])[0]
     pid = ((item.get("price") or {}).get("id")) or None
     period_end = _period_end(sub)
     good = status in entitlement.GOOD_STATUSES
     anchor = period_end or datetime.now(timezone.utc)
-    return db.execute(APPLY_SQL, {
+    snap = ledger.snapshot(sub)
+    row = db.execute(APPLY_SQL, {
         "status": status, "price_id": pid, "plan": plan_for_price(pid),
         "sub_id": sub.get("id"), "trial_end": _ts(sub.get("trial_end")), "cpe": period_end,
         "cape": bool(sub.get("cancel_at_period_end")), "good": good, "anchor": anchor,
         "grace": entitlement.grace_days(), "event_created": int(event_created or 0),
-        "uid": user_id,
-    })
+        "uid": user_id, **snap,
+        "discount": json.dumps(snap["discount"]) if snap["discount"] else None,
+    }, returning=True)
+    if isinstance(row, dict):
+        old = {"status": row["o_status"], "plan": row["o_plan"], "mrr_cents": row["o_mrr"],
+               "cancel_at_period_end": row["o_cape"]}
+        ledger.record_change(user_id, old, row, source, stripe_event_id=event_id,
+                             occurred_at=_ts(event_created) if event_created else None)
+        ledger.refresh_ent_state(user_id)
+    return row
 
 
 def user_for_customer(customer_id):
@@ -245,8 +290,8 @@ def refresh_from_stripe(user_id):
     if not row or not row.get("stripe_subscription_id"):
         return None
     stripe = client()
-    sub = stripe.Subscription.retrieve(row["stripe_subscription_id"])
-    apply_subscription(user_id, sub, event_created=0)
+    sub = stripe.Subscription.retrieve(row["stripe_subscription_id"], expand=["discounts"])
+    apply_subscription(user_id, sub, event_created=0, source="sync")
     return sub.get("status")
 
 
@@ -257,6 +302,7 @@ HANDLED = {
     "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted",
     "invoice.payment_failed", "invoice.paid",
     "customer.subscription.trial_will_end",
+    "charge.refunded",
 }
 
 
@@ -266,9 +312,11 @@ class WebhookMismatch(Exception):
 
 def handle_event(event):
     """Returns 'processed' or 'ignored'. Raises to make Stripe retry."""
+    import ledger
     import mailer
 
     etype = event.get("type")
+    eid = event.get("id")
     if etype not in HANDLED:
         return "ignored", None
     obj = (event.get("data") or {}).get("object") or {}
@@ -284,8 +332,8 @@ def handle_event(event):
             raise WebhookMismatch(f"customer {customer_id} claims user {claimed}, maps to {uid}")
         sub_id = obj.get("subscription")
         if sub_id:
-            sub = client().Subscription.retrieve(sub_id)
-            apply_subscription(uid, sub, created)
+            sub = client().Subscription.retrieve(sub_id, expand=["discounts"])
+            apply_subscription(uid, sub, created, event_id=eid)
             _notify(mailer, uid, "subscription_started")
         return "processed", uid
 
@@ -293,7 +341,7 @@ def handle_event(event):
         uid = user_for_customer(obj.get("customer"))
         if uid is None:
             return "ignored", None
-        apply_subscription(uid, obj, created)
+        apply_subscription(uid, obj, created, event_id=eid)
         if etype == "customer.subscription.deleted":
             _notify(mailer, uid, "subscription_canceled")
         elif etype == "customer.subscription.trial_will_end":
@@ -311,6 +359,8 @@ def handle_event(event):
                       grace_until = COALESCE(grace_until, now() + make_interval(days => %s)),
                       updated_at = now()
                 WHERE user_id = %s""", (entitlement.grace_days(), uid))
+        ledger.upsert_invoice(obj, uid, "failed", plan=_invoice_plan(obj))
+        ledger.refresh_ent_state(uid)
         _stamped_notify(mailer, uid, "payment_failed", "payment_failed_email_at")
         return "processed", uid
 
@@ -323,9 +373,20 @@ def handle_event(event):
                       payment_failed_email_at = NULL, grace_ending_email_at = NULL,
                       read_only_email_at = NULL, updated_at = now()
                 WHERE user_id = %s""", (uid,))
+        ledger.upsert_invoice(obj, uid, "paid", plan=_invoice_plan(obj))
+        ledger.refresh_ent_state(uid)
         return "processed", uid
 
+    if etype == "charge.refunded":
+        uid = ledger.record_refund(obj) or user_for_customer(obj.get("customer"))
+        return ("processed", uid) if uid else ("ignored", None)
+
     return "ignored", None
+
+
+def _invoice_plan(inv):
+    import ledger
+    return plan_for_price(ledger.invoice_facts(inv).get("price_id"))
 
 
 def _recipient(uid):

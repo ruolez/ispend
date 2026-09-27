@@ -559,6 +559,9 @@ def signup():
                VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
             (user["id"], trial), commit=False)
         seed_categories.seed_for_user(db.get_db(), user["id"])
+    import ledger
+    ledger.record_admin(user["id"], "trial_started", {"signup": True, "days": trial})
+    ledger.refresh_ent_state(user["id"])
     record_login(user["id"], True, "signup")
     token = _issue_token(user["id"], "verify", VERIFY_TTL)
     link = f"{_base_url()}/verify.html?token={token}"

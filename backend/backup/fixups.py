@@ -48,10 +48,21 @@ def _fix_021(cur):
                               'billing.config_update', 'billing.sync_stale'))""")
 
 
+def _fix_022(cur):
+    # 022 gave every existing subscription a starting point in the revenue ledger.
+    cur.execute("""
+        INSERT INTO subscription_events (user_id, source, kind, status_to, plan_to, occurred_at, detail)
+        SELECT s.user_id, 'system', 'baseline', s.status, s.plan, COALESCE(s.updated_at, s.created_at),
+               jsonb_build_object('comped', s.comped_until IS NOT NULL AND s.comped_until > now())
+          FROM subscriptions s
+         WHERE NOT EXISTS (SELECT 1 FROM subscription_events e WHERE e.user_id = s.user_id)""")
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
     "021_admin_security.sql": _fix_021,
+    "022_billing_ledger.sql": _fix_022,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

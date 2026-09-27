@@ -94,6 +94,59 @@ class DatabaseIntegrationTest(unittest.TestCase):
                RETURNING id, is_transfer, is_excluded""",
             (self.uid, self.card, date(2026, 1, 5), Decimal(amount), category_id, status, fp), returning=True)
 
+    def test_revenue_ledger_round_trip(self):
+        """The subscription UPDATE ... FROM old statement, the event classification it feeds and the
+        payments upsert, against the real schema."""
+        import billing
+        import ledger
+
+        db = self.db
+        uid = db.execute("INSERT INTO users (username, password_hash) VALUES ('it_ledger', 'x') RETURNING id",
+                         returning=True)["id"]
+        db.execute("INSERT INTO subscriptions (user_id, status, stripe_customer_id) VALUES (%s, 'trialing', 'cus_it')",
+                   (uid,))
+        db.execute("""INSERT INTO subscription_events (user_id, source, kind, occurred_at)
+                      VALUES (%s, 'system', 'baseline', now() - interval '1 day')""", (uid,))
+        db.set_setting("stripe_price_monthly", "price_m")
+        db.set_setting("stripe_price_yearly", "price_y")
+
+        def sub(pid, unit, interval, status="active", cape=False):
+            return {"id": "sub_it", "status": status, "cancel_at_period_end": cape,
+                    "items": {"data": [{"price": {"id": pid, "unit_amount": unit, "currency": "usd",
+                                                  "recurring": {"interval": interval}}}]}}
+
+        billing.apply_subscription(uid, sub("price_m", 1200, "month"), event_created=100, event_id="evt_a")
+        billing.apply_subscription(uid, sub("price_y", 12000, "year"), event_created=200, event_id="evt_b")
+        billing.apply_subscription(uid, sub("price_y", 12000, "year"), event_created=150, event_id="evt_late")
+        billing.apply_subscription(uid, sub("price_y", 12000, "year", cape=True), event_created=300, event_id="evt_c")
+        billing.apply_subscription(uid, sub("price_y", 12000, "year", "canceled"), event_created=400, event_id="evt_d")
+        events = db.query("""SELECT kind, mrr_from_cents, mrr_to_cents, plan_to FROM subscription_events
+                              WHERE user_id = %s AND kind <> 'baseline' ORDER BY id""", (uid,))
+        self.assertEqual([tuple(e.values()) for e in events], [
+            ("subscribed", 0, 1200, "monthly"), ("plan_changed", 1200, 1000, "yearly"),
+            ("cancel_scheduled", 1000, 1000, "yearly"), ("canceled", 1000, 0, "yearly")])
+        row = db.query("SELECT mrr_cents, billing_interval, ent_state FROM subscriptions WHERE user_id = %s",
+                       (uid,), one=True)
+        self.assertEqual((row["mrr_cents"], row["billing_interval"], row["ent_state"]), (0, "year", "active"))
+
+        invoice = {"id": "in_it", "customer": "cus_it", "currency": "usd", "subtotal": 12000,
+                   "amount_paid": 12000, "payment_intent": "pi_it", "charge": "ch_it"}
+        self.assertTrue(ledger.upsert_invoice(invoice, uid, "failed"))
+        self.assertFalse(ledger.upsert_invoice(invoice, uid, "paid"), "the same invoice is one row")
+        self.assertEqual(ledger.record_refund({"id": "ch_it", "amount": 12000, "amount_refunded": 12000}), uid)
+        self.assertFalse(ledger.upsert_invoice(invoice, uid, "paid"))
+        pay = db.query("SELECT status, amount_refunded_cents, failed_at IS NOT NULL AS failed_once, "
+                       "paid_at IS NOT NULL AS paid FROM payments WHERE stripe_invoice_id = 'in_it'", one=True)
+        self.assertEqual(dict(pay), {"status": "refunded", "amount_refunded_cents": 12000,
+                                     "failed_once": True, "paid": True})
+
+        import billing_reconcile
+        stripe_sub = {**sub("price_y", 12000, "year"), "id": "sub_older", "start_date": 50, "ended_at": 90,
+                      "status": "canceled"}
+        self.assertEqual(billing_reconcile.backfill_history(uid, [stripe_sub]), 2)
+        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM subscription_events WHERE user_id = %s "
+                                  "AND kind = 'baseline'", (uid,), one=True)["n"], 0)
+
     def test_transfer_kind_trigger_follows_confirmation(self):
         transfers = self._cat("transfers")
         groceries = self._cat("groceries")

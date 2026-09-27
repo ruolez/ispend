@@ -1,7 +1,7 @@
 """Admin-side billing: per-user overrides, the instance summary, and Stripe/SMTP configuration."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, session
 
@@ -10,6 +10,7 @@ import db
 import entitlement
 import jobs
 import landing
+import ledger
 import mailer
 from auth import admin_required, step_up_missing, step_up_required, verification_required_setting
 from settings_api import MASK
@@ -92,6 +93,8 @@ def comp(user_id):
         value, label = None, "cleared"
     db.execute("UPDATE subscriptions SET comped_until = %s::timestamptz, updated_at = now() "
                "WHERE user_id = %s", (value, user_id))
+    ledger.record_admin(user_id, "comped" if value else "uncomped", {"until": label})
+    ledger.refresh_ent_state(user_id)
     audit("billing.comp", {"id": user_id, "until": label}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
@@ -110,6 +113,8 @@ def extend_trial(user_id):
                   lapsed_at = NULL, grace_until = NULL,
                   trial_ending_email_at = NULL, trial_ended_email_at = NULL, updated_at = now()
             WHERE user_id = %s""", (days, user_id))
+    ledger.record_admin(user_id, "trial_extended", {"days": days})
+    ledger.refresh_ent_state(user_id)
     audit("billing.extend_trial", {"id": user_id, "days": days}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
@@ -126,6 +131,8 @@ def extend_grace(user_id):
               SET grace_until = GREATEST(COALESCE(grace_until, now()), now()) + make_interval(days => %s),
                   grace_ending_email_at = NULL, read_only_email_at = NULL, updated_at = now()
             WHERE user_id = %s""", (days, user_id))
+    ledger.record_admin(user_id, "grace_extended", {"days": days})
+    ledger.refresh_ent_state(user_id)
     audit("billing.extend_grace", {"id": user_id, "days": days}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
@@ -182,6 +189,38 @@ def sync_stale():
         jobs.spawn(_sync_one, row["user_id"])
     audit("billing.sync_stale", {"queued": len(rows)})
     return jsonify({"queued": len(rows)})
+
+
+@bp.post("/reconcile")
+@admin_required
+def reconcile():
+    """Compare every Stripe subscription and invoice with the local ledger, in the background."""
+    import billing_reconcile
+
+    if not billing.enabled():
+        return api_error("Stripe is not configured on this server.", 409)
+    if billing_reconcile.is_running():
+        return api_error("A reconcile is already running.", 409)
+    full = bool(json_body().get("full"))
+    since = None
+    if not full:
+        last = billing_reconcile.last_result() or {}
+        try:
+            since = datetime.fromisoformat(last["started_at"]) - timedelta(days=2)
+        except (KeyError, TypeError, ValueError):
+            since = None
+    db.set_setting(billing_reconcile.RUNNING_KEY, datetime.now(timezone.utc).isoformat())
+    jobs.spawn(billing_reconcile.run, since, session["user_id"])
+    audit("billing.reconcile", {"full": full or since is None})
+    return jsonify({"queued": True}), 202
+
+
+@bp.get("/reconcile")
+@admin_required
+def reconcile_status():
+    import billing_reconcile
+    return jsonify({"running": billing_reconcile.is_running(), "last": billing_reconcile.last_result(),
+                    "enabled": billing.enabled()})
 
 
 def _sync_one(user_id):
