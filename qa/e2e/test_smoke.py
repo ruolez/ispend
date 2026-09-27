@@ -292,28 +292,33 @@ def probe_search(page, rec, steps):
         page.keyboard.press("Enter")
         settle(page, 300)
         wait_loaded(page)
+        # leave the box as a person would; later probes press shortcut keys, which inputs rightly swallow
+        page.evaluate("() => document.activeElement && document.activeElement.blur()")
         return f"rows={rows} summary='{summary}' url has q={'q=amazon' in page.url}"
     step(steps, rec, "search:amazon", do)
 
 
-def probe_palette(page, rec, steps):
+def probe_palette(page, rec, steps, pg=None):
+    # the admin console's palette finds its own sections and people, not the app's pages
+    query, want = ("rev", "Revenue") if pg == "admin" else ("rep", "Reports")
+
     def do():
         page.keyboard.press("Control+k")
         inp = page.locator(".palette input")
         inp.wait_for(state="visible", timeout=3000)
-        inp.press_sequentially("rep")  # focuses first: the palette focuses its input in a rAF, a bare keyboard.type can race it
+        inp.press_sequentially(query)  # focuses first: the palette focuses its input in a rAF, a bare keyboard.type can race it
         # the search is debounced (150ms); wait until the list reflects the query rather than the initial empty-query list
-        page.wait_for_function("() => document.querySelector('.palette input').value === 'rep' && (document.querySelector('.palette-empty') || Array.from(document.querySelectorAll('.palette-item')).some((b) => /Reports/.test(b.textContent)))", timeout=4000)
+        page.wait_for_function("([q, w]) => document.querySelector('.palette input').value === q && (document.querySelector('.palette-empty') || Array.from(document.querySelectorAll('.palette-item')).some((b) => b.textContent.includes(w)))", arg=[query, want], timeout=4000)
         settle(page, 300)
         items = page.locator(".palette-item").all_inner_texts()
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)
         if page.locator(".palette").count():
             raise AssertionError("palette still open after Escape")
-        if not any("Reports" in t for t in items):
-            raise AssertionError(f"'Go to Reports' missing from results: {items}")
+        if not any(want in t for t in items):
+            raise AssertionError(f"'Go to {want}' missing from results: {items}")
         return f"{len(items)} results: {[t.replace(chr(10), ' ')[:40] for t in items[:6]]}"
-    step(steps, rec, "palette:rep", do)
+    step(steps, rec, f"palette:{query}", do)
 
 
 def probe_shortcuts_sheet(page, rec, steps):
@@ -389,6 +394,17 @@ def probe_settings_tabs(page, rec, steps):
 
 
 def probe_goto(page, rec, steps, pg):
+    if pg == "admin":
+        def do_section():
+            # the console's g-chords switch sections in place (a hash change, no page load)
+            page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
+            page.keyboard.press("g")
+            page.keyboard.press("u")
+            page.wait_for_function("() => location.hash.startsWith('#users')", timeout=3000)
+            wait_loaded(page)
+            return page.url
+        step(steps, rec, "goto:g u", do_section)
+        return
     key, target = ("d", "/index.html") if pg == "transactions" else ("t", "/transactions.html")
 
     def do():
@@ -428,7 +444,7 @@ def test_probes_admin(make_context, pg, theme, vp):
     if pg == "transactions":
         probe_search(page, rec, steps)
         probe_drawer(page, rec, steps)
-    probe_palette(page, rec, steps)
+    probe_palette(page, rec, steps, pg)
     probe_shortcuts_sheet(page, rec, steps)
     probe_sidebar(page, rec, steps, vp)
     shot(page, f"probe-{pg}-admin-{theme}-{vp}")
