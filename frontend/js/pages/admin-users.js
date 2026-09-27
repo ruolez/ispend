@@ -235,23 +235,22 @@ function renderUsersTable() {
     ? `<th class="sortable ${align || ''}" data-act="sort" data-sort="${sortKey}" aria-sort="${sort === sortKey ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${esc(label)}</th>`
     : `<th class="${align || ''}">${esc(label)}</th>`)).join('');
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list adm-users"><thead><tr>
-    <th class="col-check"><input type="checkbox" class="check" data-select="page" aria-label="Select everyone on this page" ${allOn ? 'checked' : ''}></th>
-    ${head}<th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+    ${head.replace('>Person<', `><input type="checkbox" class="check adm-check" data-select="page" aria-label="Select everyone on this page" ${allOn ? 'checked' : ''}>Person<`)}
+    <th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${AU.items.map((u) => `<tr data-id="${u.id}" class="is-clickable ${u.status === 'deleted' ? 'is-trashed' : ''} ${AU.selected.has(u.id) ? 'is-selected' : ''}">
-      <td class="col-check"><input type="checkbox" class="check" data-select="${u.id}" aria-label="Select ${esc(u.email || u.username)}" ${AU.selected.has(u.id) ? 'checked' : ''}></td>
-      <td><span class="row gap-2 min-w-0"><span class="avatar" aria-hidden="true">${esc(initials(u.email || u.username))}</span>
+      <td><span class="row gap-2 min-w-0"><input type="checkbox" class="check adm-check hide-mobile" data-select="${u.id}" aria-label="Select ${esc(u.email || u.username)}" ${AU.selected.has(u.id) ? 'checked' : ''}><span class="avatar" aria-hidden="true">${esc(initials(u.email || u.username))}</span>
         <span class="min-w-0"><button type="button" class="row-link fw-500 truncate" data-act="user-open" data-id="${u.id}">${esc(u.email || u.username)}</button>
           ${u.is_self ? ' <span class="badge badge-accent">You</span>' : ''}${u.role === 'admin' ? ' <span class="badge badge-info">Admin</span>' : ''}
           <span class="sub adm-user-sub">${u.status !== 'active' ? `<span class="user-status"><i class="dot" style="--c:var(--${STATUS_COLOR[u.status]})"></i>${esc(STATUS_LABEL[u.status])}</span>` : ''}
             ${u.email && !u.email_confirmed ? '<span class="text-4">unconfirmed</span>' : ''}
             ${u.email && u.username !== u.email ? `<span class="text-4">${esc(u.username)}</span>` : ''}
             ${(u.tags || []).map((t) => `<span class="adm-tag" style="--c:var(--${esc(t.color)})">${esc(t.name)}</span>`).join('')}</span></span></span></td>
-      <td data-label="Access">${stateBadge(u)}</td>
-      <td class="right num" data-label="MRR">${u.mrr_cents ? esc(fmtMoney(u.mrr_cents / 100, (u.currency || 'usd').toUpperCase())) : '<span class="text-4">—</span>'}</td>
+      <td class="${u.state || u.comped_until ? '' : 'hide-mobile'}" data-label="Access">${stateBadge(u)}</td>
+      <td class="right num ${u.mrr_cents ? '' : 'hide-mobile'}" data-label="MRR">${u.mrr_cents ? esc(fmtMoney(u.mrr_cents / 100, (u.currency || 'usd').toUpperCase())) : '<span class="text-4">—</span>'}</td>
       <td class="text-3" data-label="Last seen">${u.last_seen_at ? `<span data-tip="${esc(fmtDateTime(u.last_seen_at))}">${esc(fmtRelative(u.last_seen_at))}</span>` : 'Never'}</td>
-      <td data-label="Activated">${u.activated ? `<span class="text-success" aria-label="Yes">${icon('check', 'ico-sm')}</span>` : '<span class="text-4" aria-label="No">—</span>'}</td>
-      <td class="text-3" data-label="Source">${esc(u.source || '—')}</td>
-      <td class="right num" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
+      <td class="hide-mobile" data-label="Activated">${u.activated ? `<span class="text-success" aria-label="Yes">${icon('check', 'ico-sm')}</span>` : '<span class="text-4" aria-label="No">—</span>'}</td>
+      <td class="text-3 hide-mobile" data-label="Source">${esc(u.source || '—')}</td>
+      <td class="right num hide-mobile" data-label="Transactions">${fmtNumber(u.txn_count)}</td>
       <td class="text-3" data-label="Signed up">${fmtDate(u.created_at, { year: true })}</td>
       <td class="col-actions"><div class="row-actions">
         <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="user-menu" data-id="${u.id}" aria-label="Actions for ${esc(u.email || u.username)}">${icon('more-horizontal')}</button>
@@ -650,6 +649,7 @@ function offerRestore(data, username) {
 /* ---------- actions ---------- */
 
 async function onUsersAction(e) {
+  if (e.target.closest('[data-select]')) return undefined;   // the select-all box sits in a sortable header
   const el = e.target.closest('[data-act]');
   if (!el || AdminPanels.current() !== 'users') return undefined;
   const f = uq();

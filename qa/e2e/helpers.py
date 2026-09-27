@@ -32,6 +32,10 @@ DENY_WORDS = [
     "forget", "roll back", "archive", "restore", "deactivate", "activate", "duplicate", "import", "accept", "reject",
     "regenerate", "rename", "create", "copy", "set budget", "remove budget", "change limit", "tag", "new tag", "split", "unsplit", "remove split",
     "lock", "unlock", "trash", "purge", "make admin", "make regular user", "add user",
+    # admin console actions with real effects (messages, erasure, Stripe, imports, exports)
+    "send", "erase", "stop", "compare", "cancel subscription", "extend", "complimentary", "invite",
+    "sign out everywhere", "password reset", "email", "export", "prepare a download", "measure again",
+    "refresh from stripe", "delete account", "new message", "confirm", "mark",
 ]
 
 
