@@ -198,7 +198,7 @@ function renderUsersNotice() {
   const n = AU.purgeDue;
   $('#users-notice').innerHTML = n
     ? `<div class="notice notice-warning mb-4">${icon('trash')}<div class="grow">
-         ${esc(plural(n, 'person'))} ${n === 1 ? 'has' : 'have'} been in the trash longer than ${fmtNumber(AU.retention)} days.</div>
+         ${esc(people(n))} ${n === 1 ? 'has' : 'have'} been in the trash longer than ${fmtNumber(AU.retention)} days.</div>
        <button type="button" class="btn btn-secondary btn-sm" data-act="show-trash">Review trash</button></div>`
     : '';
 }
@@ -318,14 +318,14 @@ async function runBulk(action, params = {}) {
   delete f.page;
   const body = AU.allMatching ? { action, query: toQuery(f), params } : { action, ids: Array.from(AU.selected), params };
   const r = await api('/api/admin/users/bulk', { method: 'POST', body });
-  toast(`${plural(r.affected, 'person')} updated${r.skipped.length ? ` · ${r.skipped.length} skipped` : ''}`,
+  toast(`${people(r.affected)} updated${r.skipped.length ? ` · ${r.skipped.length} skipped` : ''}`,
     { type: r.affected ? 'success' : 'info' });
   AU.selected.clear();
   AU.allMatching = false;
   loadUsers();
 }
 
-function bulkLabel() { return plural(selectionCount(), 'person'); }
+function bulkLabel() { return people(selectionCount()); }
 
 async function bulkLock() {
   const m = ui.modal({

@@ -259,6 +259,15 @@ five-minute `metric_cache`, `as_of` stamp).
   applied). `billing_reconcile.run` (Billing tab → Revenue records, and daily from `ops_tick`) fixes drift
   and imports pre-ledger history from Stripe's timestamps. `subscriptions.ent_state` caches
   `entitlement.evaluate()` for SQL filters; `ops_tick` refreshes it hourly.
+- **Revenue and engagement** (`admin-revenue.js`, `admin-engagement.js`; `/api/admin/metrics/revenue`,
+  `/trial-cohorts`, `/funnel`, `/engagement?mode=weekly|monthly`). MRR at an instant is the ledger interval
+  that contains it; the bridge (new / returning / upgrades / downgrades / cancelled) compares each
+  person's MRR at the two ends of a period, per currency, never mixing currencies. Churn, revenue churn
+  and NRR come from that bridge; trial cohorts wait for trial + 7 days before showing a rate. The funnel
+  is strict (each step needs the one before; the confirmation step disappears when it is switched off).
+  Retention is a heatmap of sign-up cohorts × periods (`--p` drives a `color-mix` of the accent — no
+  hex); in-progress cells are faded. Tables and funnel steps link into the people list with
+  `data-drill-users`, which moves the link's filters into the query. `people(n)` pluralises "person".
 - **People** (`admin-users.js`, `admin-user360.js`, backend `admin_users.py`). The list is paged
   server-side (`GET /api/admin/users?page&per_page&…filters`, `COUNT(*) OVER()`, extras computed for the
   page only); every filter is a query key (`FILTER_KEYS`) so KPI tiles and cohort cells can link to a

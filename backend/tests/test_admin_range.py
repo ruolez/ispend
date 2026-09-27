@@ -119,7 +119,8 @@ class RouteTest(unittest.TestCase):
                 if uid:
                     with c.session_transaction() as sess:
                         sess["user_id"], sess["role"] = uid, role
-                self.assertEqual(c.get(f"/api/admin/metrics/overview{qs}").status_code, status)
+                for name in ("overview", "revenue", "trial-cohorts", "funnel", "engagement"):
+                    self.assertEqual(c.get(f"/api/admin/metrics/{name}{qs}").status_code, status, name)
 
 
 if __name__ == "__main__":

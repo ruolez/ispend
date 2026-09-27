@@ -137,6 +137,7 @@ html[data-sidebar="rail"] .sb-badge { display: none; }
 
 /* KPI tiles: a whole tile is the link to the people behind the number when there is one. */
 .adm-tiles { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+@media (min-width: 1280px) { .adm-tiles { grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); } }
 a.adm-kpi { color: inherit; text-decoration: none; }
 @media (hover: hover) { a.adm-kpi:hover { border-color: var(--border-strong); box-shadow: var(--sh-2); } }
 a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -217,3 +218,27 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
   .p360-head { flex-wrap: wrap; }
 }
 .p360-badges > span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- Revenue and engagement ---------- */
+.adm-cohorts tr.is-maturing td { color: var(--text-3); }
+.adm-maturing { color: var(--text-4); margin-left: 2px; }
+.adm-funnel { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.adm-funnel-head { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-sm); margin-bottom: 4px; }
+.adm-funnel-head .num { font-weight: 650; font-size: var(--fs-md); }
+.adm-funnel-bar { height: 10px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+.adm-funnel-bar > span { display: block; height: 100%; width: var(--p); background: var(--accent); border-radius: var(--r-pill); }
+.adm-funnel li:last-child .adm-funnel-bar > span { background: var(--success); }
+.adm-funnel-foot { font-size: var(--fs-xs); margin-top: 4px; }
+
+/* Retention: one sequential scale from the accent colour, the share printed in each cell. */
+.adm-heat-wrap { overflow-x: auto; }
+.adm-heat { border-collapse: separate; border-spacing: 3px; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; min-width: 100%; }
+.adm-heat th { font-weight: 600; color: var(--text-3); text-align: center; padding: 4px 6px; white-space: nowrap; }
+.adm-heat th[scope="row"] { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.adm-heat td { text-align: center; padding: 6px 4px; min-width: 38px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) calc(var(--p, 0) * 0.9%), var(--surface-2));
+  color: var(--text-1); }
+.adm-heat td.right { background: none; text-align: right; color: var(--text-2); }
+.adm-heat td.is-partial { opacity: 0.55; }
+.adm-heat td.is-future { background: none; }
+.adm-heat td.is-strong { color: var(--accent-fg); }

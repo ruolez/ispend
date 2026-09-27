@@ -126,3 +126,116 @@ class OverviewTest(_pg.PgTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_pg.available(), "set ISPEND_TEST_DSN and run this file on its own")
+class RevenueTest(_pg.PgTestCase):
+    """Five customers over the last 70 days, every kind of MRR movement in the last 30:
+
+    amy  1000 since day -40, upgraded to 1500 on day -10          expansion   +500
+    bob  1000 since day -50, cancelled on day -20                 churn      −1000
+    cat   500 from day -60 to day -45, back at 500 on day -5      reactivation +500
+    dan   800 from day -3                                          new         +800
+    eve  2000 since day -70, downgraded to 1200 on day -15        contraction −800
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        db = cls.db
+        ids = {}
+        for name in ("amy", "bob", "cat", "dan", "eve"):
+            ids[name] = db.execute("INSERT INTO users (username, password_hash, created_at) VALUES (%s, 'x', %s) RETURNING id",
+                                   (name, ago(80)), returning=True)["id"]
+        moves = [("amy", 0, 1000, 40), ("amy", 1000, 1500, 10), ("bob", 0, 1000, 50), ("bob", 1000, 0, 20),
+                 ("cat", 0, 500, 60), ("cat", 500, 0, 45), ("cat", 0, 500, 5), ("dan", 0, 800, 3),
+                 ("eve", 0, 2000, 70), ("eve", 2000, 1200, 15)]
+        for name, m0, m1, days in moves:
+            db.execute("""INSERT INTO subscription_events (user_id, source, kind, mrr_from_cents, mrr_to_cents,
+                                                           currency, occurred_at)
+                          VALUES (%s, 'webhook', 'x', %s, %s, 'usd', %s)""", (ids[name], m0, m1, ago(days)))
+        db.execute("INSERT INTO subscriptions (user_id, status, currency, mrr_cents) VALUES (%s, 'active', 'usd', 1500)",
+                   (ids["amy"],))
+
+    def test_the_bridge_and_its_ratios(self):
+        import admin_metrics
+        import admin_range
+        rng = admin_range.parse({"range": "30d"})
+        d = admin_metrics.revenue(rng)
+        b = d["bridge_total"]
+        self.assertEqual({k: b[k] for k in ("start_mrr", "end_mrr", "new_mrr", "reactivation_mrr", "expansion_mrr",
+                                            "contraction_mrr", "churned_mrr", "customers_start", "customers_end")},
+                         {"start_mrr": 4000, "end_mrr": 4000, "new_mrr": 800, "reactivation_mrr": 500,
+                          "expansion_mrr": 500, "contraction_mrr": 800, "churned_mrr": 1000,
+                          "customers_start": 3, "customers_end": 4})
+        tiles = {t["key"]: t["value"] for t in d["tiles"]}
+        self.assertEqual((tiles["net_new_mrr"], tiles["arr"], tiles["arpa"]), (0, 48000, 1000))
+        self.assertAlmostEqual(tiles["customer_churn"], 1 / 3)
+        self.assertAlmostEqual(tiles["revenue_churn"], 0.45)
+        self.assertAlmostEqual(tiles["nrr"], 0.675)
+        weekly = d["bridge"]
+        self.assertEqual((sum(weekly["new"]), sum(weekly["churned"]), sum(weekly["reactivation"])), (800, 1000, 500),
+                         "the weekly bars add up to the period")
+
+
+@unittest.skipUnless(_pg.available(), "set ISPEND_TEST_DSN and run this file on its own")
+class FunnelTest(_pg.PgTestCase):
+    """one   signed up 20 days ago, confirmed, uploaded and imported on day 2, paid on day 10
+    two   signed up 15 days ago, confirmed, uploaded on day 1 but imported only on day 12 (too late)
+    three signed up 10 days ago, never confirmed
+    four  signed up 5 days ago, confirmed, never uploaded"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        db = cls.db
+        rows = [("one", 20, 19, 18, 18), ("two", 15, 14, 14, 3), ("three", 10, None, None, None), ("four", 5, 4, None, None)]
+        cls.ids = {}
+        for name, created, confirmed, upload, commit in rows:
+            cls.ids[name] = db.execute(
+                """INSERT INTO users (username, password_hash, created_at, email_verified_at, first_upload_at, first_commit_at)
+                   VALUES (%s, 'x', %s, %s, %s, %s) RETURNING id""",
+                (name, ago(created), confirmed and ago(confirmed), upload and ago(upload), commit and ago(commit)),
+                returning=True)["id"]
+        db.execute("""INSERT INTO payments (user_id, stripe_invoice_id, status, currency, amount_paid_cents, paid_at)
+                      VALUES (%s, 'in_one', 'paid', 'usd', 999, %s)""", (cls.ids["one"], ago(10)))
+        db.execute("""INSERT INTO subscription_events (user_id, source, kind, mrr_from_cents, mrr_to_cents, occurred_at,
+                                                       stripe_subscription_id)
+                      VALUES (%s, 'webhook', 'subscribed', 0, 999, %s, 'sub_one')""", (cls.ids["one"], ago(10)))
+        import activity
+        today = activity.today()
+        db.execute("INSERT INTO user_activity_days (user_id, day, kinds) VALUES (%s, %s, 2), (%s, %s, 8)",
+                   (cls.ids["one"], today - timedelta(days=18), cls.ids["one"], today - timedelta(days=4)))
+
+    def _rng(self):
+        import admin_range
+        return admin_range.parse({"range": "30d"})
+
+    def test_steps_require_the_one_before(self):
+        import admin_metrics
+        for confirm, expected in (("1", [4, 3, 2, 1, 1]), ("0", [4, 2, 1, 1])):
+            with self.subTest(confirm=confirm):
+                self.db.set_setting("signup_require_verification", confirm)
+                d = admin_metrics.funnel(self._rng())
+                self.assertEqual([s["n"] for s in d["steps"]], expected)
+        self.assertEqual(d["steps"][0]["pct_prev"], None)
+        self.assertEqual([(s["channel"], s["signups"], s["activated"]) for s in d["by_source"]], [("unknown", 4, 1)])
+
+    def test_trial_cohorts_wait_for_the_window(self):
+        import admin_metrics
+        d = admin_metrics.trial_cohorts(self._rng())
+        t = d["total"]
+        self.assertEqual((t["signups"], t["added_card"], t["paid_in_window"], t["paid_ever"]), (4, 1, 1, 1))
+        self.assertEqual(t["maturing"], 4, "nobody has had trial + 7 days yet")
+        self.assertIsNone(t["rate"], "no settled cohort, no rate")
+
+    def test_retention_cells_never_exceed_the_cohort(self):
+        import admin_metrics
+        r = admin_metrics.retention(self._rng(), "weekly")
+        self.assertEqual(sum(row["size"] for row in r["rows"]), 4)
+        for row in r["rows"]:
+            for cell in row["cells"]:
+                if cell:
+                    self.assertLessEqual(cell["n"], row["size"])
+        one_cohort = next(row for row in r["rows"] if row["cells"][0] and row["cells"][0]["n"])
+        self.assertEqual(one_cohort["cells"][0]["n"], 1, "one imported in the week they signed up")

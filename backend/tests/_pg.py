@@ -57,6 +57,7 @@ class PgTestCase(unittest.TestCase):
         import psycopg2
 
         cls.db.close_db()
+        cls.db.close_idle()          # the next class migrates a different scratch database
         cls.ctx.pop()
         admin = psycopg2.connect(**cls.admin_params)
         admin.autocommit = True

@@ -113,6 +113,9 @@ function openRangePicker(anchor) {
   });
 }
 
+/* "1 person", "3 people" — plural() only knows how to add an s. */
+function people(n) { return `${fmtNumber(n)} ${n === 1 ? 'person' : 'people'}`; }
+
 /* ---------- KPI tiles ---------- */
 
 function fmtAdminValue(v, unit, currency) {
@@ -150,8 +153,14 @@ function thinSpark(values, agg = 'last', max = 16) {
   return out;
 }
 
+/* Rows that divide evenly: 10 tiles are 5 × 2, 6 are 3 × 2, never 4 + 2. */
+function tileColumns(n) {
+  if (n <= 5) return n;
+  return [5, 4, 3].find((c) => n % c === 0) || 5;
+}
+
 function adminTiles(tiles) {
-  return `<div class="stat-grid adm-tiles">${tiles.map((t) => {
+  return `<div class="stat-grid adm-tiles" style="--cols:${tileColumns(tiles.length)}">${tiles.map((t) => {
     const spark = thinSpark(t.spark, t.agg);
     const tag = t.drill ? 'a' : 'div';
     return `<${tag} class="stat adm-kpi ${spark.length > 1 ? 'has-spark' : ''}" data-kpi="${esc(t.key)}" ${t.drill ? `href="${esc(t.drill)}"` : ''}>

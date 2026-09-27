@@ -33,6 +33,26 @@ class TestMetricsApi:
         assert abs(len(d["series"]["labels"]) - points) <= 1, "12 months may straddle 13 calendar months"
         assert d["as_of"] and d["range"]["key"] == rng
 
+    def test_revenue_bridge_adds_up(self, admin_api):
+        d = admin_api.get("/api/admin/metrics/revenue?range=90d&refresh=1").json()
+        b = d["bridge_total"]
+        assert b["start_mrr"] + b["new_mrr"] + b["reactivation_mrr"] + b["expansion_mrr"] \
+            - b["contraction_mrr"] - b["churned_mrr"] == b["end_mrr"]
+        assert len(d["bridge"]["new"]) == len(d["bridge"]["labels"])
+
+    @pytest.mark.parametrize("path", ["trial-cohorts?range=12m", "funnel?range=90d", "engagement?range=90d",
+                                      "engagement?range=12m&mode=monthly"])
+    def test_growth_endpoints(self, admin_api, path):
+        r = admin_api.get(f"/api/admin/metrics/{path}&refresh=1")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        if "steps" in d:
+            counts = [s["n"] for s in d["steps"]]
+            assert counts == sorted(counts, reverse=True), "each step is a subset of the one before"
+        if "retention" in d:
+            for row in d["retention"]["rows"]:
+                assert all(c is None or c["n"] <= row["size"] for c in row["cells"])
+
     def test_compare_adds_the_previous_period(self, admin_api):
         d = admin_api.get("/api/admin/metrics/overview?range=7d&compare=1").json()
         assert set(d["series"]["prev"]) == {"signups", "wau", "mrr"}
@@ -150,6 +170,14 @@ class TestShell:
             page.locator(f'[data-p360-tab="{tab}"]').click()
             assert page.locator("#p360-tab").inner_text().strip()
         page.keyboard.press("Escape")
+        assert page.errors == []
+
+    @pytest.mark.parametrize("section,marker", [("revenue", "#ch-rv-bridge"), ("engagement", ".adm-funnel, #en-funnel .empty")])
+    def test_growth_sections_render(self, page, section, marker):
+        page.goto(f"{BASE}/admin.html?range=90d#{section}")
+        panel = page.locator(f'[data-panel="{section}"]')
+        panel.locator(".adm-kpi").first.wait_for()
+        panel.locator(marker).first.wait_for()
         assert page.errors == []
 
     def test_phone_has_the_admin_bottom_bar(self, page):
