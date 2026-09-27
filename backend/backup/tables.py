@@ -25,7 +25,8 @@ TABLE_ORDER = [
     "recurring_dismissals",
     "ai_calls",              # user_id nullable (ON DELETE SET NULL)
     "insights",
-    "audit_log",             # user_id nullable
+    "audit_log",             # user_id, target_user_id nullable
+    "login_events",          # user_id nullable (unknown-account attempts)
     # level 2 - depend on users + accounts/categories
     "rules",
     "statements",

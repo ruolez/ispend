@@ -578,7 +578,7 @@ const ui = (() => {
     if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.classList.add('is-loading'); }
     try { return await fn(); }
     catch (err) {
-      if (!silent) toastFn(err.message || String(err), { type: 'error' });
+      if (!silent && !(err && err.cancelled)) toastFn(err.message || String(err), { type: 'error' });
       if (rethrow) throw err;
       return undefined;
     } finally {
@@ -855,6 +855,7 @@ window.toast = toast;
   const recent = new Map();
   const IGNORE = new Set(['Not authenticated', 'Upload cancelled', 'Subscription required']);
   function report(err) {
+    if (err && err.cancelled) return;
     const msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || 'Something went wrong';
     if (IGNORE.has(msg)) return;
     const now = Date.now();

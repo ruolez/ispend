@@ -24,17 +24,35 @@ class Api(requests.Session):
     def __init__(self, username=None):
         super().__init__()
         self.username = username
+        self.password = None
+        self.auto_step_up = True
 
     def request(self, method, url, **kwargs):
         if url.startswith("/"):
             url = BASE + url
         kwargs.setdefault("timeout", 60)
-        return super().request(method, url, **kwargs)
+        r = super().request(method, url, **kwargs)
+        # Admin actions that need a recently re-entered password: answer the prompt the way the
+        # browser does, once, then replay. Tests of the prompt itself turn this off.
+        if (self.auto_step_up and self.password and r.status_code == 403
+                and not url.endswith("/api/admin/step-up") and _is_step_up(r)):
+            if login_with_retry(lambda: super(Api, self).request(
+                    "POST", BASE + "/api/admin/step-up", json={"password": self.password}, timeout=60)).status_code == 200:
+                r = super().request(method, url, **kwargs)
+        return r
 
     def login(self, username, password):
         r = login_with_retry(lambda: self.post("/api/auth/login", json={"username": username, "password": password}))
         self.username = username
+        self.password = password
         return r
+
+
+def _is_step_up(response):
+    try:
+        return response.json().get("code") == "step_up_required"
+    except ValueError:
+        return False
 
 
 def api_login(username, password):

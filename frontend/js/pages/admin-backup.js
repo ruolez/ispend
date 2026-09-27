@@ -103,7 +103,7 @@ function jobRow(j) {
     <td class="right num" data-label="Size">${j.size_bytes ? fmtBytes(j.size_bytes) : '—'}</td>
     <td class="text-3" data-label="Created" data-tip="${esc(fmtDateTime(j.created_at))}">${esc(fmtRelative(j.created_at))}</td>
     <td class="col-actions"><div class="row-actions">
-      ${j.downloadable ? `<a class="btn btn-secondary btn-xs" href="/api/admin/backup/${j.id}/download" download>${icon('download', 'ico-sm')}<span class="label">Download</span></a>` : ''}
+      ${j.downloadable ? `<a class="btn btn-secondary btn-xs" href="/api/admin/backup/${j.id}/download" download data-admin-download>${icon('download', 'ico-sm')}<span class="label">Download</span></a>` : ''}
       ${busy ? '' : `<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="delete-backup" data-id="${j.id}" aria-label="Delete backup">${icon('trash')}</button>`}
     </div></td></tr>`;
 }

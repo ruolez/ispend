@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from flask import Response, abort, jsonify, request, session
+from flask import Response, abort, has_request_context, jsonify, request, session
 
 import db
 
@@ -92,28 +92,69 @@ def csv_response(rows, filename, columns=None):
 
 
 AUDIT_RETENTION_DAYS = 180
+ADMIN_AUDIT_RETENTION_DAYS = 730
+MAX_USER_AGENT = 300
 
 
-def audit(action, detail=None, user_id=None):
-    if user_id is None:
+def client_ip():
+    """The caller's address. The backend is only reachable through the nginx container, which sets
+    X-Real-IP (after its own real-IP handling when a shared proxy sits in front); remote_addr is
+    nginx itself."""
+    if not has_request_context():
+        return None
+    ip = (request.headers.get("X-Real-IP") or request.remote_addr or "").strip()
+    return ip or None
+
+
+def user_agent():
+    if not has_request_context():
+        return None
+    return (request.headers.get("User-Agent") or "")[:MAX_USER_AGENT] or None
+
+
+def audit(action, detail=None, user_id=None, target=None, by_admin=None):
+    """Append to the activity log. Safe outside a request (background jobs, timers): there is no
+    session to read the actor from, so the caller passes user_id, and ip/user agent stay empty.
+
+    target is the user the action was about when that is not the actor (admin actions);
+    by_admin defaults to "this came through the admin API", which also keeps it for the longer
+    admin retention."""
+    in_request = has_request_context()
+    if user_id is None and in_request:
         user_id = session.get("user_id")
+    if by_admin is None:
+        by_admin = (in_request and request.path.startswith("/api/admin/")) or action.startswith("admin.")
     db.execute(
-        "INSERT INTO audit_log (user_id, action, detail) VALUES (%s, %s, %s)",
-        (user_id, action, json.dumps(detail, default=str) if detail is not None else None),
+        """INSERT INTO audit_log (user_id, action, detail, target_user_id, ip, user_agent, by_admin)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (user_id, action, json.dumps(detail, default=str) if detail is not None else None,
+         target, client_ip(), user_agent(), bool(by_admin)),
     )
     if random.random() < 0.005:  # noqa: S311 - sampling, not security  # roughly one prune per 200 writes keeps the log bounded without a scheduler
-        # Read the setting only here: audit() is on hot paths, so the common write path must not
+        # Read the settings only here: audit() is on hot paths, so the common write path must not
         # gain a second query.
-        db.execute("DELETE FROM audit_log WHERE created_at < now() - make_interval(days => %s)",
-                   (audit_retention_days(),))
+        db.execute(
+            """DELETE FROM audit_log
+                WHERE (NOT by_admin AND created_at < now() - make_interval(days => %s))
+                   OR (by_admin AND created_at < now() - make_interval(days => %s))""",
+            (audit_retention_days(), admin_audit_retention_days()))
 
 
-def audit_retention_days():
-    raw = db.get_setting("audit_retention_days")
+def _retention_setting(key, default):
+    raw = db.get_setting(key)
     try:
         return max(7, min(3650, int(raw)))
     except (TypeError, ValueError):
-        return AUDIT_RETENTION_DAYS
+        return default
+
+
+def audit_retention_days():
+    return _retention_setting("audit_retention_days", AUDIT_RETENTION_DAYS)
+
+
+def admin_audit_retention_days():
+    """Admin actions answer "who did this to my account"; they outlive ordinary activity."""
+    return _retention_setting("admin_audit_retention_days", ADMIN_AUDIT_RETENTION_DAYS)
 
 
 def money(v):

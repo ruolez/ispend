@@ -4,7 +4,7 @@
 - Live app (dev, docker compose, already running, DO NOT restart/rebuild containers): http://localhost:5559
   - admin / admin  (admin role, REAL personal data: 8 accounts, ~1238 transactions, 12 statements, 209 rules. NEVER delete/modify admin's transactions, accounts, statements, rules, categories or settings. Read-only use of admin is fine, plus creating/deleting QA users named qa_*.)
   - qa_tester / qa-tester-pass1 (user id 4, role user, EMPTY data, categories seeded) — use freely, mutate freely.
-  - To get an additional isolated user: login as admin, POST /api/users {"username":"qa_<x>","password":"...(>=10)","role":"user"}.
+  - To get an additional isolated user: login as admin, POST /api/admin/users {"username":"qa_<x>","password":"...(>=10)","role":"user"}.
 - Login: POST /api/auth/login {"username","password"} → session cookie. Logout POST /api/auth/logout. Me: GET /api/auth/me.
 - Python venv with playwright (chromium installed), pytest, requests, ruff, pyflakes:
   /private/tmp/claude-501/-Users-ruolez-Desktop-Dev-ispend/272cd059-cdbc-40ed-a58b-b1f0ef765b8f/scratchpad/qa-venv/bin/python  (and .../bin/pytest, .../bin/ruff, .../bin/pyflakes)

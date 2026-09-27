@@ -32,9 +32,26 @@ def _fix_005(cur):
            AND (t.is_transfer OR t.is_excluded)""")
 
 
+def _fix_021(cur):
+    # 021 filled target_user_id / by_admin on the activity log rows that existed before it.
+    cur.execute("""
+        UPDATE audit_log a SET target_user_id = (a.detail->>'id')::int, by_admin = true
+         WHERE a.target_user_id IS NULL
+           AND a.action ~ '^(user\\.(create|update|password_reset|lock|unlock|restore|delete)|billing\\.(comp|extend_trial|extend_grace|cancel))$'
+           AND a.detail->>'id' ~ '^\\d{1,9}$'
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = (a.detail->>'id')::int)""")
+    cur.execute("""
+        UPDATE audit_log SET by_admin = true
+         WHERE NOT by_admin
+           AND (action LIKE 'admin.%'
+                OR action IN ('user.create', 'user.purge', 'settings.admin_update',
+                              'billing.config_update', 'billing.sync_stale'))""")
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
+    "021_admin_security.sql": _fix_021,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

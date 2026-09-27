@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -54,12 +55,14 @@ class AdminApiTest(unittest.TestCase):
         self.q = _stubs.Router()
         self.x = _stubs.Router(default=1)
 
-    def _call(self, method, path, body=None, uid=1, role="admin"):
+    def _call(self, method, path, body=None, uid=1, role="admin", stepped_up=True):
         c = self.app.test_client()
         if uid is not None:
             with c.session_transaction() as s:
                 s["user_id"] = uid
                 s["role"] = role
+                if stepped_up:
+                    s["stepup_until"] = time.time() + 600
         with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(admin_api, "db", FAKE):
             return getattr(c, method)(path, data=json.dumps(body) if body is not None else None,

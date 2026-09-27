@@ -1,6 +1,7 @@
 """Admin-side billing: per-user overrides, the instance summary, and Stripe/SMTP configuration."""
 
 import logging
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, session
 
@@ -10,7 +11,7 @@ import entitlement
 import jobs
 import landing
 import mailer
-from auth import admin_required, verification_required_setting
+from auth import admin_required, step_up_missing, step_up_required, verification_required_setting
 from settings_api import MASK
 from util import api_error, audit, json_body, rows_json, to_int
 
@@ -38,7 +39,13 @@ def _block(row):
     ent = entitlement.evaluate(row)
     out = entitlement.public_json(ent)
     out["price_id"] = row.get("price_id")
-    out["comped_until"] = ent.get("comped") and "forever" or None
+    comped = row.get("comped_until")
+    if comped is None or comped <= datetime.now(timezone.utc):
+        out["comped_until"] = None
+    elif comped.year >= 9999:          # psycopg2 reads 'infinity' as datetime.max
+        out["comped_until"] = "forever"
+    else:
+        out["comped_until"] = comped.isoformat()
     out["stripe_customer_id"] = row.get("stripe_customer_id")
     out["stripe_subscription_id"] = row.get("stripe_subscription_id")
     out["stripe_customer_url"] = (f"https://dashboard.stripe.com/customers/{row['stripe_customer_id']}"
@@ -85,7 +92,7 @@ def comp(user_id):
         value, label = None, "cleared"
     db.execute("UPDATE subscriptions SET comped_until = %s::timestamptz, updated_at = now() "
                "WHERE user_id = %s", (value, user_id))
-    audit("billing.comp", {"id": user_id, "until": label})
+    audit("billing.comp", {"id": user_id, "until": label}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
 
@@ -103,7 +110,7 @@ def extend_trial(user_id):
                   lapsed_at = NULL, grace_until = NULL,
                   trial_ending_email_at = NULL, trial_ended_email_at = NULL, updated_at = now()
             WHERE user_id = %s""", (days, user_id))
-    audit("billing.extend_trial", {"id": user_id, "days": days})
+    audit("billing.extend_trial", {"id": user_id, "days": days}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
 
@@ -119,12 +126,13 @@ def extend_grace(user_id):
               SET grace_until = GREATEST(COALESCE(grace_until, now()), now()) + make_interval(days => %s),
                   grace_ending_email_at = NULL, read_only_email_at = NULL, updated_at = now()
             WHERE user_id = %s""", (days, user_id))
-    audit("billing.extend_grace", {"id": user_id, "days": days})
+    audit("billing.extend_grace", {"id": user_id, "days": days}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
 
 @bp.post("/users/<int:user_id>/cancel")
 @admin_required
+@step_up_required
 def cancel(user_id):
     row = _load(user_id)
     if not row:
@@ -145,7 +153,7 @@ def cancel(user_id):
     except Exception as e:
         log.exception("Stripe cancel failed")
         return api_error(f"Stripe refused the cancellation: {e}", 502)
-    audit("billing.cancel", {"id": user_id, "immediately": immediately})
+    audit("billing.cancel", {"id": user_id, "immediately": immediately}, target=user_id)
     return jsonify({"ok": True, "billing": _block(_load(user_id))})
 
 
@@ -251,6 +259,11 @@ def get_config():
 @admin_required
 def put_config():
     data = json_body()
+    # Replacing a stored secret redirects payments or mail; it gets the same re-check as a purge.
+    if any(key in SECRET_KEYS and value not in (MASK, None, "") for key, value in data.items()):
+        blocked = step_up_missing()
+        if blocked:
+            return blocked
     changed = []
     if isinstance(data.get("landing"), dict):
         landing.save(data["landing"])   # normalised on the way in; the loop below skips it

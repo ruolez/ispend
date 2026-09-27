@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import parse_qs
@@ -13,7 +14,7 @@ import config
 import db
 import entitlement
 import user_state
-from util import api_error, audit, json_body, to_int
+from util import api_error, audit, client_ip, json_body, to_int, user_agent
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -179,6 +180,117 @@ def current_user_id():
     return session["user_id"]
 
 
+STEP_UP_TTL_SECONDS = 600
+STEP_UP_MAX_FAILURES = 5
+STEP_UP_CODE = "step_up_required"
+NEW_NETWORK_LOOKBACK_DAYS = 90
+
+
+def step_up_until():
+    try:
+        return float(session.get("stepup_until") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def step_up_missing():
+    """The 403 to return when the step-up window is closed, else None. For routes where only some
+    requests need it (a permanent delete, a CSV export)."""
+    if step_up_until() <= time.time():
+        return jsonify({"error": "Confirm your password to continue.", "code": STEP_UP_CODE}), 403
+    return None
+
+
+def step_up_required(f):
+    """For actions an admin should not be able to take from a laptop left open: the password was
+    re-entered within the last few minutes. Apply after admin_required."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        return step_up_missing() or f(*args, **kwargs)
+
+    return wrapper
+
+
+def step_up(password):
+    """Re-check the signed-in admin's password and open the step-up window. Repeated wrong
+    answers end the session: whoever is at the keyboard has to sign in again."""
+    uid = session["user_id"]
+    failures = db.query(
+        """SELECT COUNT(*) AS n FROM login_events
+            WHERE user_id = %s AND kind = 'step_up' AND NOT ok
+              AND created_at > now() - interval '15 minutes'""", (uid,), one=True)["n"]
+    user = db.query("SELECT id, role, password_hash FROM users WHERE id = %s", (uid,), one=True)
+    ok = bool(user) and failures < STEP_UP_MAX_FAILURES and check_password_hash(
+        user["password_hash"], str(password or ""))
+    record_login(uid, ok, "step_up", None if ok else "bad_password")
+    if not ok:
+        if failures + 1 >= STEP_UP_MAX_FAILURES:
+            audit("auth.step_up.locked_out", {"failures": failures + 1}, user_id=uid, by_admin=True)
+            session.clear()
+            return api_error("Too many wrong passwords. Sign in again.", 401)
+        return api_error("That password is not right.")
+    until = time.time() + STEP_UP_TTL_SECONDS
+    session["stepup_until"] = until
+    return jsonify({"ok": True, "until": datetime.fromtimestamp(until, timezone.utc).isoformat()})
+
+
+def step_up_status():
+    until = step_up_until()
+    active = until > time.time()
+    return {"active": active,
+            "until": datetime.fromtimestamp(until, timezone.utc).isoformat() if active else None}
+
+
+def record_login(user_id, ok, kind="password", reason=None, identity=None, role=None):
+    """One row per sign-in attempt. Returns True when an admin just signed in from a network none
+    of their sign-ins in the last 90 days came from."""
+    import geo
+    import useragent
+
+    ip = client_ip()
+    prefix = geo.network_prefix(ip)
+    ua = user_agent()
+    parsed = useragent.parse(ua)
+    new_network = False
+    if ok and role == "admin" and prefix and kind != "step_up":
+        seen = db.query(
+            """SELECT EXISTS (SELECT 1 FROM login_events
+                               WHERE user_id = %(u)s AND ok AND kind <> 'step_up') AS any_before,
+                      EXISTS (SELECT 1 FROM login_events
+                               WHERE user_id = %(u)s AND ok AND kind <> 'step_up'
+                                 AND ip_prefix = %(p)s::cidr
+                                 AND created_at > now() - make_interval(days => %(d)s)) AS here_before""",
+            {"u": user_id, "p": prefix, "d": NEW_NETWORK_LOOKBACK_DAYS}, one=True) or {}
+        # The very first recorded sign-in has nothing to compare with; flagging it would alarm
+        # every fresh install and every upgrade.
+        new_network = bool(seen.get("any_before")) and not seen.get("here_before")
+    db.execute(
+        """INSERT INTO login_events (user_id, kind, ok, reason, identity, ip, ip_prefix, user_agent,
+                                     browser, os, device, country, new_network)
+           VALUES (%s, %s, %s, %s, %s, %s, %s::cidr, %s, %s, %s, %s, %s, %s)""",
+        (user_id, kind, ok, reason,
+         (identity or "").strip().lower()[:64] or None if user_id is None else None,
+         ip, prefix, ua, parsed["browser"], parsed["os"], parsed["device"],
+         geo.country(ip, request.headers), new_network))
+    return new_network
+
+
+def _alert_new_admin_network(user):
+    import geo
+    import mailer
+    import useragent
+
+    device = useragent.label(useragent.parse(user_agent()))
+    audit("auth.admin_new_network", {"ip_prefix": geo.network_prefix(client_ip()), "device": device},
+          user_id=user["id"], by_admin=True)
+    if user.get("email"):
+        mailer.send_async("admin_new_login", user["email"], username=user["username"], device=device,
+                          ip=client_ip() or "unknown",
+                          when=datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC"))
+
+
+
+
 THEME_COOKIE = "ispend_theme"
 
 
@@ -236,7 +348,7 @@ def _issue_token(user_id, kind, ttl):
         """INSERT INTO auth_tokens (user_id, kind, token_hash, expires_at, created_ip)
            VALUES (%s, %s, %s, %s, %s)""",
         (user_id, kind, hashlib.sha256(token.encode()).hexdigest(),
-         datetime.now(timezone.utc) + ttl, request.remote_addr))
+         datetime.now(timezone.utc) + ttl, client_ip()))
     return token
 
 
@@ -311,13 +423,17 @@ def login():
     # The dummy compare keeps an unknown username as slow as a known one.
     ok = check_password_hash(user["password_hash"] if user else _DUMMY_HASH, str(password))
     if not (user and ok):
+        record_login(user["id"] if user else None, False, reason="bad_password" if user else "unknown_user",
+                     identity=username)
         return api_error("Invalid username or password", 401)
     if not user_state.can_sign_in(user):
         # Only someone who already proved the password gets to learn the account is blocked, and
         # locked and deleted read identically so the two cannot be told apart.
+        record_login(user["id"], False, reason="blocked")
         audit("auth.login.blocked", {"status": user["status"]}, user_id=user["id"])
         return api_error(user_state.BLOCKED_MESSAGE, 403)
     if user_state.needs_verification(user, verification_enforced()):
+        record_login(user["id"], False, reason="unconfirmed")
         audit("auth.login.unverified", {}, user_id=user["id"])
         return jsonify({"error": user_state.UNVERIFIED_MESSAGE,
                         "code": user_state.UNVERIFIED_CODE}), 403
@@ -330,6 +446,8 @@ def login():
     session["uepoch"] = user.get("session_epoch") or 0
     db.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
     audit("auth.login")
+    if record_login(user["id"], True, role=user["role"]):
+        _alert_new_admin_network(user)
     _maybe_refresh_subscription(user["id"])
     return with_theme_cookie(jsonify(_me_payload(user)), (user.get("preferences") or {}).get("theme"))
 
@@ -441,6 +559,7 @@ def signup():
                VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
             (user["id"], trial), commit=False)
         seed_categories.seed_for_user(db.get_db(), user["id"])
+    record_login(user["id"], True, "signup")
     token = _issue_token(user["id"], "verify", VERIFY_TTL)
     link = f"{_base_url()}/verify.html?token={token}"
     trial_end = (datetime.now(timezone.utc) + timedelta(days=trial)).strftime("%d %B %Y")
@@ -509,7 +628,9 @@ def reset_password_with_token():
         db.execute("DELETE FROM auth_tokens WHERE user_id = %s AND kind = 'reset' AND used_at IS NULL",
                    (user_id,), commit=False)
     if not user_state.can_sign_in(user):
+        record_login(user_id, False, "reset", "blocked")
         return api_error(user_state.BLOCKED_MESSAGE, 403)
+    record_login(user_id, True, "reset", role=user["role"])
     session.clear()
     session.permanent = True
     session["user_id"] = user["id"]

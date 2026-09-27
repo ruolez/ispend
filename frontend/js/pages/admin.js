@@ -293,8 +293,13 @@ function renderHousekeeping(h, generatedAt) {
   $('#ov-housekeeping').innerHTML = `
     <div class="setting-row">
       <div><div class="title">Activity log retention</div>
-        <div class="desc">${fmtNumber(h.audit_rows || 0)} entries${h.oldest_audit_at ? `, oldest ${fmtRelative(h.oldest_audit_at)}` : ''}. Older entries are pruned as new ones are written.</div></div>
+        <div class="desc">${fmtNumber(h.audit_rows || 0)} entries${h.oldest_audit_at ? `, oldest ${fmtRelative(h.oldest_audit_at)}` : ''}. What people do in their own accounts; older entries are pruned as new ones are written.</div></div>
       <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-audit" class="input input-sm num-input" type="number" inputmode="numeric" min="7" max="3650" aria-label="How long to keep the activity log, in days" value="${h.audit_retention_days}"><span class="text-3">days</span></div>
+    </div>
+    <div class="setting-row">
+      <div><div class="title">Admin action retention</div>
+        <div class="desc">What administrators did — locks, deletions, billing changes, exports. Kept longer so “who changed my account” can always be answered.</div></div>
+      <div class="row gap-2 adm-ctl adm-ctl--sm"><input id="hk-admin-audit" class="input input-sm num-input" type="number" inputmode="numeric" min="7" max="3650" aria-label="How long to keep admin actions, in days" value="${h.admin_audit_retention_days}"><span class="text-3">days</span></div>
     </div>
     <div class="setting-row">
       <div><div class="title">Trash retention</div>
@@ -305,12 +310,12 @@ function renderHousekeeping(h, generatedAt) {
       <button type="button" class="btn btn-secondary btn-sm" data-act="save-housekeeping" disabled>Save</button></div>`;
   const mark = () => {
     const changed = Number($('#hk-audit').value) !== h.audit_retention_days
+      || Number($('#hk-admin-audit').value) !== h.admin_audit_retention_days
       || Number($('#hk-trash').value) !== h.deleted_user_retention_days;
     $('[data-act="save-housekeeping"]').disabled = !changed;
     $('#hk-state').textContent = changed ? 'Unsaved changes' : 'Saved';
   };
-  $('#hk-audit').addEventListener('input', mark);
-  $('#hk-trash').addEventListener('input', mark);
+  ['#hk-audit', '#hk-admin-audit', '#hk-trash'].forEach((sel) => $(sel).addEventListener('input', mark));
 }
 
 /* ---------- Users ---------- */
@@ -665,6 +670,9 @@ const AUDIT_VERB = {
 const AUDIT_EXACT = {
   'auth.login': 'Signed in', 'auth.logout': 'Signed out', 'auth.login.blocked': 'Sign-in blocked',
   'auth.forgot': 'Password reset requested', 'auth.reset': 'Password reset',
+  'auth.admin_new_network': 'Admin signed in from a new network',
+  'auth.step_up.locked_out': 'Signed out after wrong passwords',
+  'admin.audit.export': 'Activity exported',
 };
 const AUDIT_DANGER = new Set(['delete', 'purge', 'blocked', 'deactivate', 'failed', 'lock']);
 
@@ -682,15 +690,16 @@ function auditTitle(action) {
 function auditVerb(action) { return String(action).split('.').pop(); }
 function auditIcon(action) { return AUDIT_SUBJECT[String(action).split('.')[0]] || 'circle'; }
 
-function auditDetail(detail) {
-  const entries = Object.entries(detail).filter(([, v]) => v !== null && v !== '');
-  if (!entries.length) return '';
+function auditDetail(detail, hidden = 0) {
+  const entries = Object.entries(detail || {}).filter(([, v]) => v !== null && v !== '');
+  const privacy = hidden ? `<span class="adm-kv" data-tip="Names, file names and amounts people entered stay private">${icon('eye-off', 'ico-sm')}<b>${hidden} private</b></span>` : '';
+  if (!entries.length) return privacy ? `<div class="adm-audit-detail">${privacy}</div>` : '';
   const val = (v) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
   const shown = entries.slice(0, 5).map(([k, v]) =>
     `<span class="adm-kv"><i>${esc(words(k))}</i><b>${esc(val(v))}</b></span>`).join('');
   const rest = entries.length - 5;
   return `<div class="adm-audit-detail">${shown}${rest > 0
-    ? `<span class="adm-kv" data-tip="${esc(JSON.stringify(detail))}">+${rest} more</span>` : ''}</div>`;
+    ? `<span class="adm-kv" data-tip="${esc(JSON.stringify(detail))}">+${rest} more</span>` : ''}${privacy}</div>`;
 }
 
 function auditRow(a, { compact = false } = {}) {
@@ -699,8 +708,9 @@ function auditRow(a, { compact = false } = {}) {
   return `<div class="adm-audit-item">
     <span class="adm-audit-ico ${danger ? 'is-danger' : ''}" aria-hidden="true">${icon(auditIcon(a.action), 'ico-sm')}</span>
     <div class="min-w-0">
-      <div class="adm-audit-action"><span data-tip="${esc(a.action)}">${esc(auditTitle(a.action))}</span></div>
-      ${a.detail && Object.keys(a.detail).length ? auditDetail(a.detail) : ''}
+      <div class="adm-audit-action"><span data-tip="${esc(a.action)}">${esc(auditTitle(a.action))}</span>${a.target_user_id && a.target_user_id !== a.user_id
+        ? ` <span class="text-3">·</span> <button type="button" class="row-link" data-act="audit-for-user" data-id="${a.target_user_id}">${esc(a.target_username || `#${a.target_user_id}`)}</button>` : ''}</div>
+      ${(a.detail && Object.keys(a.detail).length) || a.hidden_fields ? auditDetail(a.detail, a.hidden_fields) : ''}
     </div>
     ${compact ? '' : `<div class="adm-audit-who">${a.user_id
       ? `<button type="button" class="row-link" data-act="audit-for-user" data-id="${a.user_id}"><span class="avatar avatar-xs" aria-hidden="true">${esc(initials(who))}</span><span class="truncate">${esc(who)}</span></button>`
@@ -776,6 +786,14 @@ async function openActionFilter(anchor) {
 
 /* ---------- Actions ---------- */
 
+/* Exports and backup archives need a recent password; a plain link cannot answer the prompt. */
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[data-admin-download]');
+  if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+  e.preventDefault();
+  adminDownload(link.href).catch((err) => { if (!err.cancelled) toast(err.message, { type: 'error' }); });
+});
+
 async function onAction(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
@@ -820,6 +838,7 @@ async function onAction(e) {
       return ui.busy(el, async () => {
         await api('/api/admin/settings', { method: 'PUT', body: {
           audit_retention_days: Number($('#hk-audit').value),
+          admin_audit_retention_days: Number($('#hk-admin-audit').value),
           deleted_user_retention_days: Number($('#hk-trash').value),
         } });
         toast('Housekeeping saved', { type: 'success' });

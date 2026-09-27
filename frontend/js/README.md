@@ -66,6 +66,7 @@ Safe areas: `--safe-top` / `--safe-bottom` in `tokens.css` wrap `env(safe-area-i
 | `await api(path, {method, body, headers})` | JSON fetch; objects auto-stringified; `FormData` passes through; 401 → login redirect; non-2xx throws `Error(message)` with `.status`, `.data` |
 | `await apiShared(path)` | GET that shares one in-flight request with any identical call made at the same moment; treat the result as read-only |
 | `await apiUpload(path, formData, {onProgress(0..1)})` | XHR multipart upload with progress |
+| `await adminDownload(url)` | Admin-only downloads (activity CSV, backup archives): asks for the password first if the step-up window is closed, then lets the browser fetch the file. Links opt in with `data-admin-download` |
 | `esc(s)` | HTML-escape (use on EVERY interpolation) |
 | `qs()` → `{k:v}`, `setQs({k:v}, {replace, merge})`, `toQuery(obj)` → `?a=1&b=2` | URL state helpers; empty/null/false keys are dropped, arrays joined with `,` |
 | `$(sel, root)`, `$$(sel, root)`, `debounce(fn, ms)`, `uid()` | DOM/util |
@@ -230,6 +231,17 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sig
   `DELETE /users/:id?permanent=true&confirm=<username>`, `GET /stats/overview?days=`,
   `GET /audit` (keyset `cursor`, `format=csv`), `GET /audit/actions`, `GET|PUT /settings`.
   The user endpoints moved here from `/api/users` because DELETE changed meaning.
+- **Step-up.** Sensitive actions answer `403 {code: "step_up_required"}` until the admin re-enters their
+  password (`POST /api/admin/step-up`, 10-minute window in the signed cookie, `GET /step-up/status`;
+  five wrong answers in 15 minutes end the session). `api()` handles it for every caller: one shared
+  "Confirm it's you" prompt, then the request is replayed; a dismissed prompt rejects with
+  `err.cancelled`, which `ui.busy` and the global error net stay quiet about. Server side it is
+  `@step_up_required` after `@admin_required`, or `step_up_missing()` for routes where only some
+  requests need it (permanent delete, CSV export, saving a new Stripe/SMTP secret).
+- **Privacy.** Activity rows written by users pass through `admin_privacy.redact_row()` before an admin
+  sees them: ids, counts and enum-like values stay, names, file names, merchant keys and amounts become a
+  "N private" chip (`hidden_fields`). Admin actions (`by_admin`) are shown whole. New audit detail keys
+  are hidden by default — add a key to `STRING_KEYS` only if its values can never be user text.
 - **User lifecycle.** `active → locked → active`, `active|locked → deleted` (soft, hidden, restorable),
   `deleted → purged` (irreversible). Purge is reachable **only** from the trash and needs the username
   typed; the server re-validates the phrase. Restore returns a user to `locked` if they were locked

@@ -141,9 +141,14 @@ class Api:
         r = login_with_retry(lambda: self.s.post(f"{BASE}/api/auth/login", json={"username": creds[0], "password": creds[1]}))
         assert r.ok, f"login {creds[0]} failed: {r.status_code} {r.text[:200]}"
         self.me = r.json()
+        self.password = creds[1]
 
     def __call__(self, method, path, **kw):
         r = self.s.request(method, f"{BASE}{path}", **kw)
+        # Admin actions that need a recently re-entered password: answer once, replay.
+        if r.status_code == 403 and "step_up_required" in r.text:
+            login_with_retry(lambda: self.s.post(f"{BASE}/api/admin/step-up", json={"password": self.password}))
+            r = self.s.request(method, f"{BASE}{path}", **kw)
         if r.status_code >= 400:
             raise requests.HTTPError(f"{method} {path} -> {r.status_code} {r.text[:300]}", response=r)
         return r.json() if r.content and "json" in r.headers.get("content-type", "") else r.content

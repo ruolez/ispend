@@ -17,6 +17,12 @@ async function api(path, options = {}) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON */ }
+  /* Sensitive admin actions want the password re-entered within the last few minutes; ask here once
+     and replay the request, so no admin screen has to know which actions those are. */
+  if (res.status === 403 && data && data.code === 'step_up_required' && !options.stepUpRetry) {
+    if (await stepUpPrompt()) return api(path, { ...options, stepUpRetry: true });
+    throw stepUpCancelled(data);
+  }
   /* One place catches every blocked write, so no page has to know the rule. */
   if (res.status === 402 && data && data.code === 'subscription_required') {
     toast(data.error, { type: 'error', duration: 8000,
@@ -33,6 +39,62 @@ async function api(path, options = {}) {
   }
   if (opts.method && opts.method !== 'GET' && typeof store !== 'undefined') store.afterWrite(path);
   return data;
+}
+
+/* One prompt at a time: parallel requests that all hit the step-up wall share the same answer. */
+let _stepUpAsk = null;
+function stepUpPrompt() {
+  if (_stepUpAsk) return _stepUpAsk;
+  _stepUpAsk = new Promise((resolve) => {
+    let confirmed = false;
+    const m = ui.modal({
+      title: 'Confirm it’s you',
+      width: 420,
+      html: `<form id="su-form" novalidate>
+        <p class="muted mb-3">Enter your password to continue. You won’t be asked again for the next 10 minutes.</p>
+        <div class="field"><label for="su-pw">Password</label>
+          <input id="su-pw" class="input" type="password" autocomplete="current-password" required autofocus></div>
+      </form>`,
+      actions: [{ label: 'Cancel' }, { label: 'Continue', primary: true, onClick: async () => {
+        const input = m.el.querySelector('#su-pw');
+        if (!input.value) { ui.fieldError(input, 'Enter your password'); return false; }
+        try {
+          await api('/api/admin/step-up', { method: 'POST', body: { password: input.value } });
+        } catch (err) {
+          ui.fieldError(input, err.message);
+          input.select();
+          return false;
+        }
+        confirmed = true;
+        return true;
+      } }],
+      onClose: () => { _stepUpAsk = null; resolve(confirmed); },
+    });
+    m.el.querySelector('#su-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      m.el.querySelector('.modal-foot .btn-primary').click();
+    });
+  });
+  return _stepUpAsk;
+}
+function stepUpCancelled(data) {
+  const err = new Error('Nothing was changed');
+  err.status = 403; err.data = data; err.cancelled = true;
+  return err;
+}
+
+/* Downloads are plain navigations, which cannot answer a step-up prompt: check first, ask if needed,
+   then let the browser fetch the file. */
+async function adminDownload(url) {
+  const status = await api('/api/admin/step-up/status');
+  if (!status.active && !(await stepUpPrompt())) return false;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return true;
 }
 
 /* A GET that another part of the page may be making at the same moment (the dashboard's budget card

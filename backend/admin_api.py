@@ -14,19 +14,24 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash
 
+import admin_privacy
+import auth
 import config
 import db
+import entitlement
 import seed_categories
 import user_state
-from auth import MIN_PASSWORD_LEN, admin_required, password_problem
-from util import api_error, audit, audit_retention_days, csv_response, iso, json_body, rows_json, to_int
+from auth import MIN_PASSWORD_LEN, admin_required, password_problem, step_up_missing, step_up_required
+from util import (admin_audit_retention_days, api_error, audit, audit_retention_days, csv_response, iso,
+                  json_body, rows_json, to_int)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
 # Sort keys are interpolated into SQL, so they may only ever come from this dict.
 USER_SORTS = {
-    "id": "u.id", "username": "u.username", "created_at": "u.created_at",
-    "last_login_at": "u.last_login_at", "txn_count": "txn_count", "storage_bytes": "storage_bytes",
+    "id": "u.id", "username": "u.username", "email": "lower(u.email)", "role": "u.role",
+    "status": "u.status", "created_at": "u.created_at", "last_login_at": "u.last_login_at",
+    "txn_count": "txn_count", "storage_bytes": "storage_bytes",
 }
 DEFAULT_RETENTION_DAYS = 30
 STATS_TTL_SECONDS = 300
@@ -64,6 +69,20 @@ def _retention_days():
         return max(0, min(3650, int(raw)))
     except (TypeError, ValueError):
         return DEFAULT_RETENTION_DAYS
+
+
+# ---------- Step-up ----------
+
+@bp.get("/step-up/status")
+@admin_required
+def step_up_status():
+    return jsonify(auth.step_up_status())
+
+
+@bp.post("/step-up")
+@admin_required
+def step_up():
+    return auth.step_up(json_body().get("password"))
 
 
 # ---------- Users ----------
@@ -142,6 +161,9 @@ def create_user():
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     role = data.get("role") if data.get("role") in ("admin", "user") else "user"
+    access = data.get("access") or "trial"
+    if access not in ("trial", "comped"):
+        return api_error("access must be trial or comped")
     if not username or password_problem(password):
         return api_error(f"Username and a password of at least {MIN_PASSWORD_LEN} characters are required")
     existing = db.query("SELECT id, status, username FROM users WHERE username = %s", (username,), one=True)
@@ -152,18 +174,30 @@ def create_user():
                         "code": "username_deleted", "user_id": existing["id"]}), 409
     if existing:
         return api_error("Username already exists")
-    row = db.execute(
-        "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s) RETURNING id",
-        (username, generate_password_hash(password), role),
-        returning=True,
-    )
-    seed_categories.seed_for_user(db.get_db(), row["id"])
-    audit("user.create", {"username": username, "role": role})
+    with db.transaction():
+        row = db.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s) RETURNING id",
+            (username, generate_password_hash(password), role),
+            returning=True, commit=False,
+        )
+        # Without a row the evaluator would quietly start a trial from created_at; writing it
+        # makes the choice explicit and visible in the billing columns.
+        if access == "comped":
+            db.execute("""INSERT INTO subscriptions (user_id, status, comped_until)
+                          VALUES (%s, 'comped', 'infinity')""", (row["id"],), commit=False)
+        else:
+            db.execute("""INSERT INTO subscriptions (user_id, status, trial_end)
+                          VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
+                       (row["id"], entitlement.trial_days()), commit=False)
+        seed_categories.seed_for_user(db.get_db(), row["id"])
+    audit("user.create", {"id": row["id"], "username": username, "role": role, "access": access},
+          target=row["id"])
     return jsonify({"id": row["id"]}), 201
 
 
 @bp.put("/users/<int:user_id>")
 @admin_required
+@step_up_required
 def update_user(user_id):
     data = json_body()
     if not _load(user_id):
@@ -181,12 +215,14 @@ def update_user(user_id):
                 return api_error(LAST_ADMIN_ERROR, 409)
         else:
             db.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s", (user_id,))
-    audit("user.update", {"id": user_id, "fields": [k for k in data if k == "role"]})
+    audit("user.update", {"id": user_id, "fields": [k for k in data if k == "role"],
+                          "role": data.get("role")}, target=user_id)
     return jsonify({"ok": True})
 
 
 @bp.put("/users/<int:user_id>/password")
 @admin_required
+@step_up_required
 def reset_password(user_id):
     data = json_body()
     password = data.get("password") or ""
@@ -195,9 +231,12 @@ def reset_password(user_id):
         return api_error(problem)
     if not _load(user_id):
         return api_error("User not found", 404)
-    db.execute("UPDATE users SET password_hash = %s, updated_at = now() WHERE id = %s",
-               (generate_password_hash(password), user_id))
-    audit("user.password_reset", {"id": user_id})
+    # Bumping the epoch signs out every session the old password opened, the same as a
+    # self-service change or an emailed reset.
+    db.execute("""UPDATE users SET password_hash = %s, session_epoch = session_epoch + 1,
+                                   updated_at = now()
+                   WHERE id = %s""", (generate_password_hash(password), user_id))
+    audit("user.password_reset", {"id": user_id}, target=user_id)
     return jsonify({"ok": True})
 
 
@@ -220,7 +259,7 @@ def lock_user(user_id):
         {"id": user_id, "uid": user_id, "reason": reason})
     if not n:
         return api_error(LAST_ADMIN_ERROR, 409)
-    audit("user.lock", {"id": user_id, "username": row["username"], "reason": reason})
+    audit("user.lock", {"id": user_id, "username": row["username"], "reason": reason}, target=user_id)
     return jsonify({"ok": True, "status": user_state.LOCKED})
 
 
@@ -235,7 +274,7 @@ def unlock_user(user_id):
     db.execute(
         "UPDATE users SET status = 'active', locked_at = NULL, lock_reason = NULL, updated_at = now() WHERE id = %s",
         (user_id,))
-    audit("user.unlock", {"id": user_id, "username": row["username"]})
+    audit("user.unlock", {"id": user_id, "username": row["username"]}, target=user_id)
     return jsonify({"ok": True, "status": user_state.ACTIVE})
 
 
@@ -256,20 +295,21 @@ def restore_user(user_id):
                             updated_at = now()
             WHERE id = %s""",
         (target, target, target, user_id))
-    audit("user.restore", {"id": user_id, "username": row["username"], "status": target})
+    audit("user.restore", {"id": user_id, "username": row["username"], "status": target}, target=user_id)
     return jsonify({"ok": True, "status": target})
 
 
 @bp.delete("/users/<int:user_id>")
 @admin_required
 def delete_user(user_id):
-    blocked = _not_self(user_id, "delete")
+    permanent = request.args.get("permanent") == "true"
+    blocked = (permanent and step_up_missing()) or _not_self(user_id, "delete")
     if blocked:
         return blocked
     row = _load(user_id)
     if not row:
         return api_error("User not found", 404)
-    if request.args.get("permanent") == "true":
+    if permanent:
         return _purge(row)
     if row["status"] == user_state.DELETED:
         return api_error("That user is already in the trash", 409)
@@ -280,7 +320,7 @@ def delete_user(user_id):
         {"id": user_id, "uid": user_id, "actor": _uid()})
     if not n:
         return api_error(LAST_ADMIN_ERROR, 409)
-    audit("user.delete", {"id": user_id, "username": row["username"]})
+    audit("user.delete", {"id": user_id, "username": row["username"]}, target=user_id)
     return jsonify({"ok": True, "status": user_state.DELETED})
 
 
@@ -478,6 +518,7 @@ def _build_overview(days):
         "imports": {k: rows_json(v) for k, v in imports.items()},
         "housekeeping": {
             "audit_retention_days": audit_retention_days(),
+            "admin_audit_retention_days": admin_audit_retention_days(),
             "deleted_user_retention_days": _retention_days(),
             "audit_rows": house.get("audit_rows", 0),
             "oldest_audit_at": iso(house.get("oldest_audit_at")),
@@ -524,7 +565,8 @@ def user_detail(user_id):
         SELECT COALESCE(category_source,'none') AS source, category_status, COUNT(*) AS n
           FROM transactions WHERE user_id = %s GROUP BY 1,2 ORDER BY n DESC""", (user_id,)) or []
     activity = db.query(
-        "SELECT id, action, detail, created_at FROM audit_log WHERE user_id = %s ORDER BY id DESC LIMIT 20",
+        """SELECT id, action, detail, by_admin, created_at FROM audit_log
+            WHERE user_id = %s ORDER BY id DESC LIMIT 20""",
         (user_id,)) or []
     user = dict(rows_json([row])[0])
     prefs = user.pop("preferences", None) or {}
@@ -538,17 +580,20 @@ def user_detail(user_id):
                     "unique_files": src.get("unique_files", 0), "disk_scan_ok": disk_ok},
         "categorization": rows_json(mix),
         "ai": rows_json([ai])[0] if ai else {},
-        "recent_activity": rows_json(activity),
+        "recent_activity": [admin_privacy.redact_row(r) for r in rows_json(activity)],
     })
 
 
 # ---------- Activity log ----------
 
 _AUDIT_SQL = """
-SELECT a.id, a.user_id, u.username, a.action, a.detail, a.created_at
+SELECT a.id, a.user_id, u.username, a.action, a.detail, a.by_admin, a.target_user_id,
+       t.username AS target_username, a.ip::text AS ip, a.created_at
   FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+  LEFT JOIN users t ON t.id = a.target_user_id
  WHERE (%(cursor)s IS NULL OR a.id < %(cursor)s)
-   AND (%(user_id)s IS NULL OR a.user_id = %(user_id)s)
+   AND (%(user_id)s IS NULL OR a.user_id = %(user_id)s OR a.target_user_id = %(user_id)s)
+   AND (%(admin_only)s IS FALSE OR a.by_admin)
    AND (%(action)s IS NULL OR a.action = %(action)s)
    AND (%(from)s IS NULL OR a.created_at >= %(from)s::timestamptz)
    AND (%(to)s IS NULL OR a.created_at < %(to)s::timestamptz)
@@ -561,6 +606,11 @@ SELECT a.id, a.user_id, u.username, a.action, a.detail, a.created_at
 @bp.get("/audit")
 @admin_required
 def list_audit():
+    csv_export = request.args.get("format") == "csv"
+    if csv_export:
+        blocked = step_up_missing()
+        if blocked:
+            return blocked
     q = (request.args.get("q") or "").strip()
     limit = to_int(request.args.get("limit"), "limit", lo=1, hi=500) or 50
     params = {
@@ -570,12 +620,16 @@ def list_audit():
         "from": request.args.get("from") or None,
         "to": request.args.get("to") or None,
         "q": f"%{q}%" if q else None,
-        "limit": 10000 if request.args.get("format") == "csv" else limit,
+        "admin_only": request.args.get("admin") == "1",
+        "limit": 10000 if csv_export else limit,
     }
-    rows = rows_json(db.query(_AUDIT_SQL, params) or [])
-    if request.args.get("format") == "csv":
+    rows = [admin_privacy.redact_row(r) for r in rows_json(db.query(_AUDIT_SQL, params) or [])]
+    if csv_export:
+        audit("admin.audit.export", {"rows": len(rows)})
         flat = [{**r, "detail": json.dumps(r["detail"]) if r["detail"] is not None else ""} for r in rows]
-        return csv_response(flat, "activity.csv", ["created_at", "id", "user_id", "username", "action", "detail"])
+        return csv_response(flat, "activity.csv", ["created_at", "id", "user_id", "username", "action",
+                                                   "target_user_id", "target_username", "by_admin", "ip",
+                                                   "detail"])
     return jsonify({"items": rows, "next_cursor": rows[-1]["id"] if len(rows) == limit else None})
 
 
@@ -590,6 +644,7 @@ def audit_actions():
 
 ADMIN_SETTINGS = {
     "audit_retention_days": (7, 3650),
+    "admin_audit_retention_days": (7, 3650),
     "admin_deleted_user_retention_days": (0, 3650),
 }
 
@@ -598,6 +653,7 @@ ADMIN_SETTINGS = {
 @admin_required
 def get_admin_settings():
     return jsonify({"audit_retention_days": audit_retention_days(),
+                    "admin_audit_retention_days": admin_audit_retention_days(),
                     "deleted_user_retention_days": _retention_days()})
 
 

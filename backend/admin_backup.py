@@ -15,7 +15,7 @@ from flask import Blueprint, jsonify, request, send_file, session
 import config
 import db
 import jobs
-from auth import admin_required
+from auth import admin_required, step_up_required
 from backup import archive, export, restore
 from util import api_error, audit, json_body, rows_json
 
@@ -169,6 +169,7 @@ def list_jobs():
 
 @bp.post("")
 @admin_required
+@step_up_required
 def start_backup():
     if _active_job():
         return api_error("A backup or restore is already running", 409)
@@ -195,6 +196,7 @@ def job_status(job_id):
 
 @bp.get("/<int:job_id>/download")
 @admin_required
+@step_up_required
 def download(job_id):
     row = _load_job(job_id)
     if not row or not row.get("file_path") or not os.path.isfile(row["file_path"]):
@@ -302,6 +304,7 @@ def _run_restore(job_id, upload_id, actor_id, delete_extra, fast):
 
 @bp.post("/restore", strict_slashes=False)
 @admin_required
+@step_up_required
 def start_restore():
     data = json_body()
     if data.get("confirm") != CONFIRM_PHRASE:

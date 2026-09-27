@@ -2,6 +2,7 @@ import io
 import json
 import os
 import sys
+import time
 import unittest
 import zipfile
 from unittest import mock
@@ -33,13 +34,15 @@ class AdminBackupApiTest(unittest.TestCase):
         self.q = _stubs.Router()
         self.x = _stubs.Router(default=1)
 
-    def _call(self, method, path, body=None, uid=1, role="admin", raw=None):
+    def _call(self, method, path, body=None, uid=1, role="admin", raw=None, stepped_up=True):
         c = self.app.test_client()
         if uid is not None:
             with c.session_transaction() as s:
                 s["user_id"] = uid
                 s["role"] = role
                 s["username"] = "admin"
+                if stepped_up:
+                    s["stepup_until"] = time.time() + 600
         kwargs = {}
         if raw is not None:
             kwargs = {"data": raw, "content_type": "application/octet-stream"}
@@ -237,7 +240,7 @@ class TablesTest(unittest.TestCase):
         depends = {
             "accounts": ["users"], "categories": ["users"], "tags": ["users"],
             "recurring_dismissals": ["users"], "ai_calls": ["users"], "insights": ["users"],
-            "audit_log": ["users"], "rules": ["users", "accounts", "categories"],
+            "audit_log": ["users"], "login_events": ["users"], "rules": ["users", "accounts", "categories"],
             "statements": ["users", "accounts"], "budgets": ["users", "categories"],
             "merchant_memory": ["users", "categories"],
             "import_layouts": ["users", "accounts"],

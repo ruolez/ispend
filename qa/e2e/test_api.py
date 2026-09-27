@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from conftest import (Api, FIXTURES, QA_USERS, add_txn, api_login, cat_by_slug, create_account, import_fixture,
+from conftest import (ADMIN, Api, FIXTURES, QA_USERS, add_txn, api_login, cat_by_slug, create_account, import_fixture,
                       list_all, upload, wait_status)
 from ratelimit import login_with_retry
 
@@ -164,6 +164,32 @@ class TestAuth:
         r = admin.put(f"/api/admin/users/{me['id']}", json={"role": "user"})
         assert (r.status_code, r.json()) == (400, {"error": "You cannot remove your own admin role"})
         assert admin.get("/api/auth/me").json()["role"] == "admin"
+
+    def test_sensitive_admin_actions_need_a_recently_entered_password(self):
+        """No wrong password here: five of them lock step-up for every admin session for 15
+        minutes, which would take the rest of the suite down with it. Unit tests cover that."""
+        s = api_login(*ADMIN)
+        s.auto_step_up = False
+        r = s.get("/api/admin/audit?format=csv")
+        assert (r.status_code, r.json()["code"]) == (403, "step_up_required")
+        assert s.get("/api/admin/step-up/status").json() == {"active": False, "until": None}
+        r = login_with_retry(lambda: s.post("/api/admin/step-up", json={"password": ADMIN[1]}))
+        assert r.status_code == 200, r.text
+        assert s.get("/api/admin/step-up/status").json()["active"] is True
+        r = s.get("/api/admin/audit?format=csv")
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+
+    def test_activity_log_never_shows_what_people_typed(self, u1, admin):
+        acct = u1.post("/api/accounts", json={"name": "QA Secret Savings", "account_type": "savings",
+                                              "currency": "USD"}).json()
+        try:
+            me = u1.get("/api/auth/me").json()
+            items = admin.get(f"/api/admin/audit?user_id={me['id']}&action=account.create").json()["items"]
+            mine = [i for i in items if i["detail"] and i["detail"].get("id") == acct["id"]]
+            assert len(mine) == 1 and mine[0]["hidden_fields"] == 1, mine
+            assert "QA Secret Savings" not in json.dumps(items)
+        finally:
+            u1.delete(f"/api/accounts/{acct['id']}")
 
     def test_admin_user_validation(self, admin):
         r = admin.post("/api/admin/users", json={"username": "qa_short", "password": "123456789"})

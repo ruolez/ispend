@@ -81,13 +81,21 @@ TEMPLATES = {
                  "it is — still readable, still downloadable.\n\n"
                  "You can subscribe again whenever you like:\n{link}\n"),
     },
+    "admin_new_login": {
+        "subject": "New sign-in to your iSpend admin account",
+        "text": ("Hi {username},\n\nYour administrator account was just signed in to from a network it has "
+                 "not used before.\n\nWhen: {when}\nDevice: {device}\nAddress: {ip}\n\n"
+                 "If this was you, there is nothing to do. If it was not, change your password straight "
+                 "away — that signs every other session out.\n"),
+    },
     "test": {
         "subject": "iSpend test email",
         "text": "This is a test message from iSpend. If it arrived, email is working.\n",
     },
 }
 
-DEFAULTS = {"username": "there", "link": "", "trial_end": "", "days": "", "until": ""}
+DEFAULTS = {"username": "there", "link": "", "trial_end": "", "days": "", "until": "",
+            "when": "", "device": "", "ip": ""}
 
 
 def render(template, **ctx):
