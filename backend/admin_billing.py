@@ -244,10 +244,9 @@ def summary():
         state = entitlement.evaluate(row)["state"]
         counts[state] = counts.get(state, 0) + 1
     email = db.query(
-        """SELECT COUNT(*) FILTER (WHERE detail->>'ok' = 'true') AS sent_24h,
-                  COUNT(*) FILTER (WHERE detail->>'ok' = 'false') AS failed_24h
-             FROM audit_log WHERE action = 'email.send'
-              AND created_at > now() - interval '24 hours'""", one=True) or {}
+        """SELECT COUNT(*) FILTER (WHERE status = 'sent') AS sent_24h,
+                  COUNT(*) FILTER (WHERE status = 'failed') AS failed_24h
+             FROM email_log WHERE created_at > now() - interval '24 hours'""", one=True) or {}
     hook = db.query(
         """SELECT MAX(received_at) AS last_event_at,
                   COUNT(*) FILTER (WHERE received_at > now() - interval '24 hours') AS events_24h,
@@ -339,5 +338,5 @@ def email_test():
         return api_error("Enter an address to send to")
     # Synchronous, and it returns the real SMTP error: an admin diagnosing SMTP needs the actual
     # message, and this route is admin-only.
-    ok, err = mailer.send_template("test", to, username=session.get("username"))
+    ok, err = mailer.send_template("test", to, sent_by=session["user_id"], username=session.get("username"))
     return jsonify({"ok": ok, "error": err})

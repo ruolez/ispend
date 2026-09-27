@@ -63,11 +63,11 @@ def _port(s):
     return {"ssl": 465, "none": 25}.get(s["smtp_security"], 587)
 
 
-def send(to, subject, text, html=None):
-    """(ok, error). Never raises: a failed send must not take a request or a job down."""
+def _deliver(to, subject, text, html=None):
+    """(ok, error, message_id). Never raises: a failed send must not take a request or a job down."""
     if not configured():
         log.warning("SMTP is not configured — skipping %r to %s", subject, _redact(to))
-        return False, "not configured"
+        return False, "not configured", None
     s = settings()
     msg = EmailMessage()
     msg["From"] = formataddr((s["smtp_from_name"], s["smtp_from_email"]))
@@ -87,35 +87,79 @@ def send(to, subject, text, html=None):
             if s["smtp_user"]:
                 server.login(s["smtp_user"], s["smtp_password"])
             server.send_message(msg)
-        return True, None
+        return True, None, msg["Message-ID"]
     except Exception as e:
         log.warning("SMTP send failed (%s): %s", subject, e)
-        return False, str(e)
+        return False, str(e), None
 
 
-def _redact(address):
-    """Keep the audit log from becoming a mailing list."""
-    return "***@" + address.split("@", 1)[1] if "@" in (address or "") else "***"
-
-
-def send_template(template, to, **ctx):
-    import email_templates
-    from util import audit
-
-    subject, text, html = email_templates.render(template, **ctx)
-    ok, err = send(to, subject, text, html)
-    try:
-        audit("email.send", {"template": template, "to": _redact(to), "ok": ok, "error": err})
-    except Exception:
-        pass
+def send(to, subject, text, html=None):
+    """(ok, error)."""
+    ok, err, _mid = _deliver(to, subject, text, html)
     return ok, err
 
 
-def _send_job(template, to, ctx):
-    send_template(template, to, **ctx)
+def _redact(address):
+    """Keep logs from becoming a mailing list."""
+    return "***@" + address.split("@", 1)[1] if "@" in (address or "") else "***"
 
 
-def send_async(template, to, **ctx):
+# What kind of message each template is, for the admin's delivery report.
+CATEGORIES = {
+    "welcome": "auth", "welcome_pending": "auth", "verify_email": "auth", "password_reset": "auth",
+    "password_changed": "auth", "admin_new_login": "admin",
+    "trial_ending": "lifecycle", "trial_ended": "lifecycle", "grace_ending": "lifecycle", "read_only": "lifecycle",
+    "payment_failed": "billing", "subscription_started": "billing", "subscription_canceled": "billing",
+    "test": "test",
+}
+
+
+def _log_queued(template, to, user_id=None, sent_by=None, category=None):
+    """One email_log row per message, written before the send so a message lost with its worker
+    still shows up (as queued) instead of vanishing."""
+    try:
+        row = db.execute(
+            """INSERT INTO email_log (user_id, to_address, template, category, sent_by)
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (user_id, to, template, category or CATEGORIES.get(template, "admin"), sent_by), returning=True)
+        return row["id"] if isinstance(row, dict) else None
+    except Exception:
+        log.warning("could not record an outgoing email", exc_info=True)
+        return None
+
+
+def _log_result(log_id, subject, ok, err, message_id):
+    if not log_id:
+        return
+    status = "sent" if ok else ("skipped" if err == "not configured" else "failed")
+    try:
+        db.execute(
+            """UPDATE email_log SET status = %s, subject = %s, error = %s, message_id = %s,
+                      sent_at = CASE WHEN %s THEN now() ELSE NULL END
+                WHERE id = %s""",
+            (status, subject[:300], (err or "")[:500] or None, message_id, ok, log_id))
+    except Exception:
+        log.warning("could not record an email result", exc_info=True)
+
+
+def send_template(template, to, user_id=None, sent_by=None, log_id=None, **ctx):
+    """Render and send now. Every attempt lands in email_log."""
+    import email_templates
+
+    subject, text, html = email_templates.render(template, **ctx)
+    if log_id is None:
+        log_id = _log_queued(template, to, user_id, sent_by)
+    ok, err, message_id = _deliver(to, subject, text, html)
+    _log_result(log_id, subject, ok, err, message_id)
+    return ok, err
+
+
+def _send_job(template, to, ctx, log_id):
+    send_template(template, to, log_id=log_id, **ctx)
+
+
+def send_async(template, to, user_id=None, sent_by=None, **ctx):
     """Outbound SMTP must never sit in a request's critical path — a slow relay would make signup
     look broken."""
-    jobs.spawn(_send_job, template, to, ctx)
+    log_id = _log_queued(template, to, user_id, sent_by)
+    jobs.spawn(_send_job, template, to, ctx, log_id)

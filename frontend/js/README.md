@@ -249,6 +249,16 @@ pages share them). Tabs are hash-routed: Overview, Users, Activity, Billing, Sig
   applied). `billing_reconcile.run` (Billing tab → Revenue records, and daily from `ops_tick`) fixes drift
   and imports pre-ledger history from Stripe's timestamps. `subscriptions.ent_state` caches
   `entitlement.evaluate()` for SQL filters; `ops_tick` refreshes it hourly.
+- **Usage and operations data** (Phase 3). `activity.py` turns successful requests into one
+  `user_activity_days` row per person per day (bits: seen, import, categorize, report, dashboard, upload;
+  "active" = import|categorize|report) from an `after_request` hook keyed on the Flask rule — a new
+  endpoint that should count needs a line in `activity.ROUTES`. `users.last_seen_at` moves at most every
+  five minutes; `first_upload_at` / `first_commit_at` are permanent (activation survives a deleted
+  statement). `email_log` has one row per message (queued in the request, finished by the job);
+  `app_errors` groups server errors by fingerprint (own connection, 60 s rate limit, 30-day prune);
+  `signup_attribution` stores the first-party first touch (`rememberFirstTouch()` / `firstTouch()` in
+  api.js, landing and sign-up pages only). `ai_calls` records `key_source` and `cost_usd`;
+  `statements` records `parse_ms` / `commit_ms`.
 - **User lifecycle.** `active → locked → active`, `active|locked → deleted` (soft, hidden, restorable),
   `deleted → purged` (irreversible). Purge is reachable **only** from the trash and needs the username
   typed; the server re-validates the phrase. Restore returns a user to `locked` if they were locked

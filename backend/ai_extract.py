@@ -50,10 +50,10 @@ def extract_rows(user_id, page_texts, period=None, model_id=None):
             parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, f"{hint}Page {page_no}:\n{text[:12000]}",
                                                  model_id=model_id, max_tokens=8000, user_id=user_id, timeout=120)
             calls += 1
-            openrouter.log_call(user_id, "categorize", model_id or openrouter.model(user_id), 0, usage, "ok",
+            openrouter.log_call(user_id, "extract", model_id or openrouter.model(user_id), 0, usage, "ok",
                                 duration_ms=int((time.time() - started) * 1000))
         except openrouter.OpenRouterError as e:
-            openrouter.log_call(user_id, "categorize", model_id or openrouter.model(user_id), 0, None, "error",
+            openrouter.log_call(user_id, "extract", model_id or openrouter.model(user_id), 0, None, "error",
                                 error=str(e), duration_ms=int((time.time() - started) * 1000))
             raise
         for i, r in enumerate(parsed.get("rows") or []):

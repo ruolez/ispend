@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import time
 from datetime import date
 
 import config
@@ -77,6 +78,7 @@ def parse_statement(statement_id, mapping=None, profile_key=None):
         return
     db.execute("UPDATE statements SET status = 'parsing', error_message = NULL, updated_at = now() WHERE id = %s",
                (statement_id,))
+    started = time.perf_counter()
     try:
         result, ocr_path = _parse_file(st, mapping, profile_key)
         if mapping is None and result.mapping_source != "memory":
@@ -94,6 +96,10 @@ def parse_statement(statement_id, mapping=None, profile_key=None):
     except Exception:
         log.exception("parse failed for statement %s", statement_id)
         _set_error(statement_id, UNREADABLE_MESSAGE)
+    finally:
+        # For the admin's import health view: how long reading this file took, OCR included.
+        db.execute("UPDATE statements SET parse_ms = %s, parse_attempts = parse_attempts + 1 WHERE id = %s",
+                   (int((time.perf_counter() - started) * 1000), statement_id))
 
 
 UNREADABLE_MESSAGE = ("This file does not look like a statement iSpend can read. Export a CSV, Excel or PDF "
@@ -498,6 +504,7 @@ def commit_statement(statement_id, account_id):
 
 def _commit_locked(st, account):
     sid, uid, account_id = st["id"], st["user_id"], account["id"]
+    started = time.perf_counter()
     all_rows = db.query("SELECT * FROM import_rows WHERE statement_id = %s ORDER BY row_index", (sid,))
     excluded_by_user = sum(1 for r in all_rows if r["is_valid"] and r["duplicate_of"] is None and not r["include"])
     skipped_invalid = sum(1 for r in all_rows if not r["is_valid"])
@@ -607,8 +614,8 @@ def _commit_locked(st, account):
         stats.update(result)
         db.execute(
             """UPDATE statements SET status = 'committed', committed_at = now(), stats = %s, error_message = NULL,
-                   updated_at = now() WHERE id = %s""",
-            (json.dumps(stats, default=str), sid), commit=False,
+                   commit_ms = %s, updated_at = now() WHERE id = %s""",
+            (json.dumps(stats, default=str), int((time.perf_counter() - started) * 1000), sid), commit=False,
         )
     if result["ai_queued"]:
         try:

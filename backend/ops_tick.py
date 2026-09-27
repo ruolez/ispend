@@ -17,6 +17,12 @@ log = logging.getLogger(__name__)
 LEASE_KEY = "ops_tick_at"
 BACKFILL_KEY = "ledger_backfill_done"
 RECONCILE_EVERY = timedelta(hours=24)
+# Operational history: long enough to see a trend, short enough not to become a dossier.
+PRUNE = (
+    ("app_errors", "created_at", 30),
+    ("login_events", "created_at", 365),
+    ("email_log", "created_at", 365),
+)
 RECONCILE_OVERLAP = timedelta(days=2)
 
 
@@ -35,6 +41,15 @@ def _reconcile_due(now):
     return now - at >= RECONCILE_EVERY, at - RECONCILE_OVERLAP
 
 
+def prune():
+    out = {}
+    for table, column, days in PRUNE:
+        out[table] = db.execute(
+            f"DELETE FROM {table} WHERE {column} < now() - make_interval(days => %s)",  # noqa: S608 - fixed list
+            (days,))
+    return out
+
+
 def tick(now=None):
     import billing
     import billing_tick
@@ -42,7 +57,7 @@ def tick(now=None):
     if not billing_tick.claim(LEASE_KEY):
         return {"skipped": "another worker holds the lease"}
     now = now or datetime.now(timezone.utc)
-    out = {"ent_states_changed": ledger.refresh_all_ent_states()}
+    out = {"ent_states_changed": ledger.refresh_all_ent_states(), "pruned": prune()}
     if billing.enabled():
         import billing_reconcile
 

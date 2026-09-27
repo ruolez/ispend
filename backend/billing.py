@@ -397,7 +397,7 @@ def _recipient(uid):
 def _notify(mailer, uid, template, **ctx):
     row = _recipient(uid)
     if row:
-        mailer.send_async(template, row["email"], username=row["username"], **ctx)
+        mailer.send_async(template, row["email"], user_id=uid, username=row["username"], **ctx)
 
 
 def _stamped_notify(mailer, uid, template, column):

@@ -97,6 +97,30 @@ async function adminDownload(url) {
   return true;
 }
 
+/* First-party sign-up attribution: the first visit's campaign tags and referring site, kept in this
+   browser only (90 days) and sent with the sign-up form. Never overwritten by later visits, never
+   sent anywhere else. */
+const FIRST_TOUCH_KEY = 'ispend.firstTouch';
+const FIRST_TOUCH_DAYS = 90;
+function rememberFirstTouch() {
+  try {
+    const kept = JSON.parse(localStorage.getItem(FIRST_TOUCH_KEY) || 'null');
+    if (kept && Date.now() - Date.parse(kept.first_seen_at) < FIRST_TOUCH_DAYS * 86400000) return;
+    const params = new URLSearchParams(location.search);
+    let referrer = '';
+    try { const r = document.referrer && new URL(document.referrer); if (r && r.host !== location.host) referrer = r.host; } catch { /* bad referrer */ }
+    const touch = { first_seen_at: new Date().toISOString(), landing_path: location.pathname, referrer_host: referrer };
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach((k) => {
+      const v = params.get(k);
+      if (v) touch[k] = v.slice(0, 100);
+    });
+    localStorage.setItem(FIRST_TOUCH_KEY, JSON.stringify(touch));
+  } catch { /* storage unavailable: attribution is a nicety */ }
+}
+function firstTouch() {
+  try { return JSON.parse(localStorage.getItem(FIRST_TOUCH_KEY) || 'null'); } catch { return null; }
+}
+
 /* A GET that another part of the page may be making at the same moment (the dashboard's budget card
    and its breakdown table both want this month's budgets) shares the one request in flight. Callers
    must treat the result as read-only. */

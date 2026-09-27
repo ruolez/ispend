@@ -8,6 +8,8 @@
    section is visible without JS, and this file only plays the count-ups and rises as things enter
    the viewport. */
 
+rememberFirstTouch();
+
 const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---------- chrome ---------- */

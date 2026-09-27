@@ -58,11 +58,31 @@ def _fix_022(cur):
          WHERE NOT EXISTS (SELECT 1 FROM subscription_events e WHERE e.user_id = s.user_id)""")
 
 
+def _fix_023(cur):
+    # 023 backfilled the activation stamps, the activity days and the AI purpose from older rows.
+    cur.execute("""
+        UPDATE users u SET first_upload_at = COALESCE(u.first_upload_at, s.fu),
+                           first_commit_at = COALESCE(u.first_commit_at, s.fc)
+          FROM (SELECT user_id, MIN(created_at) AS fu, MIN(committed_at) AS fc FROM statements GROUP BY user_id) s
+         WHERE s.user_id = u.id""")
+    cur.execute("UPDATE users SET last_seen_at = last_login_at WHERE last_seen_at IS NULL")
+    cur.execute("""
+        INSERT INTO user_activity_days (user_id, day, kinds)
+        SELECT user_id, d, bit_or(k)::smallint FROM (
+            SELECT user_id, committed_at::date AS d, 2 AS k FROM statements WHERE committed_at IS NOT NULL
+            UNION ALL
+            SELECT user_id, created_at::date, 32 FROM statements
+        ) s GROUP BY 1, 2
+        ON CONFLICT (user_id, day) DO NOTHING""")
+    cur.execute("UPDATE ai_calls SET purpose = 'extract' WHERE purpose = 'categorize' AND item_count = 0")
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
     "021_admin_security.sql": _fix_021,
     "022_billing_ledger.sql": _fix_022,
+    "023_activity_and_ops.sql": _fix_023,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

@@ -106,6 +106,13 @@ def create_app():
         return response
 
     @app.after_request
+    def record_activity(response):
+        import activity
+        from flask import session
+        activity.from_request(request, response, session.get("user_id"))
+        return response
+
+    @app.after_request
     def no_cache(response):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -135,6 +142,11 @@ def create_app():
         if isinstance(e, HTTPException):
             return jsonify({"error": e.description or e.name}), e.code
         app.logger.exception("Unhandled error")
+        import errors
+        from flask import session
+        rule = request.url_rule.rule if request.url_rule else request.path
+        errors.record("request", e, location=f"{request.method} {rule}", status=500,
+                      user_id=session.get("user_id"))
         return jsonify({"error": "Something went wrong on the server. The details were logged."}), 500
 
     @app.get("/api/health")

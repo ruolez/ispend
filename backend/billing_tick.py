@@ -98,7 +98,7 @@ def tick(base_url=""):
         if not n:
             continue
         ctx["link"] = f"{base_url}{ctx['link']}" if base_url else ctx["link"]
-        mailer.send_template(template, row["email"], username=row["username"], **ctx)
+        mailer.send_template(template, row["email"], user_id=row["id"], username=row["username"], **ctx)
         sent[template] = sent.get(template, 0) + 1
     return {"sent": sent}
 
@@ -111,15 +111,19 @@ def _loop(app):
                 import config
                 tick(base_url=(config.APP_BASE_URL or "").rstrip("/"))
                 db.close_db()
-        except Exception:
+        except Exception as e:
             log.warning("billing tick failed", exc_info=True)
+            import errors
+            errors.record("tick", e, location="billing_tick")
         try:
             with app.app_context():
                 import ops_tick
                 ops_tick.tick()
                 db.close_db()
-        except Exception:
+        except Exception as e:
             log.warning("ops tick failed", exc_info=True)
+            import errors
+            errors.record("tick", e, location="ops_tick")
 
 
 def start(app):

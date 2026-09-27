@@ -147,6 +147,33 @@ class DatabaseIntegrationTest(unittest.TestCase):
         self.assertEqual(db.query("SELECT COUNT(*) AS n FROM subscription_events WHERE user_id = %s "
                                   "AND kind = 'baseline'", (uid,), one=True)["n"], 0)
 
+    def test_activity_days_and_email_log(self):
+        import activity
+        import mailer
+        from unittest import mock
+
+        db = self.db
+        uid = db.execute("INSERT INTO users (username, password_hash) VALUES ('it_act', 'x') RETURNING id",
+                         returning=True)["id"]
+        activity._memo.clear()
+        activity.touch(uid, activity.REPORT)
+        activity._memo.clear()                     # a second worker, same day
+        activity.touch(uid, activity.REPORT | activity.IMPORT)
+        activity.touch(uid, activity.UPLOAD)
+        row = db.query("SELECT kinds FROM user_activity_days WHERE user_id = %s", (uid,), one=True)
+        self.assertEqual(row["kinds"], activity.REPORT | activity.IMPORT | activity.UPLOAD)
+        stamps = db.query("SELECT first_commit_at IS NOT NULL AS c, first_upload_at IS NOT NULL AS u, "
+                          "last_active_at IS NOT NULL AS a FROM users WHERE id = %s", (uid,), one=True)
+        self.assertEqual(dict(stamps), {"c": True, "u": True, "a": True})
+
+        with mock.patch.object(mailer, "_deliver", return_value=(False, "550 rejected", None)):
+            mailer.send_template("trial_ending", "it@example.com", user_id=uid, username="it")
+        log = db.query("SELECT template, category, status, error, subject FROM email_log WHERE user_id = %s",
+                       (uid,), one=True)
+        self.assertEqual((log["template"], log["category"], log["status"], log["error"]),
+                         ("trial_ending", "lifecycle", "failed", "550 rejected"))
+        self.assertTrue(log["subject"])
+
     def test_transfer_kind_trigger_follows_confirmation(self):
         transfers = self._cat("transfers")
         groceries = self._cat("groceries")

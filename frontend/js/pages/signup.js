@@ -31,6 +31,8 @@ api('/api/auth/public-config').then((cfg) => {
   }
 }).catch(() => { /* the form still posts; the server decides */ });
 
+rememberFirstTouch();
+
 $('#signup-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearError();
@@ -39,7 +41,7 @@ $('#signup-form').addEventListener('submit', async (e) => {
   if (!email || !password) return showError('Enter an email address and a password.');
   try {
     await ui.busy($('#signup-btn'), async () => {
-      const r = await api('/api/auth/signup', { method: 'POST', body: { email, password } });
+      const r = await api('/api/auth/signup', { method: 'POST', body: { email, password, attribution: firstTouch() } });
       if (r.pending_verification) return showPending(r.email);
       clearUserState();
       location.href = '/index.html';

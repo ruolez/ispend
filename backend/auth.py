@@ -124,7 +124,7 @@ def refresh_session_user():
         return
     row = db.query(
         """SELECT u.id, u.username, u.role, u.status, u.session_epoch, u.email, u.email_verified_at,
-                  u.created_at, u.preferences,
+                  u.created_at, u.preferences, u.last_seen_at,
                   (SELECT value FROM settings WHERE key = 'session_epoch') AS global_epoch,
                   s.status AS sub_status, s.plan, s.price_id, s.stripe_customer_id,
                   s.stripe_subscription_id, s.trial_end, s.current_period_end,
@@ -150,8 +150,31 @@ def refresh_session_user():
         return
     g.user_row = row
     g.entitlement = entitlement.evaluate(row)
+    _mark_seen(row)
     if session.get("role") != row["role"]:
         session["role"] = row["role"]
+
+
+SEEN_EVERY = timedelta(minutes=5)
+
+
+def _mark_seen(row):
+    """last_seen_at moves with use, not only with password sign-ins (a session lasts two weeks), at
+    most one write per five minutes per person."""
+    seen = row.get("last_seen_at")
+    if seen is not None and seen > datetime.now(timezone.utc) - SEEN_EVERY:
+        return
+    try:
+        import activity
+        db.execute("UPDATE users SET last_seen_at = now() WHERE id = %s", (row["id"],))
+        activity.touch(row["id"], activity.SEEN)
+    except Exception:
+        # Bookkeeping must never cost someone their request, and a failed statement would leave
+        # the connection unusable for the rest of it.
+        try:
+            db.get_db().rollback()
+        except Exception:
+            pass
 
 
 def login_required(f):
@@ -284,7 +307,7 @@ def _alert_new_admin_network(user):
     audit("auth.admin_new_network", {"ip_prefix": geo.network_prefix(client_ip()), "device": device},
           user_id=user["id"], by_admin=True)
     if user.get("email"):
-        mailer.send_async("admin_new_login", user["email"], username=user["username"], device=device,
+        mailer.send_async("admin_new_login", user["email"], user_id=user["id"], username=user["username"], device=device,
                           ip=client_ip() or "unknown",
                           when=datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC"))
 
@@ -396,7 +419,7 @@ def _send_verification(user):
             AND created_at > now() - interval '5 minutes'""", (user["id"],), one=True)
     if not recent["n"]:
         token = _issue_token(user["id"], "verify", VERIFY_TTL)
-        mailer.send_async("verify_email", user["email"], username=user["username"],
+        mailer.send_async("verify_email", user["email"], user_id=user["id"], username=user["username"],
                           link=f"{_base_url()}/verify.html?token={token}")
 
 
@@ -514,7 +537,7 @@ def change_own_password():
     audit("user.password_change", {"id": session["user_id"]})
     if row.get("email"):
         import mailer
-        mailer.send_async("password_changed", row["email"], username=row["username"])
+        mailer.send_async("password_changed", row["email"], user_id=session["user_id"], username=row["username"])
     return jsonify({"ok": True})
 
 
@@ -559,6 +582,7 @@ def signup():
                VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
             (user["id"], trial), commit=False)
         seed_categories.seed_for_user(db.get_db(), user["id"])
+        _store_attribution(user["id"], data.get("attribution"))
     import ledger
     ledger.record_admin(user["id"], "trial_started", {"signup": True, "days": trial})
     ledger.refresh_ent_state(user["id"])
@@ -569,7 +593,7 @@ def signup():
     if enforced:
         # No session: the account exists but cannot sign in until the emailed link is used.
         audit("auth.signup", {"id": user["id"], "pending_verification": True}, user_id=user["id"])
-        mailer.send_async("welcome_pending", email, username=email, trial_end=trial_end, link=link)
+        mailer.send_async("welcome_pending", email, user_id=user["id"], username=email, trial_end=trial_end, link=link)
         return jsonify({"pending_verification": True, "email": email}), 201
     session.clear()
     session.permanent = True
@@ -579,13 +603,32 @@ def signup():
     session["epoch"] = db.get_setting("session_epoch") or ""
     session["uepoch"] = 0
     audit("auth.signup", {"id": user["id"]}, user_id=user["id"])
-    mailer.send_async("welcome", email, username=email, trial_end=trial_end, link=link)
+    mailer.send_async("welcome", email, user_id=user["id"], username=email, trial_end=trial_end, link=link)
     row = db.query(
         """SELECT u.*, s.status AS sub_status, s.trial_end, s.current_period_end,
                   s.cancel_at_period_end, s.grace_until, s.comped_until, s.stripe_subscription_id
              FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id WHERE u.id = %s""",
         (user["id"],), one=True)
     return with_theme_cookie(jsonify(_me_payload(row)), None), 201
+
+
+def _store_attribution(user_id, payload):
+    import attribution
+    from urllib.parse import urlparse
+
+    try:
+        own = urlparse(_base_url()).hostname
+    except Exception:
+        own = None
+    row = attribution.clean(payload, own_host=own)
+    if not row:
+        return
+    db.execute(
+        """INSERT INTO signup_attribution (user_id, channel, utm_source, utm_medium, utm_campaign,
+                                           utm_term, utm_content, referrer_host, landing_path, first_seen_at)
+           VALUES (%(uid)s, %(channel)s, %(utm_source)s, %(utm_medium)s, %(utm_campaign)s, %(utm_term)s,
+                   %(utm_content)s, %(referrer_host)s, %(landing_path)s, %(first_seen_at)s)
+           ON CONFLICT (user_id) DO NOTHING""", {**row, "uid": user_id}, commit=False)
 
 
 @bp.post("/password/forgot")
@@ -605,7 +648,7 @@ def forgot_password():
         if recent["n"] < MAX_RESET_TOKENS_PER_HOUR:
             token = _issue_token(user["id"], "reset", RESET_TTL)
             audit("auth.forgot", {"id": user["id"]}, user_id=user["id"])
-            mailer.send_async("password_reset", user["email"], username=user["username"],
+            mailer.send_async("password_reset", user["email"], user_id=user["id"], username=user["username"],
                               link=f"{_base_url()}/reset.html?token={token}")
     return jsonify({"ok": True})
 
@@ -705,6 +748,6 @@ def update_email():
                "WHERE id = %s", (email, user["id"]))
     audit("user.email_change", {"id": user["id"]})
     token = _issue_token(user["id"], "verify", VERIFY_TTL)
-    mailer.send_async("verify_email", email, username=user["username"],
+    mailer.send_async("verify_email", email, user_id=user["id"], username=user["username"],
                       link=f"{_base_url()}/verify.html?token={token}")
     return jsonify({"ok": True, "email": email})

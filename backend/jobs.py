@@ -24,8 +24,10 @@ def spawn(fn, *args, **kwargs):
         with app.app_context():
             try:
                 fn(*args, **kwargs)
-            except Exception:
+            except Exception as e:
                 log.exception("background job %s failed", fn.__name__)
+                import errors
+                errors.record("job", e, location=fn.__name__)
             finally:
                 db.close_db()
 

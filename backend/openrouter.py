@@ -28,6 +28,13 @@ def _user_or_global(user_id, key):
     return (db.get_setting(key) or "").strip()
 
 
+def key_source(user_id=None):
+    """'own' when the user's own key pays for the call, 'shared' when the admin's does."""
+    if user_id is not None and (db.get_setting(f"u{user_id}:openrouter_api_key") or "").strip():
+        return "own"
+    return "shared"
+
+
 def api_key(user_id=None):
     return _user_or_global(user_id, "openrouter_api_key")
 
@@ -124,6 +131,8 @@ def chat_json(system, user, model_id=None, max_tokens=2000, temperature=0.1, tim
         # Reasoning models spend completion tokens on hidden thinking before the JSON answer;
         # keep that to a minimum so the budget goes to the actual reply.
         "reasoning": {"effort": "low"},
+        # Ask for the call's cost in the usage block, so AI spend is measured rather than guessed.
+        "usage": {"include": True},
     }
     try:
         resp = requests.post(
@@ -179,11 +188,27 @@ def test_connection(key=None, model_id=None, user_id=None):
             "usage": usage, "reply": parsed}
 
 
+def _cost(model_id, usage):
+    """USD for one call: what OpenRouter reported, else an estimate from the cached catalogue
+    prices (never fetched here — logging must not wait on the network), else None."""
+    usage = usage or {}
+    reported = usage.get("cost")
+    if isinstance(reported, (int, float)) and not isinstance(reported, bool):
+        return float(reported)
+    catalogue = _models_cache.get("data") or []
+    m = next((x for x in catalogue if x.get("id") == model_id), None)
+    if not m or m.get("prompt_price") is None or m.get("completion_price") is None:
+        return None
+    return (float(usage.get("prompt_tokens") or 0) * m["prompt_price"]
+            + float(usage.get("completion_tokens") or 0) * m["completion_price"]) / 1_000_000
+
+
 def log_call(user_id, purpose, model_id, item_count, usage, status, error=None, duration_ms=None):
     db.execute(
         """INSERT INTO ai_calls (user_id, purpose, model, item_count, prompt_tokens, completion_tokens,
-                                 status, error_message, duration_ms)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                 status, error_message, duration_ms, key_source, cost_usd)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (user_id, purpose, model_id or "", item_count, (usage or {}).get("prompt_tokens"),
-         (usage or {}).get("completion_tokens"), status, error, duration_ms),
+         (usage or {}).get("completion_tokens"), status, error, duration_ms, key_source(user_id),
+         _cost(model_id, usage)),
     )
