@@ -165,7 +165,7 @@ function adminTiles(tiles) {
     const tag = t.drill ? 'a' : 'div';
     return `<${tag} class="stat adm-kpi ${spark.length > 1 ? 'has-spark' : ''}" data-kpi="${esc(t.key)}" ${t.drill ? `href="${esc(t.drill)}"` : ''}>
       <div class="stat-label">${esc(t.label)}${t.help ? ` <span class="adm-help" tabindex="0" role="note" aria-label="${esc(t.help)}" data-tip="${esc(t.help)}">${icon('help', 'ico-sm')}</span>` : ''}</div>
-      <div class="stat-value">${esc(fmtAdminValue(t.value, t.unit, t.currency))}</div>
+      <div class="stat-value">${esc(fmtAdminValue(t.value, t.unit, t.currency))}${t.value != null && t.suffix ? `<span class="u">${esc(t.suffix)}</span>` : ''}</div>
       ${deltaHtml(t)}
       ${spark.length > 1 ? charts.sparkSvg(spark, 'var(--accent)', { width: 96, height: 32, cls: 'stat-spark' }) : ''}
     </${tag}>`;

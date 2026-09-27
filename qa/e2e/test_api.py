@@ -138,7 +138,7 @@ class TestAuth:
         ("GET", "/api/admin/users"), ("POST", "/api/admin/users"), ("PUT", "/api/admin/users/1"),
         ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"),
         ("POST", "/api/admin/users/1/lock"), ("POST", "/api/admin/users/1/unlock"),
-        ("POST", "/api/admin/users/1/restore"), ("GET", "/api/admin/stats/overview"), ("GET", "/api/admin/audit"),
+        ("POST", "/api/admin/users/1/restore"), ("GET", "/api/admin/system/health"), ("GET", "/api/admin/audit"),
     ])
     def test_non_admin_user_routes_403(self, u1, method, route):
         r = u1.request(method, route, json={"username": "x", "password": "yyyyyy"})

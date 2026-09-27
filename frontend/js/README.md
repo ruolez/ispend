@@ -325,9 +325,14 @@ five-minute `metric_cache`, `as_of` stamp).
 - **Charts** of people are counts, not money: `charts.countOptions()` (and `htmlLegend(..., {format:
   'count'})`). Series are bucketed server-side (day ≤ 31 days, week ≤ 186, month beyond) so every chart
   in a section shares one x-axis.
-- Storage is reported twice on purpose: `disk_bytes` (a volume scan — exact, includes OCR output and
-  orphans) and `source_bytes` (the DB's view, de-duplicated by `file_sha256`). AI usage is reported in
-  tokens, never dollars.
+- **System and Imports & AI** (`admin-system.js`, `admin-imports.js`; backend `admin_system.py`).
+  `GET /api/admin/system/health` returns one section per moving part (imports, email, stripe, backups,
+  storage, errors) with `status` ok/warn/error; a stuck import (parsing or committing for 15+ minutes)
+  can be stopped (`POST /system/imports/<id>/fail`), error groups expand to their latest traceback
+  (`GET /system/errors/<fingerprint>`). Storage is reported twice on purpose: `disk_bytes` (a volume
+  scan, cached an hour — includes scanned-PDF output and orphans) and `source_bytes` (the DB's view,
+  de-duplicated by `file_sha256`). AI cost is what OpenRouter reported, else an estimate from the cached
+  model catalogue; the shared key's spend is shown on its own because that is what the operator pays.
 
 ## Landing page
 

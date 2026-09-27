@@ -53,6 +53,17 @@ class TestMetricsApi:
             for row in d["retention"]["rows"]:
                 assert all(c is None or c["n"] <= row["size"] for c in row["cells"])
 
+    def test_system_health_has_every_part(self, admin_api):
+        d = admin_api.get("/api/admin/system/health").json()
+        assert set(d) == {"imports", "email", "stripe", "backups", "storage", "errors", "status"}
+        assert all(d[k]["status"] in ("ok", "warn", "error") for k in d if k != "status")
+
+    @pytest.mark.parametrize("path", ["imports", "ai"])
+    def test_imports_and_ai_reports(self, admin_api, path):
+        r = admin_api.get(f"/api/admin/{path}?range=30d")
+        assert r.status_code == 200, r.text
+        assert not re.search(r"original_filename|\.pdf\b|\.csv\b", r.text)
+
     def test_compare_adds_the_previous_period(self, admin_api):
         d = admin_api.get("/api/admin/metrics/overview?range=7d&compare=1").json()
         assert set(d["series"]["prev"]) == {"signups", "wau", "mrr"}
@@ -172,11 +183,11 @@ class TestShell:
         page.keyboard.press("Escape")
         assert page.errors == []
 
-    @pytest.mark.parametrize("section,marker", [("revenue", "#ch-rv-bridge"), ("engagement", ".adm-funnel, #en-funnel .empty")])
+    @pytest.mark.parametrize("section,marker", [("revenue", "#ch-rv-bridge"), ("engagement", ".adm-funnel, #en-funnel .empty"),
+                                                ("imports", "#ch-im"), ("system", ".adm-health-chip:not(.is-loading)")])
     def test_growth_sections_render(self, page, section, marker):
         page.goto(f"{BASE}/admin.html?range=90d#{section}")
         panel = page.locator(f'[data-panel="{section}"]')
-        panel.locator(".adm-kpi").first.wait_for()
         panel.locator(marker).first.wait_for()
         assert page.errors == []
 

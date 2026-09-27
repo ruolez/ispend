@@ -16,30 +16,13 @@ import admin_api  # noqa: E402
 import seed_categories  # noqa: E402
 import util  # noqa: E402
 
-# One row that satisfies every aggregate in the overview, so a Router default can stand in for
-# all of them without listing each query.
-STAT_ROW = {"n": 0, "total": 0, "calls": 0, "errors": 0, "source_bytes": 0, "unique_files": 0,
-            "audit_rows": 0, "oldest_audit_at": None, "transactions": 0}
-
-
-def stat_routes(extra=None):
-    """The overview runs a mix of single-row aggregates and list queries; the list ones must come
-    back as lists or rows_json has nothing to iterate."""
-    lists = ["generate_series", "action = 'auth.login'", "FROM transactions WHERE created_at",
-             "FROM statements WHERE created_at", "GROUP BY model", "COALESCE(bank_profile",
-             "SELECT file_kind AS kind", "GROUP BY 1,2", "FROM audit_log WHERE user_id"]
-    users_rollup = {"total": 4, "active": 3, "locked": 1, "deleted": 0, "admins": 1,
-                    "active_7d": 2, "active_30d": 3, "never_signed_in": 1, "new_30d": 1}
-    return _stubs.Router((extra or []) + [("FILTER (WHERE status='locked')", users_rollup)]
-                         + [(needle, []) for needle in lists], default=STAT_ROW)
-
 # Every route the blueprint exposes; the admin-only test walks all of them.
 ROUTES = [
     ("post", "/api/admin/users"), ("put", "/api/admin/users/5"),
     ("put", "/api/admin/users/5/password"),
     ("post", "/api/admin/users/5/lock"), ("post", "/api/admin/users/5/unlock"),
     ("post", "/api/admin/users/5/restore"), ("delete", "/api/admin/users/5"),
-    ("get", "/api/admin/stats/overview"), ("get", "/api/admin/audit"),
+    ("get", "/api/admin/audit"),
     ("get", "/api/admin/audit/actions"), ("get", "/api/admin/settings"),
     ("put", "/api/admin/settings"), ("get", "/api/admin/search?q=a"),
     ("get", "/api/admin/step-up/status"), ("post", "/api/admin/step-up"),
@@ -235,38 +218,11 @@ class AdminStatsTest(unittest.TestCase):
         with c.session_transaction() as s:
             s["user_id"] = 1
             s["role"] = "admin"
-        q = query or stat_routes()
+        q = query or _stubs.Router()
         with mock.patch.object(FAKE, "query", side_effect=q), \
                 mock.patch.object(FAKE, "execute", side_effect=execute or _stubs.Router(default=1)), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(admin_api, "db", FAKE):
             return c.get(path)
-
-    def test_overview_survives_an_unreadable_statements_volume(self):
-        """A dashboard must never 500 because a volume is unmounted."""
-        with mock.patch.object(admin_api.os, "scandir", side_effect=OSError("not mounted")):
-            res = self._get("/api/admin/stats/overview")
-        self.assertEqual(res.status_code, 200)
-        storage = res.get_json()["storage"]
-        self.assertEqual((storage["disk_scan_ok"], storage["disk_bytes"], storage["derived_bytes"]),
-                         (False, None, None))
-
-    def test_overview_reports_both_definitions_of_active(self):
-        with mock.patch.object(admin_api, "_disk_usage", return_value=(0, True)):
-            body = self._get("/api/admin/stats/overview").get_json()
-        for key in ("active_7d", "active_30d", "active_by_activity_30d", "never_signed_in"):
-            self.assertIn(key, body["users"])
-        for key in ("users", "totals", "series", "storage", "ai", "imports", "housekeeping"):
-            self.assertIn(key, body)
-
-    def test_overview_is_served_from_cache_until_it_expires(self):
-        q = stat_routes()
-        with mock.patch.object(admin_api, "_disk_usage", return_value=(0, True)):
-            self._get("/api/admin/stats/overview", query=q)
-            first = len(q.calls)
-            self._get("/api/admin/stats/overview", query=q)
-            self.assertEqual(len(q.calls), first, "a warm cache must not re-run the aggregates")
-            self._get("/api/admin/stats/overview?refresh=1", query=q)
-            self.assertGreater(len(q.calls), first, "refresh=1 must bypass the cache")
 
     def test_audit_uses_keyset_pagination_and_survives_purged_users(self):
         rows = [{"id": 900 - i, "user_id": None, "username": None, "action": "user.purge",

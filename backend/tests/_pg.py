@@ -49,6 +49,7 @@ class PgTestCase(unittest.TestCase):
         cls.db = db
         db.run_migrations()
         cls.app = Flask(__name__)
+        cls.app.secret_key = "integration"
         cls.ctx = cls.app.app_context()
         cls.ctx.push()
 

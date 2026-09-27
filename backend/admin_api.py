@@ -8,8 +8,6 @@ moving the path makes the old URL 404 loudly instead of silently doing something
 import json
 import os
 import shutil
-from datetime import datetime, timezone
-from decimal import Decimal
 
 from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash
@@ -28,7 +26,6 @@ from util import (admin_audit_retention_days, api_error, audit, audit_retention_
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
 DEFAULT_RETENTION_DAYS = 30
-STATS_TTL_SECONDS = 300
 
 
 def _uid():
@@ -347,146 +344,6 @@ SELECT COALESCE(SUM(file_size), 0) AS source_bytes, COUNT(*) AS unique_files
           FROM statements WHERE status <> 'discarded' {where}
          ORDER BY user_id, file_sha256, id) s
 """
-
-BUCKETS = {"day": "day", "week": "week", "month": "month"}
-
-
-def _bucket_for(days):
-    return "day" if days <= 90 else ("week" if days <= 365 else "month")
-
-
-@bp.get("/stats/overview")
-@admin_required
-def stats_overview():
-    days = to_int(request.args.get("days"), "days", lo=1, hi=3650) or 90
-    if days not in (7, 30, 90, 365):
-        days = 90
-    cache_key = f"admin:stats:overview:{days}"
-    if request.args.get("refresh") != "1":
-        cached = db.get_setting(cache_key)
-        if cached:
-            try:
-                payload = json.loads(cached)
-                age = (datetime.now(timezone.utc) - datetime.fromisoformat(payload["generated_at"])).total_seconds()
-                if age < STATS_TTL_SECONDS:
-                    return jsonify(payload)
-            except (ValueError, KeyError, TypeError):
-                pass
-    payload = _build_overview(days)
-    db.set_setting(cache_key, json.dumps(payload, default=str))
-    return jsonify(payload)
-
-
-def _build_overview(days):
-    bucket = _bucket_for(days)
-    users = db.query("""
-        SELECT COUNT(*) AS total,
-               COUNT(*) FILTER (WHERE status='active')  AS active,
-               COUNT(*) FILTER (WHERE status='locked')  AS locked,
-               COUNT(*) FILTER (WHERE status='deleted') AS deleted,
-               COUNT(*) FILTER (WHERE role='admin' AND status='active') AS admins,
-               COUNT(*) FILTER (WHERE status<>'deleted' AND last_login_at >= now() - interval '7 days')  AS active_7d,
-               COUNT(*) FILTER (WHERE status<>'deleted' AND last_login_at >= now() - interval '30 days') AS active_30d,
-               COUNT(*) FILTER (WHERE status<>'deleted' AND last_login_at IS NULL) AS never_signed_in,
-               COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days') AS new_30d
-          FROM users""", one=True) or {}
-    # "Signed in recently" and "actually did something recently" answer different questions and
-    # are both shown, labelled, because a user can log in and do nothing.
-    by_activity = db.query("""
-        SELECT COUNT(DISTINCT user_id) AS n FROM (
-          SELECT user_id FROM statements WHERE created_at >= now() - interval '30 days'
-          UNION
-          SELECT user_id FROM transaction_events
-           WHERE created_at >= now() - interval '30 days' AND user_id IS NOT NULL) s""", one=True) or {"n": 0}
-
-    totals = db.query("""
-        SELECT (SELECT COUNT(*) FROM transactions) AS transactions,
-               (SELECT COUNT(*) FROM accounts) AS accounts,
-               (SELECT COUNT(*) FROM statements WHERE status='committed') AS statements,
-               (SELECT COUNT(*) FROM rules) AS rules,
-               (SELECT COUNT(*) FROM budgets) AS budgets,
-               (SELECT MIN(txn_date) FROM transactions) AS first_txn_date,
-               (SELECT MAX(txn_date) FROM transactions) AS last_txn_date""", one=True) or {}
-
-    # Every series is gap-filled off the same generate_series so both charts share one x-axis;
-    # a sparse series would silently hide days that have statements but no transactions.
-    def _series(sql_from, cols):
-        return db.query(f"""
-            SELECT d::date AS t, {cols}
-              FROM generate_series(date_trunc('{bucket}', now()) - make_interval(days => %s),
-                                   date_trunc('{bucket}', now()), interval '1 {bucket}') d
-              LEFT JOIN {sql_from} x ON x.created_at >= d AND x.created_at < d + interval '1 {bucket}'
-             GROUP BY d ORDER BY d""", (days,)) or []
-
-    series = {
-        "signups": _series("users", "COUNT(x.id) AS n"),
-        # Free: audit() already writes auth.login on every login. Bounded by the retention setting.
-        "logins": _series("(SELECT id, user_id, created_at FROM audit_log WHERE action = 'auth.login')",
-                          "COUNT(x.id) AS logins, COUNT(DISTINCT x.user_id) AS users"),
-        "transactions": _series("transactions", "COUNT(x.id) AS n"),
-        "statements": _series("statements", "COUNT(x.id) AS n, COUNT(*) FILTER (WHERE x.status='committed') AS committed"),
-    }
-
-    src = db.query(_SOURCE_BYTES_SQL.format(where=""), one=True) or {}
-    source_bytes = int(src.get("source_bytes") or 0)
-    disk_bytes, disk_ok = _disk_usage()
-    storage = {
-        "disk_bytes": disk_bytes,
-        "source_bytes": source_bytes,
-        "derived_bytes": (disk_bytes - source_bytes) if disk_ok and disk_bytes is not None else None,
-        "unique_files": src.get("unique_files") or 0,
-        "disk_scan_ok": disk_ok,
-    }
-
-    ai = db.query("""
-        SELECT COUNT(*) AS calls, COUNT(*) FILTER (WHERE status='error') AS errors,
-               COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
-               COALESCE(SUM(completion_tokens),0) AS completion_tokens,
-               COUNT(DISTINCT user_id) AS users, ROUND(AVG(duration_ms)) AS avg_ms
-          FROM ai_calls WHERE created_at >= now() - make_interval(days => %s)""", (days,), one=True) or {}
-    ai = dict(ai)
-    ai["error_rate"] = round((ai.get("errors") or 0) / ai["calls"], 4) if ai.get("calls") else 0
-    # Tokens, never dollars: prices live only in the OpenRouter catalog, drift, and the call can
-    # fail -- a server-side cost figure would be confidently wrong.
-    ai["by_model"] = db.query("""
-        SELECT model, COUNT(*) AS calls,
-               COALESCE(SUM(prompt_tokens),0) + COALESCE(SUM(completion_tokens),0) AS tokens,
-               COUNT(*) FILTER (WHERE status='error') AS errors
-          FROM ai_calls WHERE created_at >= now() - make_interval(days => %s)
-         GROUP BY model ORDER BY calls DESC LIMIT 8""", (days,)) or []
-
-    imports = {
-        "by_profile": db.query("""
-            SELECT COALESCE(bank_profile,'unknown') AS profile, COUNT(*) AS n,
-                   COUNT(*) FILTER (WHERE ocr_applied) AS ocr,
-                   COUNT(*) FILTER (WHERE status='error') AS errors
-              FROM statements GROUP BY 1 ORDER BY n DESC LIMIT 12""") or [],
-        "by_kind": db.query("SELECT file_kind AS kind, COUNT(*) AS n FROM statements GROUP BY 1 ORDER BY n DESC") or [],
-    }
-
-    house = db.query("""
-        SELECT (SELECT COUNT(*) FROM audit_log) AS audit_rows,
-               (SELECT MIN(created_at) FROM audit_log) AS oldest_audit_at""", one=True) or {}
-
-    return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "days": days, "bucket": bucket,
-        "users": {**dict(users), "active_by_activity_30d": by_activity["n"]},
-        "totals": dict(rows_json([totals])[0]) if totals else {},
-        "series": {k: rows_json(v) for k, v in series.items()},
-        "storage": storage,
-        "ai": {k: (float(v) if isinstance(v, Decimal) else v) for k, v in ai.items() if k != "by_model"}
-              | {"by_model": rows_json(ai["by_model"])},
-        "imports": {k: rows_json(v) for k, v in imports.items()},
-        "housekeeping": {
-            "audit_retention_days": audit_retention_days(),
-            "admin_audit_retention_days": admin_audit_retention_days(),
-            "deleted_user_retention_days": _retention_days(),
-            "audit_rows": house.get("audit_rows", 0),
-            "oldest_audit_at": iso(house.get("oldest_audit_at")),
-        },
-    }
-
 
 # ---------- Activity log ----------
 

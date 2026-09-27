@@ -19,8 +19,8 @@
 
 /* Small labelled figures, used on Overview cards, on Billing and in the per-user drawer.
    Flex rather than a fixed grid: a row of one tile should not stretch across the card. */
-.adm-kpis { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
-.adm-kpis > div { flex: 1 1 140px; max-width: 280px; padding: 10px 12px; border-radius: var(--r-md);
+.adm-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--sp-3); }
+.adm-kpis > div { padding: 10px 12px; border-radius: var(--r-md);
   background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }   /* the border carries the tile on the page background too */
 .adm-kpis .l { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .adm-kpis .v { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
@@ -242,3 +242,22 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .adm-heat td.is-partial { opacity: 0.55; }
 .adm-heat td.is-future { background: none; }
 .adm-heat td.is-strong { color: var(--accent-fg); }
+
+/* ---------- System ---------- */
+.adm-health { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--sp-3); }
+.adm-health-chip { display: flex; align-items: center; gap: var(--sp-3); padding: 12px var(--sp-4); border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--sh-1); color: var(--text-1); text-decoration: none; min-width: 0; }
+.adm-health-chip b { display: block; font-size: var(--fs-sm); }
+.adm-health-chip .sub { display: block; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-health-chip > .min-w-0 { flex: 1 1 auto; }
+.adm-health-ico { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); flex: 0 0 auto; }
+.adm-health-chip.is-warn { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
+.adm-health-chip.is-error { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+@media (hover: hover) { .adm-health-chip:hover { box-shadow: var(--sh-2); text-decoration: none; } }
+.adm-errors { list-style: none; margin: 0; padding: 0; }
+.adm-errors li + li { border-top: 1px solid var(--border); }
+.adm-error-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 10px 0; text-align: left; font-size: var(--fs-sm); }
+.adm-error-row .sub { display: block; color: var(--text-3); }
+.adm-trace { max-height: 280px; overflow: auto; padding: var(--sp-3); background: var(--surface-2); border-radius: var(--r-md);
+  font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 var(--sp-3); }
+.stat-value .u { font-size: var(--fs-md); font-weight: 500; color: var(--text-3); margin-left: 2px; }
