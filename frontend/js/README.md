@@ -218,9 +218,9 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 `setQs()` also calls `rememberQuery()`: each page's last query (minus transient keys such as `open`, `statement`) is kept in sessionStorage. `initNav()` calls `restoreQuery()` before page scripts read `qs()`, and sidebar links carry `savedQuery(href)`, so filters, sorts, ranges and tabs survive navigating away and back within the session. Pages read state from `qs()` as before; nothing else to do.
 
 ## Admin
-`/admin.html` is a console with its own shell: `initNav('<section>', {groups, footer, bottom, more,
-brandBadge, searchLabel, title})` swaps the app's navigation for the admin's (Insights · Operations ·
-Settings groups, "Back to app" in the footer, Overview/Revenue/Users/Activity on the phone bar) and
+`/admin` is a console with its own shell: `initNav('<section>', {shell: 'admin', groups, footer, bottom,
+more, brandBadge, searchLabel, title, menu})` swaps the app's navigation for the admin's (no billing
+banner, pinned views or review pill; the account menu carries `menu`) and
 `window.PALETTE` makes ⌘K search people (`GET /api/admin/search`) instead of transactions.
 `js/pages/admin-shell.js` owns the registry, routing, the period picker and the KPI tile; each section is
 one file that calls `AdminPanels.register(key, {label, icon, group, sub, ranged, markup, actions,
@@ -232,10 +232,11 @@ a rising cancellation count is red — `agg`-thinned sparkline, help tooltip, op
 Numbers come from `/api/admin/metrics/*` (`backend/admin_metrics.py`, periods from `admin_range.py`,
 five-minute `metric_cache`, `as_of` stamp).
 
-- **Guarding.** Nav items and groups marked `adminOnly` render `hidden` and are revealed only for admins;
-  the ⌘K palette list and the `g <key>` registration filter on `role` too, because both are built before
-  `/api/auth/me` resolves. `/admin.html` is a static file anyone can fetch, so the page also self-guards
-  with an "Admins only" empty state — every endpoint is `@admin_required` regardless.
+- **Guarding.** An admin account runs the console and nothing else. `initNav(page, {shell: 'admin'})` is
+  the console; any other `initNav` is the app. Each sends the wrong kind of account to its own home
+  (`homeFor(me)` in `api.js`) before painting, and `api()` does the same on a `403 {code: "admin_account"}`
+  (the backend's blueprint allowlist in `auth.admin_scope_guard`). Sign-in routes by role; the console
+  lives at `/admin` (nginx serves `admin.html`, `/admin.html` redirects).
 - **API** (`/api/admin/*`, all admin-only): people (`admin_users.py`: `/users`, `/users/facets`, `/users/bulk`,
   `/users/:id` and its actions, `/notes`, `/tags`, `/erasures`), lifecycle (`admin_api.py`: create, role,
   password, lock/unlock/restore, trash/purge, `/audit`, `/search`, `/settings`, `/step-up`), metrics

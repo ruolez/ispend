@@ -231,12 +231,15 @@ function applyConfig(cfg) {
 }
 
 async function whoami() {
+  let me;
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
     if (!res.ok) return;
+    me = await res.json();
   } catch { return; }
+  const home = me && me.role === 'admin' ? '/admin' : '/index.html';
   $('#lp-head-cta').innerHTML =
-    '<a class="btn btn-primary lp-head-go" href="/index.html">Open iSpend <span class="lp-ic" data-icon="arrow-right"></span></a>';
+    `<a class="btn btn-primary lp-head-go" href="${home}">Open iSpend <span class="lp-ic" data-icon="arrow-right"></span></a>`;
   paintIcons();
 }
 

@@ -499,3 +499,20 @@ def ai_test():
                                                   model_id=(data.get("model") or "").strip() or None))
     except openrouter.OpenRouterError as e:
         return api_error(str(e))
+
+
+# ---------- Console chrome ----------
+
+def stripe_mode():
+    """'off' when billing is not configured, else whether the key charges real cards."""
+    import billing
+    if not billing.enabled():
+        return "off"
+    key = billing.secret_key() or ""
+    return "test" if key.startswith(("sk_test_", "rk_test_")) else "live"
+
+
+@bp.get("/shell")
+@admin_required
+def shell():
+    return jsonify({"stripe_mode": stripe_mode()})

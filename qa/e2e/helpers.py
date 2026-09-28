@@ -18,7 +18,7 @@ PAGES = {
     "budgets": "/budgets.html",
     "insights": "/insights.html",
     "settings": "/settings.html",
-    "admin": "/admin.html",
+    "admin": "/admin",
     "billing": "/billing.html",
 }
 CHART_PAGES = {"index", "categories", "reports", "admin"}

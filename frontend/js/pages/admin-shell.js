@@ -254,7 +254,6 @@ function adminPalette() {
       ...(ADMIN.sections.users ? [{ group: 'Actions', label: 'Add a user', icon: 'plus', run: () => { location.hash = '#users'; setTimeout(() => window.openAddUser && openAddUser(), 50); } }] : []),
       ...(ADMIN.sections.billing ? [{ group: 'Actions', label: 'Compare revenue records with Stripe', icon: 'refresh', run: () => { location.hash = '#billing'; } }] : []),
       { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: toggleThemePersisted },
-      { group: 'Actions', label: 'Back to the app', icon: 'arrow-left', run: () => { location.href = '/index.html'; } },
     ],
     async search(q) {
       const res = await api(`/api/admin/search?q=${encodeURIComponent(q)}`);
@@ -277,6 +276,27 @@ function adminOpenUser(id) {
 
 /* ---------- boot ---------- */
 
+/* Always in view: whether Stripe charges real cards. The operator should never have to wonder. */
+const ENV_BADGES = {
+  test: ['badge-warning', 'Test mode', 'Stripe is using test keys: no real card is charged.'],
+  live: ['badge-success', 'Live', 'Stripe is using live keys: payments are real.'],
+  off: ['badge-neutral', 'Billing off', 'Stripe is not set up, so every customer has full access for free.'],
+};
+function paintEnvBadge(mode) {
+  const [cls, label, tip] = ENV_BADGES[mode] || ENV_BADGES.off;
+  let el = $('#adm-env');
+  if (!el) {
+    el = document.createElement('a');
+    el.id = 'adm-env';
+    el.href = '#billing';
+    $('.tb-actions').prepend(el);
+  }
+  el.className = `badge ${cls} adm-env`;
+  el.dataset.tip = tip;
+  el.setAttribute('aria-label', `${label}. ${tip}`);
+  el.textContent = label;
+}
+
 function adminNavItem(key) {
   const s = ADMIN.sections[key];
   return { page: key, href: `#${key}`, label: s.label, short: s.short, icon: s.icon, key: ADMIN_KEYS[key] };
@@ -286,27 +306,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const keys = adminSectionKeys();
   const groups = ADMIN_GROUPS.map(([g, label]) => ({ label, items: keys.filter((k) => ADMIN.sections[k].group === g).map(adminNavItem) }))
     .filter((g) => g.items.length);
-  const back = { page: 'app', href: '/index.html', label: 'Back to app', icon: 'arrow-left' };
   adminPalette();
   $('#adm-range').addEventListener('click', (e) => openRangePicker(e.currentTarget));
   $('#adm-compare').addEventListener('click', () => setAdminRange({ compare: !adminRange().compare }));
   $('#adm-compare').innerHTML = `${icon('arrow-left-right')}<span class="label">Compare</span>`;
   paintRangeControl();
+  // initNav sends anyone who is not an admin back to the app before this resolves.
   initNav(adminCurrentKey(), {
-    groups, footer: [back], bottom: ADMIN_BOTTOM.filter((k) => ADMIN.sections[k]),
-    more: [...keys.filter((k) => !ADMIN_BOTTOM.includes(k)).map(adminNavItem), back],
-    brandBadge: 'Admin', searchLabel: 'Search people and pages…', title: 'Admin',
+    shell: 'admin', groups, footer: [], bottom: ADMIN_BOTTOM.filter((k) => ADMIN.sections[k]),
+    more: keys.filter((k) => !ADMIN_BOTTOM.includes(k)).map(adminNavItem),
+    brandBadge: 'Admin', searchLabel: 'Search customers, pages and actions…', title: 'Admin',
   }).then((me) => {
     ADMIN.me = me;
-    // /admin.html is a static file anyone can fetch; every endpoint is admin-only, but the page still
-    // has to explain itself rather than render a wall of failed requests.
-    if (me.role !== 'admin') {
-      $('#admin-gate').innerHTML = ui.emptyState({ icon: 'lock', title: 'Admins only',
-        body: 'This page manages everyone’s accounts. Ask an administrator if you need access.',
-        action: { label: 'Back to dashboard', href: '/index.html' } });
-      return;
-    }
     $('#admin-layout').hidden = false;
+    api('/api/admin/shell').then((sh) => paintEnvBadge(sh.stripe_mode)).catch(() => {});
     window.addEventListener('hashchange', adminShow);
     ui.shortcuts.register('r', () => AdminPanels.refresh(), { description: 'Admin: refresh this page' });
     window.PAGE_SHORTCUTS = [{ title: 'Admin', items: [['r', 'Refresh this page'],

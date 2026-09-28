@@ -23,6 +23,11 @@ async function api(path, options = {}) {
     if (await stepUpPrompt()) return api(path, { ...options, stepUpRetry: true });
     throw stepUpCancelled(data);
   }
+  /* An admin account runs the console only; a stale tab of the app sends it there. */
+  if (res.status === 403 && data && data.code === 'admin_account') {
+    location.replace(ADMIN_HOME);
+    throw new Error('Admin accounts use the console');
+  }
   /* One place catches every blocked write, so no page has to know the rule. */
   if (res.status === 402 && data && data.code === 'subscription_required') {
     toast(data.error, { type: 'error', duration: 8000,
@@ -40,6 +45,10 @@ async function api(path, options = {}) {
   if (opts.method && opts.method !== 'GET' && typeof store !== 'undefined') store.afterWrite(path);
   return data;
 }
+
+/* Where an account lands after signing in: admins run the console, everyone else the app. */
+const ADMIN_HOME = '/admin';
+function homeFor(me) { return me && me.role === 'admin' ? ADMIN_HOME : '/index.html'; }
 
 /* One prompt at a time: parallel requests that all hit the step-up wall share the same answer. */
 let _stepUpAsk = null;

@@ -54,7 +54,7 @@ GET_ROUTES = [
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
-    ("POST", "/api/settings/openrouter/test"), ("POST", "/api/admin/users"), ("PUT", "/api/admin/users/1"),
+    ("POST", "/api/settings/openrouter/test"), ("POST", "/api/admin/users"),
     ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"), ("POST", "/api/accounts"),
     ("PUT", "/api/accounts/1"), ("DELETE", "/api/accounts/1"), ("POST", "/api/categories"),
     ("PUT", "/api/categories/1"), ("PUT", "/api/categories/reorder"), ("POST", "/api/categories/1/merge"),
@@ -135,7 +135,7 @@ class TestAuth:
         assert (r.status_code, r.json()) == (404, {"error": "Not found"})
 
     @pytest.mark.parametrize("method,route", [
-        ("GET", "/api/admin/users"), ("POST", "/api/admin/users"), ("PUT", "/api/admin/users/1"),
+        ("GET", "/api/admin/users"), ("POST", "/api/admin/users"),
         ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"),
         ("POST", "/api/admin/users/1/lock"), ("POST", "/api/admin/users/1/unlock"),
         ("POST", "/api/admin/users/1/restore"), ("GET", "/api/admin/system/health"), ("GET", "/api/admin/audit"),
@@ -145,14 +145,12 @@ class TestAuth:
         assert (r.status_code, r.json()) == (403, {"error": "Admin access required"})
 
     def test_non_admin_settings_put_is_per_user_and_cannot_publish_shared(self, u1, admin):
-        before = admin.get("/api/settings").json()
-        assert before["shared_available"] is False, "precondition: no shared key configured on this instance"
+        before = admin.get("/api/admin/ai-config").json()
         r = u1.put("/api/settings", json={"openrouter_model": "qa/model", "shared": True, "clear_shared": True})
         assert r.status_code == 200
-        after = admin.get("/api/settings").json()
-        assert (after["shared_available"], after["shared_model"]) == (False, "")
+        assert admin.get("/api/admin/ai-config").json() == before, "the instance key is untouched"
         mine = u1.get("/api/settings").json()
-        assert mine["openrouter_model"] == "qa/model" and mine["is_admin"] is False
+        assert mine["openrouter_model"] == "qa/model" and "is_admin" not in mine
         u1.put("/api/settings", json={"openrouter_model": ""})
 
     def test_admin_cannot_delete_or_demote_self(self, admin):
@@ -161,8 +159,7 @@ class TestAuth:
         assert (r.status_code, r.json()) == (400, {"error": "You cannot delete your own account"})
         r = admin.post(f"/api/admin/users/{me['id']}/lock")
         assert (r.status_code, r.json()) == (400, {"error": "You cannot lock your own account"})
-        r = admin.put(f"/api/admin/users/{me['id']}", json={"role": "user"})
-        assert (r.status_code, r.json()) == (400, {"error": "You cannot remove your own admin role"})
+        assert admin.put(f"/api/admin/users/{me['id']}", json={"role": "user"}).status_code == 405, "roles never change"
         assert admin.get("/api/auth/me").json()["role"] == "admin"
 
     def test_sensitive_admin_actions_need_a_recently_entered_password(self):
@@ -196,7 +193,7 @@ class TestAuth:
         assert r.status_code == 400 and "10 characters" in r.json()["error"]
         r = admin.post("/api/admin/users", json={"username": "qa_api1", "password": "abcdefghij"})
         assert (r.status_code, r.json()) == (400, {"error": "Username already exists"})
-        r = admin.put("/api/admin/users/999999", json={"role": "user"})
+        r = admin.post("/api/admin/users/999999/lock")
         assert (r.status_code, r.json()) == (404, {"error": "User not found"})
         r = admin.put("/api/admin/users/999999/password", json={"password": "123"})
         assert r.status_code == 400
@@ -289,20 +286,30 @@ class TestAuth:
         _purge(admin, uid, "qa_api_purge")
         assert admin.get(f"/api/admin/users/{uid}").status_code == 404
 
-    def test_demoted_admin_loses_admin_routes_at_once(self, admin):
+    def test_the_console_only_ever_creates_customers(self, admin):
         r = admin.post("/api/admin/users", json={"username": "qa_api_admin2", "password": "admin2-pass1", "role": "admin"})
         assert r.status_code == 201
         uid = r.json()["id"]
         try:
             s = api_login("qa_api_admin2", "admin2-pass1")
-            assert s.get("/api/admin/users").status_code == 200
-            assert admin.put(f"/api/admin/users/{uid}", json={"role": "user"}).status_code == 200
-            r = s.get("/api/admin/users")
-            assert (r.status_code, r.json()) == (403, {"error": "Admin access required"})
             assert s.get("/api/auth/me").json()["role"] == "user"
-            assert s.get("/api/accounts").status_code == 200, "a demoted admin keeps a working user session"
+            assert s.get("/api/admin/users").status_code == 403
         finally:
             _purge(admin, uid, "qa_api_admin2")
+
+    @pytest.mark.parametrize("method,route", [
+        ("GET", "/api/transactions"), ("GET", "/api/accounts"), ("POST", "/api/statements"),
+        ("GET", "/api/settings"), ("POST", "/api/billing/checkout"), ("GET", "/api/auth/me/exports"),
+    ])
+    def test_an_admin_account_cannot_use_the_app(self, admin, method, route):
+        r = admin.request(method, route, json={})
+        assert (r.status_code, r.json()["code"]) == (403, "admin_account")
+
+    def test_admin_is_never_one_of_the_customers(self, admin):
+        me = admin.get("/api/auth/me").json()
+        found = admin.get("/api/admin/search", params={"q": me["username"]}).json()["users"]
+        assert me["id"] not in [u["id"] for u in found]
+        assert admin.get(f"/api/admin/users/{me['id']}").status_code == 404
 
     def test_permanent_delete_removes_per_user_settings(self, admin):
         r = admin.post("/api/admin/users", json={"username": "qa_api_gone", "password": "gone-pass-123"})
@@ -2156,7 +2163,7 @@ class TestSettings:
             assert secret not in s.text
             body = s.json()
             assert body["openrouter_api_key"] == "••••••••" and body["openrouter_model"] == "qa/model-x"
-            assert "evil" not in body and body["is_admin"] is False and "shared_api_key" not in body
+            assert "evil" not in body and "is_admin" not in body and "shared_api_key" not in body
             assert set(body) == {"openrouter_api_key", "openrouter_model", "ai_categorize_enabled", "ai_insights_enabled",
                                  "shared_available", "shared_model", "is_admin"}
             c = u1.get("/api/settings/client").json()
@@ -2175,9 +2182,9 @@ class TestSettings:
             u1.put("/api/settings", json={"openrouter_api_key": "", "openrouter_model": "", "ai_categorize_enabled": False,
                                           "ai_insights_enabled": False})
 
-    def test_admin_sees_shared_key_mask_only(self, admin):
-        s = admin.get("/api/settings").json()
-        assert s["is_admin"] is True and "shared_api_key" in s and s["shared_api_key"] in ("", "••••••••")
+    def test_admin_sees_the_instance_key_masked_only(self, admin):
+        s = admin.get("/api/admin/ai-config").json()
+        assert set(s) == {"api_key", "model"} and s["api_key"] in ("", "••••••••")
 
 
 # ======================================================================================

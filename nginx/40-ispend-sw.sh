@@ -23,7 +23,7 @@ else
     files=$(cd "$HTML" && {
         ls ./*.html
         find ./css ./js ./img -type f \( -name '*.css' -o -name '*.js' -o -name '*.svg' -o -name '*.png' \)
-        printf '%s\n' ./favicon.svg ./manifest.json ./fonts/InterVariable-latin-v2.woff2 ./vendor/chart.umd.js
+        printf '%s\n' ./favicon.svg ./manifest.json ./manifest-admin.json ./fonts/InterVariable-latin-v2.woff2 ./vendor/chart.umd.js
     } | sed 's|^\./|/|' | grep -v -E '^/(landing|privacy|terms)\.html$|^/(css|js)/pages/landing\.|^/sw\.js$' | LC_ALL=C sort -u)
     missing=""
     for f in $files; do [ -f "$HTML$f" ] || missing="$missing $f"; done

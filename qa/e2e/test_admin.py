@@ -44,7 +44,8 @@ class TestDataRights:
     def test_nobody_else_can_download_it(self, u1, admin_api):
         mine = [x for x in u1.get("/api/auth/me/exports").json() if x["status"] == "done"]
         if mine:
-            assert admin_api.get(f"/api/auth/me/exports/{mine[0]['id']}/download").status_code == 404
+            r = admin_api.get(f"/api/auth/me/exports/{mine[0]['id']}/download")
+            assert (r.status_code, r.json()["code"]) == (403, "admin_account")
 
     def test_an_admin_erases_an_account_for_good(self, admin_api):
         r = admin_api.post("/api/admin/users", json={"username": "qa_erase_me", "password": "erase-me-pass1"})
@@ -148,11 +149,13 @@ class TestMetricsApi:
         text = admin_api.get("/api/admin/metrics/overview?range=90d").text
         assert not re.search(r"merchant|description|txn_|\.pdf|\.csv", text)
 
-    def test_search_finds_the_admin_by_name_and_id(self, admin_api):
-        me = admin_api.get("/api/auth/me").json()
-        for q in ("admin", f"#{me['id']}"):
+    def test_search_finds_customers_by_name_and_id_but_never_the_admin(self, admin_api, u1):
+        person = u1.get("/api/auth/me").json()
+        for q in ("qa_api1", f"#{person['id']}"):
             users = admin_api.get("/api/admin/search", params={"q": q}).json()["users"]
-            assert users and users[0]["id"] == me["id"], (q, users)
+            assert users and users[0]["id"] == person["id"], (q, users)
+        me = admin_api.get("/api/auth/me").json()
+        assert me["id"] not in [u["id"] for u in admin_api.get("/api/admin/search", params={"q": f"#{me['id']}"}).json()["users"]]
 
     def test_people_list_pages_and_filters(self, admin_api):
         body = admin_api.get("/api/admin/users", params={"per_page": 1}).json()
@@ -169,9 +172,9 @@ class TestMetricsApi:
         r = s.get("/api/admin/users?format=csv")
         assert (r.status_code, r.json()["code"]) == (403, "step_up_required")
 
-    def test_person_view_has_no_transaction_data(self, admin_api):
-        me = admin_api.get("/api/auth/me").json()
-        body = admin_api.get(f"/api/admin/users/{me['id']}").json()
+    def test_person_view_has_no_transaction_data(self, admin_api, u1):
+        person = u1.get("/api/auth/me").json()
+        body = admin_api.get(f"/api/admin/users/{person['id']}").json()
         assert {"subscription", "activation", "timeline", "logins", "notes", "tags", "emails"} <= set(body)
         assert not re.search(r"description_|merchant_key|\.pdf\b|\.csv\b", json.dumps(body))
 
@@ -197,7 +200,7 @@ def page(admin_api):
 
 class TestShell:
     def test_overview_renders_tiles_and_charts(self, page):
-        page.goto(f"{BASE}/admin.html?range=30d#overview")
+        page.goto(f"{BASE}/admin?range=30d#overview")
         page.locator(".adm-kpi").first.wait_for()
         assert page.locator(".adm-kpi").count() == len(TILE_KEYS)
         assert page.locator("#admin-title").inner_text() == "Overview"
@@ -208,7 +211,7 @@ class TestShell:
         nav = page.locator(".sb-nav")
         assert nav.locator('a[data-page="users"]').is_visible()
         assert nav.locator('a[data-page="transactions"]').count() == 0
-        assert page.locator('.sb-foot a[href="/index.html"]').inner_text().strip() == "Back to app"
+        assert page.locator('a[href="/index.html"], .app-banner').count() == 0, "nothing of the customer app"
 
     def test_period_and_compare_live_in_the_url(self, page):
         page.locator("#adm-range").click()
@@ -229,10 +232,10 @@ class TestShell:
         page.locator(".adm-kpi").first.wait_for()
         assert "range=90d" in page.url
 
-    def test_palette_finds_people_and_opens_them(self, page):
+    def test_palette_finds_people_and_opens_them(self, page, qa_users):
         page.keyboard.press("Meta+k")
-        page.locator(".palette-input input").fill("admin")
-        page.locator(".palette-item", has_text="admin").first.wait_for()
+        page.locator(".palette-input input").fill("qa_api1")
+        page.locator(".palette-item", has_text="qa_api1").first.wait_for()
         page.keyboard.press("Enter")
         page.locator(".drawer").wait_for()
         assert page.url.endswith("#users")
@@ -240,7 +243,7 @@ class TestShell:
         assert page.errors == []
 
     def test_people_filters_live_in_the_url_and_rows_open_the_person(self, page):
-        page.goto(f"{BASE}/admin.html#users")
+        page.goto(f"{BASE}/admin#users")
         page.locator("#users-table tr[data-id]").first.wait_for()
         page.locator('[data-act="f-status"]').click()
         page.locator(".menu-item", has_text="Everyone").click()
@@ -258,14 +261,14 @@ class TestShell:
                                                 ("imports", "#ch-im"), ("system", ".adm-health-chip:not(.is-loading)"),
                                                 ("messages", "#msg-list table, #msg-list .empty")])
     def test_growth_sections_render(self, page, section, marker):
-        page.goto(f"{BASE}/admin.html?range=90d#{section}")
+        page.goto(f"{BASE}/admin?range=90d#{section}")
         panel = page.locator(f'[data-panel="{section}"]')
         panel.locator(marker).first.wait_for()
         assert page.errors == []
 
     def test_phone_has_the_admin_bottom_bar(self, page):
         page.set_viewport_size({"width": 390, "height": 844})
-        page.goto(f"{BASE}/admin.html#overview")
+        page.goto(f"{BASE}/admin#overview")
         page.locator(".adm-kpi").first.wait_for()
         labels = [t.strip() for t in page.locator(".bottomnav .bn-label").all_inner_texts()]
         assert labels[0] == "Overview" and labels[-1] == "More" and "Users" in labels

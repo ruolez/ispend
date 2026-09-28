@@ -81,7 +81,10 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       clearUserState();
       const theme = me && me.preferences && me.preferences.theme;
       if (theme && !Theme.hasStored()) Theme.set(theme);
-      location.href = safeNext(new URLSearchParams(location.search).get('next'));
+      const next = safeNext(new URLSearchParams(location.search).get('next'));
+      // An admin only ever lands in the console; a customer never does.
+      const isAdmin = me && me.role === 'admin';
+      location.href = isAdmin === next.startsWith(ADMIN_HOME) ? next : homeFor(me);
     }, { silent: true, rethrow: true });
   } catch (err) {
     if (err.status === 403 && err.data && err.data.code === 'email_unverified') {

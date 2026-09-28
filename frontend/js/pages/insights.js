@@ -94,8 +94,7 @@ function renderAI() {
   actions.innerHTML = '';
   host.setAttribute('aria-busy', state.generating ? 'true' : 'false');
   if (ai.status === 'disabled') {
-    const admin = state.me.role === 'admin';
-    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: admin ? 'Add a key and turn on Monthly insights, and iSpend will write up how each month went.' : 'Add your own key (or use one your admin has shared) and turn on Monthly insights in Settings › AI.', action: { label: 'Open AI settings', href: '/settings.html#ai' } });
+    host.innerHTML = ui.emptyState({ icon: 'sparkles', title: 'AI insights are off', body: 'Turn on Monthly insights in Settings › AI (with your own key, or the one this service provides) and iSpend will write up how each month went.', action: { label: 'Open AI settings', href: '/settings.html#ai' } });
     return;
   }
   if (state.generating) {

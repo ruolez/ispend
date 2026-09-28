@@ -167,6 +167,19 @@ class WipeCoverageTest(unittest.TestCase):
                 self.assertLess(order.index(child), order.index(parent))
 
 
+class ShellTest(_Api):
+    def test_the_stripe_badge_follows_the_configured_key(self):
+        import billing
+        cases = [(False, "", "off"), (True, "sk_test_abc", "test"), (True, "rk_test_abc", "test"),
+                 (True, "sk_live_abc", "live")]
+        for enabled, key, mode in cases:
+            with self.subTest(key=key):
+                with mock.patch.object(billing, "enabled", return_value=enabled), \
+                        mock.patch.object(billing, "secret_key", return_value=key):
+                    body = self._call("get", "/api/admin/shell").get_json()
+                self.assertEqual(body, {"stripe_mode": mode})
+
+
 class AiConfigTest(_Api):
     MASK = admin_api.AI_MASK
 

@@ -10,7 +10,7 @@ Allow: /manifest.json
 Allow: /img/icons/
 Disallow: /api/
 Disallow: /index.html
-Disallow: /admin.html
+Disallow: /admin
 Disallow: /billing.html
 Disallow: /settings.html
 Disallow: /transactions.html

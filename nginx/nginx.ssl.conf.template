@@ -214,6 +214,20 @@ server {
         sub_filter 'property="og:url" content="/"' 'property="og:url" content="https://__DOMAIN__/"';
     }
 
+    # The admin console. Old /admin.html links and bookmarks land here too; absolute_redirect off
+    # keeps the redirect on whatever host and port the browser used (the dev port, the proxy).
+    location = /admin {
+        try_files /admin.html =404;
+    }
+    location = /admin/ {
+        absolute_redirect off;
+        return 301 /admin$is_args$args;
+    }
+    location = /admin.html {
+        absolute_redirect off;
+        return 301 /admin$is_args$args;
+    }
+
     location / {
         try_files $uri $uri/ =404;
         autoindex off;

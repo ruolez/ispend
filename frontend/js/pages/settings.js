@@ -1,4 +1,4 @@
-/* Settings page: Accounts, AI (per user), Appearance, Users (admin), My account. */
+/* Settings page: Accounts, AI (per user), Appearance, My account, Your data. */
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TAB_META = {
   accounts: { label: 'Accounts', icon: 'landmark' },
@@ -16,7 +16,6 @@ initNav('settings').then(async (me) => {
   $$('#settings-nav .nav-item').forEach((a) => {
     const t = TAB_META[a.dataset.tab];
     a.innerHTML = `${icon(t.icon)}<span class="label">${t.label}</span>`;
-    if (a.hasAttribute('data-admin') && me.role !== 'admin') a.remove();
   });
   $('[data-act="add-account"]').innerHTML = `${icon('plus')}<span class="label">Add account</span>`;
   $('[data-act="renormalize"]').innerHTML = `${icon('sparkles')}<span class="label">Re-detect merchant names</span>`;
@@ -30,9 +29,6 @@ initNav('settings').then(async (me) => {
 function showTab() {
   if (modelPop) modelPop.close();
   let tab = (location.hash || '#accounts').slice(1);
-  // User management moved to /admin.html; send admins on to it, but a regular user following an
-  // old link must still land quietly on Accounts rather than on an "Admins only" gate.
-  if (tab === 'users' && state.me.role === 'admin') return location.replace('/admin.html#users');
   if (!TAB_META[tab]) tab = 'accounts';
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
@@ -152,23 +148,10 @@ async function loadAI() {
     <div class="setting-row"><div><div class="title">Suggest categories after import</div><div class="desc">Unknown charges get an AI-suggested category you confirm in Review.</div></div>
       <label class="switch"><input type="checkbox" id="or-cat" ${s.ai_categorize_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>
     <div class="setting-row"><div><div class="title">Monthly insights</div><div class="desc">Generate written observations and recommendations on the Insights page.</div></div>
-      <label class="switch"><input type="checkbox" id="or-ins" ${s.ai_insights_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>
-    ${s.is_admin ? `<div class="setting-row"><div><div class="title">Share this key with all users</div><div class="desc">Publishes your saved key and model as the fallback for every user who has not entered their own. ${s.shared_available ? `Currently shared${s.shared_model ? ` · <span class="mono">${esc(s.shared_model)}</span>` : ''}.` : 'Not shared yet.'}</div></div>
-      <label class="switch"><input type="checkbox" id="or-shared" ${s.shared_available ? 'checked' : ''}><span class="switch-track"></span></label></div>` : ''}`;
-  if (!s.is_admin && s.shared_available && !s.openrouter_api_key) {
+      <label class="switch"><input type="checkbox" id="or-ins" ${s.ai_insights_enabled === '1' ? 'checked' : ''}><span class="switch-track"></span></label></div>`;
+  if (s.shared_available && !s.openrouter_api_key) {
     host.insertAdjacentHTML('afterbegin', `<div class="notice notice-info mb-4">${icon('info')}<div>Using the key shared by your administrator${s.shared_model ? ` (model: <span class="mono">${esc(s.shared_model)}</span>)` : ''}. Enter your own key below to override it.</div></div>`);
   }
-  const sharedSw = $('#or-shared');
-  if (sharedSw) sharedSw.addEventListener('change', async (e) => {
-    const on = e.target.checked;
-    if (on && state.dirty) { e.target.checked = false; toast('Save your key and model first, then share them', { type: 'error' }); return; }
-    if (on && !(s.openrouter_api_key && s.openrouter_model)) { e.target.checked = false; toast('Enter and save a key and a model before sharing', { type: 'error' }); return; }
-    try {
-      await api('/api/settings', { method: 'PUT', body: on ? { shared: true } : { clear_shared: true } });
-      toast(on ? 'Key shared with all users' : 'Shared key revoked', { type: 'success' });
-      store.invalidate('settings'); loadAI();
-    } catch (err) { e.target.checked = !on; toast(err.message, { type: 'error' }); }
-  });
   ['#or-key', '#or-model', '#or-cat', '#or-ins'].forEach((id) => $(id).addEventListener('input', () => setDirty(true)));
   $('#or-model').addEventListener('focus', () => openModelList());
   $('#or-model').addEventListener('input', debounce(() => openModelList(), 120));
@@ -454,7 +437,6 @@ async function renderData() {
   try { exports = await api('/api/auth/me/exports'); } catch (err) { host.innerHTML = ui.errorBox(err.message); return; }
   const busy = exports.some((x) => x.status === 'queued' || x.status === 'running');
   const ready = exports.filter((x) => x.status === 'done');
-  const isAdmin = state.me.role === 'admin';
   host.innerHTML = `
     <div class="setting-row"><div class="min-w-0"><div class="title">Download everything</div>
       <div class="desc">One zip with your accounts, transactions (also as a spreadsheet), categories, rules, budgets, settings and the statement files you uploaded. We email you when it is ready; the download works for 7 days.</div></div>
@@ -463,9 +445,8 @@ async function renderData() {
       ${icon('file', 'ico-sm')}<span class="grow">Your data, ${esc(fmtDateLong(x.created_at))} <span class="text-3">· ${esc(fmtBytes(x.size_bytes))}</span></span>
       <span class="text-3">until ${esc(fmtDate(x.expires_at))}</span>${icon('download', 'ico-sm')}</a>`).join('')}</div>` : ''}
     <div class="setting-row mt-4"><div class="min-w-0"><div class="title text-danger">Delete my account</div>
-      <div class="desc">${isAdmin ? 'Administrators cannot delete their own account here. Ask another administrator.'
-        : 'Deletes your account, every statement and transaction, and cancels your subscription. This cannot be undone — download a copy first if you might want it.'}</div></div>
-      <button type="button" class="btn btn-danger-solid" data-act="delete-me" ${isAdmin ? 'disabled' : ''}>Delete account</button></div>`;
+      <div class="desc">Deletes your account, every statement and transaction, and cancels your subscription. This cannot be undone — download a copy first if you might want it.</div></div>
+      <button type="button" class="btn btn-danger-solid" data-act="delete-me">Delete account</button></div>`;
   if (busy) dataPoll = setTimeout(() => { if (location.hash === '#data') renderData(); }, 4000);
 }
 

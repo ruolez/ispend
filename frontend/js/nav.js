@@ -19,16 +19,13 @@ const NAV_GROUPS = [
     { page: 'budgets', href: '/budgets.html', label: 'Budgets', icon: 'target', key: 'b' },
     { page: 'insights', href: '/insights.html', label: 'Insights', icon: 'lightbulb' },
   ] },
-  { label: 'Admin', adminOnly: true, items: [
-    { page: 'admin', href: '/admin.html', label: 'Admin', icon: 'shield', key: 'a', adminOnly: true },
-  ] },
 ];
 const NAV_BILLING = { page: 'billing', href: '/billing.html', label: 'Billing', icon: 'credit-card' };
 const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Settings', icon: 'settings', key: 's' };
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_BILLING, NAV_SETTINGS];
 const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'budgets'];
 const BOTTOM_LABELS = { dashboard: 'Home' };
-const MORE_ORDER = ['reports', 'insights', 'import', 'statements', 'categories', 'rules', 'settings', 'billing', 'admin'];
+const MORE_ORDER = ['reports', 'insights', 'import', 'statements', 'categories', 'rules', 'settings', 'billing'];
 const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
 const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
@@ -73,18 +70,22 @@ function itemHref(i) {
   return i.href.startsWith('#') ? i.href : `${i.href}${savedQuery(i.href)}`;
 }
 function navItemHtml(i, activePage) {
-  return `<a href="${esc(itemHref(i))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.adminOnly ? 'data-admin-only hidden' : ''} ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
+  return `<a href="${esc(itemHref(i))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
     ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
 }
 
 /* opts (the admin console uses these to reuse the whole shell with its own destinations):
-   groups, footer, bottom, more — nav items in NAV_GROUPS' shape; brandBadge; searchLabel; title.
+   shell: 'admin' — the console, which only an admin account may open (and which is the only
+   thing an admin account may open); groups, footer, bottom, more — nav items in NAV_GROUPS'
+   shape; brandBadge; searchLabel; title; menu — extra items for the account menu.
    Without opts this is the app's own navigation. */
 async function initNav(activePage, opts = {}) {
   restoreQuery();
+  const adminShell = opts.shell === 'admin';
+  window.NAV_ADMIN_SHELL = adminShell;
   const groups = opts.groups || NAV_GROUPS;
   const navItems = opts.groups ? groups.flatMap((g) => g.items).concat(opts.footer || []) : NAV_ITEMS;
-  window.NAV_SHELL = { items: navItems, bottom: opts.bottom, more: opts.more };
+  window.NAV_SHELL = { items: navItems, bottom: opts.bottom, more: opts.more, menu: opts.menu };
   const active = navItems.find((i) => i.page === activePage);
   document.body.dataset.page = activePage;
   /* setPageTitle('Sep 2026 · Chase') → "Dashboard · Sep 2026 · Chase · iSpend"; pages call it when their state changes. */
@@ -104,7 +105,7 @@ async function initNav(activePage, opts = {}) {
       <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>${opts.brandBadge ? `<span class="badge badge-accent sb-badge">${esc(opts.brandBadge)}</span>` : ''}
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
-        ${groups.map((g) => `<div class="sb-group" ${g.adminOnly ? 'data-admin-only hidden' : ''}><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
+        ${groups.map((g) => `<div class="sb-group"><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
@@ -204,7 +205,7 @@ async function initNav(activePage, opts = {}) {
   ui.shortcuts.register('?', () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []), { description: 'Shortcuts' });
   ui.shortcuts.register('/', () => openPalette(), { description: 'Search' });
   navItems.filter((i) => i.key).forEach((i) => ui.shortcuts.register(`g ${i.key}`, () => { location.href = i.href; },
-    { description: `Go to ${i.label}`, when: () => !i.adminOnly || (window.currentUser || {}).role === 'admin' }));
+    { description: `Go to ${i.label}` }));
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); } });
 
   // Auth gate. A signed-in tab keeps /api/auth/me in the session cache: the page starts from that
@@ -221,6 +222,12 @@ async function initNav(activePage, opts = {}) {
     }
     return new Promise(() => {}); // never resolve: page must not proceed
   }
+  // Each kind of account has one home: an admin in the app, or a customer in the console, is sent
+  // to their own before anything of this page is filled in.
+  if ((me.role === 'admin') !== adminShell) {
+    location.replace(homeFor(me));
+    return new Promise(() => {});
+  }
   window.currentUser = me;
   try {
     if (localStorage.getItem(UID_KEY) !== String(me.id)) { clearUserState(); localStorage.setItem(UID_KEY, String(me.id)); }
@@ -230,14 +237,10 @@ async function initNav(activePage, opts = {}) {
   const prefs = me.preferences || {};
   if (prefs.theme && !Theme.hasStored()) Theme.set(prefs.theme);
   if (prefs.density && !Theme.hasStoredDensity()) Theme.setDensity(prefs.density);
-  // Admin markup ships hidden and is revealed here, so a regular user never sees it flash on a
-  // slow connection; non-admins still get it removed outright.
-  if (me.role === 'admin') $$('[data-admin-only]').forEach((el) => el.removeAttribute('hidden'));
-  else $$('[data-admin-only]').forEach((el) => el.remove());
   // Billing is hidden entirely on an install that runs without subscriptions.
-  if (me.billing && me.billing.billing_enabled) $$('[data-billing-only]').forEach((el) => el.removeAttribute('hidden'));
+  if (!adminShell && me.billing && me.billing.billing_enabled) $$('[data-billing-only]').forEach((el) => el.removeAttribute('hidden'));
   else $$('[data-billing-only]').forEach((el) => el.remove());
-  paintBillingBanner(me);
+  if (!adminShell) paintBillingBanner(me);
   watchConnectivity();
   if (!opts.groups) {
     refreshReviewPill();
@@ -251,8 +254,10 @@ async function initNav(activePage, opts = {}) {
     if (!opts.groups) refreshReviewPill(true);
     window.dispatchEvent(new CustomEvent('ispend:resume'));
   });
-  paintPinnedViews(me);
-  window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
+  if (!adminShell) {
+    paintPinnedViews(me);
+    window.addEventListener('ispend:views-changed', () => paintPinnedViews(window.currentUser));
+  }
   store.on('me-changed', (fresh) => applyFreshMe(me, fresh));
   return me;
 }
@@ -270,7 +275,7 @@ function applyFreshMe(cached, fresh) {
   window.currentUser = fresh;
   $('#tb-avatar').textContent = initials(fresh.username);
   $('#tb-username').textContent = fresh.username;
-  paintPinnedViews(fresh);
+  if (!window.NAV_ADMIN_SHELL) paintPinnedViews(fresh);
 }
 
 /* Trial / grace / read-only notices, built from the existing .notice vocabulary rather than a
@@ -419,10 +424,10 @@ function watchLargeTitle() {
 /* More (phone): every destination the bottom bar doesn't hold, pinned views, theme and account. */
 function openMoreSheet(activePage) {
   const me = window.currentUser || {};
-  const allowed = (i) => (!i.adminOnly || me.role === 'admin') && (i.page !== 'billing' || (me.billing && me.billing.billing_enabled));
+  const allowed = (i) => i.page !== 'billing' || (me.billing && me.billing.billing_enabled);
   const shellMore = window.NAV_SHELL && window.NAV_SHELL.more;
-  const items = shellMore || MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).map((i) => (i.page === 'admin' ? { ...i, adminOnly: true } : i)).filter(allowed);
-  const views = (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
+  const items = shellMore || MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).filter(allowed);
+  const views = window.NAV_ADMIN_SHELL ? [] : (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
   const mode = Theme.get();
   const html = `
     <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span></a>`).join('')}</nav>
@@ -430,7 +435,7 @@ function openMoreSheet(activePage) {
     <div class="section-label mt-4">Appearance</div>
     <div class="seg more-theme" role="radiogroup" aria-label="Theme">${[['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="seg-btn${mode === k ? ' active' : ''}" role="radio" aria-checked="${mode === k}" data-theme-set="${k}">${icon(ic, 'ico-sm')}${l}</button>`).join('')}</div>
     <div class="more-list mt-4">
-      <div class="more-row more-me"><span class="avatar">${esc(initials(me.username || ''))}</span><span class="grow truncate"><b>${esc(me.username || '')}</b><span class="text-3"> · ${esc(me.role || '')}</span></span></div>
+      <div class="more-row more-me"><span class="avatar">${esc(initials(me.username || ''))}</span><span class="grow truncate"><b>${esc(me.username || '')}</b>${window.NAV_ADMIN_SHELL ? '<span class="text-3"> · Admin</span>' : ''}</span></div>
       ${window.PWA && PWA.canInstall() ? `<button type="button" class="more-row" data-more="install">${icon('download', 'ico-sm')}<span class="grow">Install app</span></button>` : ''}
       <button type="button" class="more-row" data-more="password">${icon('lock', 'ico-sm')}<span class="grow">Change password</span></button>
       <button type="button" class="more-row danger" data-more="signout">${icon('log-out', 'ico-sm')}<span class="grow">Sign out</span></button>
@@ -458,7 +463,7 @@ function openUserMenu(anchor) {
   const me = window.currentUser || {};
   const mode = Theme.get();
   ui.menu(anchor, [
-    { label: `${me.username || ''} · ${me.role || ''}`, header: true },
+    { label: window.NAV_ADMIN_SHELL ? `${me.username || ''} · Admin` : (me.username || ''), header: true },
     { label: 'Theme: System', icon: 'monitor', checked: mode === 'system', onClick: () => setThemePref('system') },
     { label: 'Theme: Light', icon: 'sun', checked: mode === 'light', onClick: () => setThemePref('light') },
     { label: 'Theme: Dark', icon: 'moon', checked: mode === 'dark', onClick: () => setThemePref('dark') },
@@ -466,9 +471,10 @@ function openUserMenu(anchor) {
     ...(ui.isCoarse() ? [] : [{ label: 'Keyboard shortcuts', icon: 'keyboard', shortcut: '?', onClick: () => ui.shortcutsSheet(window.PAGE_SHORTCUTS || []) }]),
     { label: 'Change password', icon: 'lock', onClick: openChangePassword },
     ...(window.PWA && PWA.canInstall() ? [{ label: 'Install app', icon: 'download', onClick: () => PWA.install() }] : []),
-    ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
-    ...(me.role === 'admin' ? [{ label: 'Admin', icon: 'shield', href: '/admin.html' }] : []),
-    { label: 'Settings', icon: 'settings', href: '/settings.html' },
+    ...(window.NAV_ADMIN_SHELL ? (window.NAV_SHELL.menu || []) : [
+      ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
+      { label: 'Settings', icon: 'settings', href: '/settings.html' },
+    ]),
     { divider: true },
     { label: 'Sign out', icon: 'log-out', onClick: signOut },
   ]);
@@ -534,7 +540,6 @@ function openPalette() {
   ];
   const me = window.currentUser || {};
   const pages = NAV_ITEMS
-    .filter((i) => !i.adminOnly || me.role === 'admin')
     .filter((i) => i.page !== 'billing' || (me.billing && me.billing.billing_enabled))
     .map((i) => ({ group: 'Pages', label: `Go to ${i.label}`, icon: i.icon, run: () => { location.href = i.href; } }));
 

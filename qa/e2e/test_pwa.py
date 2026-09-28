@@ -28,6 +28,7 @@ from smoke_fixtures import BASE_URL, INIT_JS, api_login, browser, pw  # noqa: F4
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "frontend"
 MANIFEST = FRONTEND / "manifest.json"
+ADMIN_MANIFEST = FRONTEND / "manifest-admin.json"
 SHELL_PAGES = {"index", "transactions", "review", "import", "statements", "categories", "rules",
                "reports", "budgets", "insights", "settings", "billing", "admin"}
 NO_SW_PAGES = {"landing", "privacy", "terms", "offline"}
@@ -49,8 +50,14 @@ def png_size(path):
 
 # ---------- static: the files in the repo ----------
 
+# The console installs as its own app, opening on /admin.
+ADMIN_HEAD_LINKS = ('<link rel="manifest" href="/manifest-admin.json">', HEAD_LINKS[1],
+                    '<meta name="apple-mobile-web-app-title" content="iSpend Admin">')
+
+
 def test_every_page_declares_the_manifest_and_apple_icon():
-    missing = {p.stem: [t for t in HEAD_LINKS if t not in p.read_text()] for p in pages()}
+    missing = {p.stem: [t for t in (ADMIN_HEAD_LINKS if p.stem == "admin" else HEAD_LINKS) if t not in p.read_text()]
+               for p in pages()}
     assert {k: v for k, v in missing.items() if v} == {}
 
 
@@ -100,6 +107,13 @@ def test_manifest_shape_and_icons():
     assert [s["url"] for s in m["shortcuts"]] == ["/import.html", "/transactions.html", "/review.html"]
 
 
+def test_admin_manifest_opens_the_console():
+    m, app = json.loads(ADMIN_MANIFEST.read_text()), json.loads(MANIFEST.read_text())
+    assert (m["id"], m["start_url"], m["scope"], m["name"]) == ("/admin", "/admin", "/", "iSpend Admin")
+    assert m["icons"] == app["icons"]
+    assert [s["url"] for s in m["shortcuts"]] == ["/admin#customers", "/admin#revenue"]
+
+
 def test_offline_page_is_self_contained():
     s = (FRONTEND / "offline.html").read_text()
     external = re.findall(r'(?:src|href)="(/[^"]+)"', s)
@@ -138,6 +152,8 @@ def test_manifest_and_worker_are_served(anon):
     r = anon.get(f"{BASE_URL}/manifest.json")
     assert (r.status_code, r.headers["Content-Type"].split(";")[0]) == (200, "application/json")
     assert r.json()["start_url"] == "/index.html"
+    r = anon.get(f"{BASE_URL}/manifest-admin.json")
+    assert (r.status_code, r.json()["start_url"]) == (200, "/admin")
     r = anon.get(f"{BASE_URL}/sw.js")
     assert r.status_code == 200
     assert r.headers["Content-Type"].split(";")[0] in ("application/javascript", "text/javascript")
@@ -215,7 +231,7 @@ def sw_context(browser):
     ctx.add_init_script(f"({INIT_JS})('light');")
     sw_console = []
     ctx.on("console", lambda m: sw_console.append(m.text) if m.type in ("error", "warning") else None)
-    api_login(ctx, "admin")
+    api_login(ctx, "qa_tester")
     page = ctx.new_page()
     rec = Recorder(page)
     yield ctx, page, rec, sw_console
