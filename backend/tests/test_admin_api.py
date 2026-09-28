@@ -18,7 +18,7 @@ import util  # noqa: E402
 
 # Every route the blueprint exposes; the admin-only test walks all of them.
 ROUTES = [
-    ("post", "/api/admin/users"), ("put", "/api/admin/users/5"),
+    ("post", "/api/admin/users"),
     ("put", "/api/admin/users/5/password"),
     ("post", "/api/admin/users/5/lock"), ("post", "/api/admin/users/5/unlock"),
     ("post", "/api/admin/users/5/restore"), ("delete", "/api/admin/users/5"),
@@ -26,6 +26,9 @@ ROUTES = [
     ("get", "/api/admin/audit/actions"), ("get", "/api/admin/settings"),
     ("put", "/api/admin/settings"), ("get", "/api/admin/search?q=a"),
     ("get", "/api/admin/step-up/status"), ("post", "/api/admin/step-up"),
+    ("get", "/api/admin/me/leftover-data"), ("post", "/api/admin/me/leftover-data/wipe"),
+    ("get", "/api/admin/ai-config"), ("put", "/api/admin/ai-config"),
+    ("get", "/api/admin/ai-config/models"), ("post", "/api/admin/ai-config/test"),
 ]
 
 
@@ -66,12 +69,11 @@ class AdminApiTest(unittest.TestCase):
 
     # ---------- guards ----------
 
-    def test_admin_cannot_lock_demote_or_delete_self(self):
+    def test_admin_cannot_lock_or_delete_self(self):
         self.q.routes.append(("FROM users WHERE id", {"id": 1, "username": "me", "role": "admin", "status": "active"}))
         cases = [
             (("post", "/api/admin/users/1/lock", None), "You cannot lock your own account"),
             (("delete", "/api/admin/users/1", None), "You cannot delete your own account"),
-            (("put", "/api/admin/users/1", {"role": "user"}), "You cannot remove your own admin role"),
         ]
         for (method, path, body), message in cases:
             with self.subTest(path=path):
@@ -83,8 +85,7 @@ class AdminApiTest(unittest.TestCase):
         """A read-then-write pair loses to two concurrent demotions, so the guard has to live in
         the UPDATE's WHERE clause and be detected by rowcount."""
         self.q.routes.append(("FROM users WHERE id", {"id": 5, "username": "eve", "role": "admin", "status": "active"}))
-        for method, path, body in (("put", "/api/admin/users/5", {"role": "user"}),
-                                   ("post", "/api/admin/users/5/lock", None),
+        for method, path, body in (("post", "/api/admin/users/5/lock", None),
                                    ("delete", "/api/admin/users/5", None)):
             with self.subTest(path=path):
                 self.x = _stubs.Router([("UPDATE users", 0)], default=1)
@@ -174,6 +175,21 @@ class AdminApiTest(unittest.TestCase):
         self.assertEqual((res.status_code, res.get_json()), (201, {"id": 7, "invited": False}))
         self.assertEqual(seed.call_args.args, (FAKE, 7))
         self.assertEqual(self.x.sql("INSERT INTO users")[0][1][0], "eve")
+
+    def test_the_console_only_creates_customers(self):
+        """There is one kind of admin and it is never made from here."""
+        self.x.routes.append(("INSERT INTO users", {"id": 7}))
+        with mock.patch.object(seed_categories, "seed_for_user"):
+            self._call("post", "/api/admin/users", {"username": "eve", "password": "secret1234x", "role": "admin"})
+        self.assertIn("VALUES (%s, %s, %s, 'user')", self.x.sql("INSERT INTO users")[0][0])
+        self.assertEqual(self._call("put", "/api/admin/users/5", {"role": "admin"}).status_code, 405)
+
+    def test_admin_accounts_are_not_people_in_the_console(self):
+        self._call("post", "/api/admin/users/5/lock")
+        self._call("get", "/api/admin/search?q=eve")
+        for needle in ("FROM users WHERE id", "FROM users u LEFT JOIN subscriptions"):
+            with self.subTest(sql=needle):
+                self.assertIn("role = 'user'", self.q.sql(needle)[0][0])
 
     def test_create_user_validation_and_duplicates(self):
         res = self._call("post", "/api/admin/users", {"username": "eve", "password": "abc"})

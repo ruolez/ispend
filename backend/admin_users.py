@@ -31,7 +31,7 @@ STATES = ("trialing", "active", "grace", "read_only", "admin_exempt")
 TAG_COLORS = tuple(f"c{i}" for i in range(1, 13))
 
 # Every accepted list parameter; the admin's saved views may only hold these.
-FILTER_KEYS = ("q", "status", "role", "state", "plan", "trial_ending", "confirmed", "activated",
+FILTER_KEYS = ("q", "status", "state", "plan", "trial_ending", "confirmed", "activated",
                "seen_within", "inactive_for", "signup_from", "signup_to", "source", "tag", "sort", "dir")
 
 TXN_COUNT = "(SELECT COUNT(*) FROM transactions t WHERE t.user_id = u.id)"
@@ -43,7 +43,7 @@ ACTIVATED = "(u.first_commit_at IS NOT NULL AND u.first_commit_at < u.created_at
 
 # Sort keys are interpolated into SQL, so they may only ever come from this dict.
 SORTS = {
-    "id": "u.id", "username": "lower(u.username)", "email": "lower(u.email)", "role": "u.role",
+    "id": "u.id", "username": "lower(u.username)", "email": "lower(u.email)",
     "status": "u.status", "created_at": "u.created_at", "last_login_at": "u.last_login_at",
     "last_seen_at": "u.last_seen_at", "state": "s.ent_state", "plan": "s.plan", "mrr": "s.mrr_cents",
     "txn_count": TXN_COUNT, "storage_bytes": STORAGE, "lifetime": LIFETIME,
@@ -72,7 +72,8 @@ def user_filters(args):
     """(where clauses, params) for the people list. args is any mapping of list parameters (the
     request's, or a saved query string's for bulk actions). Unknown values are ignored rather than
     rejected, so a stale bookmark still opens."""
-    where, p = [], {}
+    # Admin accounts run the console; they are never customers.
+    where, p = ["u.role = 'user'"], {}
     status = args.get("status") or ""
     if status == "all":
         statuses = list(user_state.STATUSES)
@@ -82,9 +83,6 @@ def user_filters(args):
         statuses = [user_state.ACTIVE, user_state.LOCKED]
     where.append("u.status = ANY(%(statuses)s)")
     p["statuses"] = statuses
-    if args.get("role") in ("admin", "user"):
-        where.append("u.role = %(role)s")
-        p["role"] = args["role"]
     q = (args.get("q") or "").strip()
     if q:
         digits = q.lstrip("#")
@@ -240,7 +238,7 @@ def list_users():
                     "retention_days": retention, "purge_due_count": due["n"]})
 
 
-EXPORT_COLUMNS = ["id", "username", "email", "email_confirmed", "role", "status", "state", "plan", "mrr_cents",
+EXPORT_COLUMNS = ["id", "username", "email", "email_confirmed", "status", "state", "plan", "mrr_cents",
                   "currency", "trial_end", "created_at", "last_seen_at", "activated", "source", "tags",
                   "txn_count", "statement_count", "lifetime_cents"]
 
@@ -265,7 +263,7 @@ def facets():
     sources = db.query(
         """SELECT COALESCE(sa.channel, 'unknown') AS channel, COUNT(*) AS n
              FROM users u LEFT JOIN signup_attribution sa ON sa.user_id = u.id
-            WHERE u.status <> 'deleted' GROUP BY 1 ORDER BY n DESC, 1 LIMIT 30""") or []
+            WHERE u.status <> 'deleted' AND u.role = 'user' GROUP BY 1 ORDER BY n DESC, 1 LIMIT 30""") or []
     tags = db.query(
         """SELECT t.id, t.name, t.color, COUNT(ut.user_id) AS n
              FROM admin_tags t LEFT JOIN user_admin_tags ut ON ut.tag_id = t.id
@@ -331,7 +329,7 @@ def bulk():
 
 def _bulk_one(action, uid, tag_ids, days, reason, me):
     import admin_api
-    row = db.query("SELECT id, username, role, status FROM users WHERE id = %s", (uid,), one=True)
+    row = db.query("SELECT id, username, role, status FROM users WHERE id = %s AND role = 'user'", (uid,), one=True)
     if not row:
         return False, "not found"
     if action == "lock":
@@ -357,8 +355,6 @@ def _bulk_one(action, uid, tag_ids, days, reason, me):
     elif action == "untag":
         db.execute("DELETE FROM user_admin_tags WHERE user_id = %s AND tag_id = ANY(%s)", (uid, tag_ids))
     elif action == "extend_trial":
-        if row["role"] == "admin":
-            return False, "administrator"
         _extend_trial(uid, days)
         audit("billing.extend_trial", {"id": uid, "days": days, "bulk": True}, target=uid)
     return True, None
@@ -386,7 +382,7 @@ def _load(uid):
         """SELECT id, username, email, email_verified_at, verification_required, role, status, locked_at,
                   lock_reason, deleted_at, created_at, last_login_at, last_seen_at, last_active_at,
                   first_upload_at, first_commit_at, preferences
-             FROM users WHERE id = %s""", (uid,), one=True)
+             FROM users WHERE id = %s AND role = 'user'""", (uid,), one=True)
 
 
 @bp.get("/users/<int:user_id>")

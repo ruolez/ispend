@@ -98,5 +98,50 @@ class PrivacyTest(_pg.PgTestCase):
                          ("self", 64, True))
 
 
+@unittest.skipUnless(_pg.available(), "set ISPEND_TEST_DSN and run this file on its own")
+class WipeOwnedDataTest(_pg.PgTestCase):
+    """An admin account that held finance data from before keeps its sign-in and history."""
+
+    def test_wipe_removes_the_finance_data_and_keeps_the_account(self):
+        import config
+        import privacy
+        import seed_categories
+        db = self.db
+        uid = db.execute("INSERT INTO users (username, password_hash, role) VALUES ('boss', 'x', 'admin') RETURNING id",
+                         returning=True)["id"]
+        seed_categories.seed_for_user(db.get_db(), uid)
+        acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Mine', 'checking', 'USD') RETURNING id",
+                          (uid,), returning=True)["id"]
+        cat = db.query("SELECT id FROM categories WHERE user_id = %s AND parent_id IS NOT NULL LIMIT 1", (uid,), one=True)["id"]
+        st = db.execute("""INSERT INTO statements (user_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind, status)
+                           VALUES (%s, %s, 'may.csv', %s, 'def', 30, 'csv', 'committed') RETURNING id""",
+                        (uid, acct, f"{uid}/def.csv"), returning=True)["id"]
+        db.execute("""INSERT INTO transactions (user_id, account_id, statement_id, txn_date, amount, currency, description_raw,
+                                                description_clean, merchant_key, merchant_name, fingerprint, occurrence, category_id)
+                      VALUES (%s, %s, %s, '2026-02-01', -9, 'USD', 'TEA', 'Tea', 'tea', 'Tea', 'fp2', 1, %s)""",
+                   (uid, acct, st, cat))
+        db.execute("INSERT INTO rules (user_id, name, match_type, pattern, category_id) VALUES (%s, 'tea', 'contains', 'TEA', %s)",
+                   (uid, cat))
+        db.execute("INSERT INTO settings (key, value) VALUES (%s, 'sk-own')", (f"u{uid}:openrouter_api_key",))
+        db.execute("INSERT INTO login_events (user_id, kind, ok) VALUES (%s, 'password', true)", (uid,))
+        folder = os.path.join(config.STATEMENTS_DIR, str(uid))
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "def.csv"), "w") as f:
+            f.write("date,amount\n")
+
+        removed = privacy.wipe_owned_data(uid)
+
+        self.assertEqual({k: removed[k] for k in ("transactions", "statements", "accounts", "rules")},
+                         {"transactions": 1, "statements": 1, "accounts": 1, "rules": 1})
+        self.assertEqual(privacy.owned_data_counts(uid), dict.fromkeys(removed, 0))
+        left = {
+            "user": db.query("SELECT COUNT(*) AS n FROM users WHERE id = %s", (uid,), one=True)["n"],
+            "logins": db.query("SELECT COUNT(*) AS n FROM login_events WHERE user_id = %s", (uid,), one=True)["n"],
+            "own_settings": db.query("SELECT COUNT(*) AS n FROM settings WHERE key LIKE %s", (f"u{uid}:%",), one=True)["n"],
+        }
+        self.assertEqual(left, {"user": 1, "logins": 1, "own_settings": 0})
+        self.assertFalse(os.path.exists(folder))
+
+
 if __name__ == "__main__":
     unittest.main()

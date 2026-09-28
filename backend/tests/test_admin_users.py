@@ -54,8 +54,9 @@ class FiltersTest(unittest.TestCase):
         for args, extra_where, extra_params in cases:
             with self.subTest(args=args):
                 where, params = admin_users.user_filters(args)
-                self.assertEqual(where[0], "u.status = ANY(%(statuses)s)", "trash stays hidden unless asked for")
-                self.assertEqual(where[1:], extra_where)
+                self.assertEqual(where[:2], ["u.role = 'user'", "u.status = ANY(%(statuses)s)"],
+                                 "admins are never listed, and trash stays hidden unless asked for")
+                self.assertEqual(where[2:], extra_where)
                 self.assertEqual({k: v for k, v in params.items() if k != "statuses"},
                                  {k: v for k, v in extra_params.items() if k != "statuses"})
                 if "statuses" in extra_params:

@@ -33,7 +33,8 @@ IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/60
 # Every request that must re-check the admin's password, with a body that would otherwise pass
 # validation far enough to write.
 STEP_UP_ROUTES = [
-    ("put", "/api/admin/users/5", {"role": "admin"}),
+    ("post", "/api/admin/me/leftover-data/wipe", {"confirm": "delete"}),
+    ("put", "/api/admin/ai-config", {"api_key": "sk-new"}),
     ("put", "/api/admin/users/5/password", {"password": "a-long-enough-password"}),
     ("delete", "/api/admin/users/5?permanent=true&confirm=eve", None),
     ("get", "/api/admin/audit?format=csv", None),
@@ -227,8 +228,8 @@ class AuditTest(_Base):
 
 
 class AdminFixesTest(_Base):
-    def test_role_status_and_email_sorts_reach_the_sql(self):
-        for key, column in (("role", "u.role DESC"), ("status", "u.status DESC"), ("email", "lower(u.email) DESC")):
+    def test_status_and_email_sorts_reach_the_sql(self):
+        for key, column in (("status", "u.status DESC"), ("email", "lower(u.email) DESC")):
             with self.subTest(key=key):
                 self.q = _stubs.Router()
                 self._send(self._client(), "get", f"/api/admin/users?sort={key}&dir=desc")

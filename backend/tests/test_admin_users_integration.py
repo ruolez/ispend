@@ -53,14 +53,15 @@ class PeopleTest(_pg.PgTestCase):
 
     def test_filters(self):
         cases = [
-            ({}, {self.root, self.amy, self.bob}),
-            ({"status": "all"}, {self.root, self.amy, self.bob, self.gone}),
+            ({}, {self.amy, self.bob}),
+            ({"status": "all"}, {self.amy, self.bob, self.gone}),
+            ({"q": "admin"}, set()),              # the admin account is never a customer
             ({"state": "trialing"}, {self.bob}),
             ({"plan": "monthly"}, {self.amy}),
             ({"activated": "1"}, {self.amy}),
-            ({"activated": "0"}, {self.root, self.bob}),
+            ({"activated": "0"}, {self.bob}),
             ({"source": "search"}, {self.amy}),
-            ({"source": "unknown"}, {self.root, self.bob}),
+            ({"source": "unknown"}, {self.bob}),
             ({"tag": str(self.vip)}, {self.amy}),
             ({"q": "bob@"}, {self.bob}),
             ({"q": f"#{self.bob}"}, {self.bob}),
@@ -76,7 +77,7 @@ class PeopleTest(_pg.PgTestCase):
             for direction in ("asc", "desc"):
                 with self.subTest(sort=key, dir=direction):
                     ids, _ = self._ids(sort=key, dir=direction)
-                    self.assertEqual(set(ids), {self.root, self.amy, self.bob})
+                    self.assertEqual(set(ids), {self.amy, self.bob})
         self.assertEqual(self._ids(sort="lifetime", dir="desc")[0][0], self.amy)
 
     def test_rows_carry_money_tags_and_activation(self):

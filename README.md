@@ -45,7 +45,7 @@ In this mode `.env` holds `PROXY_MODE=1` and `COMPOSE_FILE=docker-compose.yml:do
 ```bash
 cp .env.example .env            # edit the secrets
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-open http://localhost:5559      # admin / ADMIN_INITIAL_PASSWORD
+open http://localhost:5559      # admin / ADMIN_INITIAL_PASSWORD → the console at /admin
 ```
 
 The dev overlay bind-mounts `backend/` with gunicorn `--reload`; the frontend is always served straight from `frontend/` with no-cache headers, so edits show on refresh.
@@ -187,7 +187,18 @@ the archive.
 - `install.sh` keeps its own host-level `pg_dump` backups under `/opt/ispend-backups` for disaster
   recovery. The in-app archive is the migration tool; the two are complementary.
 
-If an instance ever loses its last administrator (manual SQL, a restore), promote one from the host:
+The admin account runs the console at `/admin` and nothing else: it cannot import statements or
+hold transactions, and signing in with it goes straight to the console. To use iSpend yourself,
+sign up a separate account.
+
+If the admin password is lost, set a new one from the host (every open admin session is signed out):
+
+```bash
+docker compose exec backend python -c "import db; db.reset_admin_password('a-new-long-password')"
+```
+
+If an instance ever loses its admin account entirely (manual SQL, a restore), promote an account
+that holds no finance data:
 
 ```bash
 docker compose exec backend python -c "import db; db.promote_admin('admin')"

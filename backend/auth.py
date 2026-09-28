@@ -210,6 +210,36 @@ def current_user_id():
     return session["user_id"]
 
 
+ADMIN_ACCOUNT_CODE = "admin_account"
+# An admin account runs the console and owns no finance data. It reaches the console, its own
+# sign-in and security, and the anonymous endpoints; everything else is the customer app. An
+# allowlist, so a customer blueprint added later is closed to admins without anyone remembering.
+ADMIN_BLUEPRINTS = frozenset({"auth", "public"})
+ADMIN_ENDPOINTS = frozenset({"billing.webhook"})
+ADMIN_BLOCKED_ENDPOINTS = frozenset({
+    "auth.request_my_export", "auth.my_exports", "auth.download_my_export", "auth.delete_my_account",
+})
+
+
+def admin_may_use(blueprint, endpoint):
+    if endpoint in ADMIN_BLOCKED_ENDPOINTS:
+        return False
+    if blueprint is None:                 # /api/health and unmatched paths (the 404 handler answers)
+        return True
+    return (blueprint in ADMIN_BLUEPRINTS or blueprint == "admin" or blueprint.startswith("admin_")
+            or endpoint in ADMIN_ENDPOINTS)
+
+
+def admin_scope_guard():
+    """before_request hook, after refresh_session_user so the role is the current one."""
+    if session.get("role") != "admin" or not request.path.startswith("/api/"):
+        return None
+    if admin_may_use(request.blueprint, request.endpoint):
+        return None
+    return jsonify({"error": "Admin accounts can't use the app. Sign up a separate account for that.",
+                    "code": ADMIN_ACCOUNT_CODE}), 403
+
+
 STEP_UP_TTL_SECONDS = 600
 STEP_UP_MAX_FAILURES = 5
 STEP_UP_CODE = "step_up_required"

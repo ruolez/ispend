@@ -41,9 +41,7 @@ class SettingsApiTest(unittest.TestCase):
                               "openrouter_api_key": "sk-shared", "openrouter_model": "m/shared"})
         body = self._call("get", "/api/settings").get_json()
         self.assertEqual(body, {"openrouter_api_key": MASK, "openrouter_model": "m/mine", "ai_categorize_enabled": "",
-                                "ai_insights_enabled": "", "shared_available": True, "shared_model": "m/shared", "is_admin": False})
-        admin = self._call("get", "/api/settings", uid=1, role="admin").get_json()
-        self.assertEqual((admin["is_admin"], admin["shared_api_key"], admin["openrouter_api_key"]), (True, MASK, ""))
+                                "ai_insights_enabled": "", "shared_available": True, "shared_model": "m/shared"})
 
     def test_put_keeps_key_when_mask_is_echoed_and_stores_per_user(self):
         FAKE.settings["u2:openrouter_api_key"] = "sk-me"
@@ -54,22 +52,11 @@ class SettingsApiTest(unittest.TestCase):
         self._call("put", "/api/settings", {"openrouter_api_key": "sk-other"})
         self.assertEqual(FAKE.settings["u2:openrouter_api_key"], "sk-other")
 
-    def test_only_admins_can_share_or_clear_the_global_key(self):
-        self._call("put", "/api/settings", {"openrouter_api_key": "sk-u", "openrouter_model": "m", "shared": True})
-        self.assertNotIn("openrouter_api_key", FAKE.settings)
-        self._call("put", "/api/settings", {"openrouter_api_key": "sk-a", "openrouter_model": "m", "shared": True}, uid=1, role="admin")
-        self.assertEqual((FAKE.settings["openrouter_api_key"], FAKE.settings["openrouter_model"]), ("sk-a", "m"))
-        self._call("put", "/api/settings", {"clear_shared": True}, uid=1, role="admin")
-        self.assertEqual((FAKE.settings["openrouter_api_key"], FAKE.settings["openrouter_model"]), ("", ""))
-        self.assertEqual(FAKE.settings["u1:openrouter_api_key"], "sk-a")
-
-    def test_share_switch_alone_publishes_the_admins_saved_key_and_model(self):
-        FAKE.settings.update({"u1:openrouter_api_key": "sk-saved", "u1:openrouter_model": "saved/model"})
-        res = self._call("put", "/api/settings", {"shared": True}, uid=1, role="admin")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual((FAKE.settings["openrouter_api_key"], FAKE.settings["openrouter_model"]), ("sk-saved", "saved/model"))
-        res = self._call("put", "/api/settings", {"shared": True, "openrouter_api_key": MASK}, uid=1, role="admin")
-        self.assertEqual(FAKE.settings["openrouter_api_key"], "sk-saved")
+    def test_the_instance_key_cannot_be_set_from_the_app(self):
+        """The instance key lives in the admin console; the app's settings only ever touch your own."""
+        self._call("put", "/api/settings", {"openrouter_api_key": "sk-u", "openrouter_model": "m",
+                                             "shared": True, "clear_shared": True})
+        self.assertEqual(FAKE.settings, {"u2:openrouter_api_key": "sk-u", "u2:openrouter_model": "m"})
 
     def test_client_settings_reflect_the_current_user(self):
         FAKE.settings.update({"u2:openrouter_api_key": "k", "u2:openrouter_model": "m", "u2:ai_categorize_enabled": "1"})

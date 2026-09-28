@@ -241,28 +241,60 @@ def promote_admin(username):
     """Escape hatch: _seed_admin only fires when the users table is empty, so an instance that
     loses its last admin (manual SQL, a restore) has no way back in through the API.
         docker compose exec backend python -c "import db; db.promote_admin('admin')"
+    Admin accounts own no finance data, so a customer account with any cannot be promoted.
     """
     conn = connect()
     try:
         with conn.cursor() as cur:
+            cur.execute("""SELECT u.id,
+                                  EXISTS (SELECT 1 FROM accounts a WHERE a.user_id = u.id)
+                                  OR EXISTS (SELECT 1 FROM transactions t WHERE t.user_id = u.id) AS has_data
+                             FROM users u WHERE u.username = %s""", (username,))
+            row = cur.fetchone()
+            if not row:
+                raise SystemExit(f"No user named {username!r}")
+            if row[1]:
+                raise SystemExit(f"{username!r} holds finance data; admin accounts cannot. "
+                                 "Create a new account for the admin instead.")
             cur.execute("UPDATE users SET role = 'admin', status = 'active', locked_at = NULL, "
                         "deleted_at = NULL, updated_at = now() WHERE username = %s", (username,))
-            if not cur.rowcount:
-                raise SystemExit(f"No user named {username!r}")
         conn.commit()
         print(f"{username} is now an active admin")
     finally:
         conn.close()
 
 
+def reset_admin_password(password, username=None):
+    """Recovery when the admin password is lost:
+        docker compose exec backend python -c "import db; db.reset_admin_password('new-password')"
+    Signs out every session the old password opened."""
+    if len(password or "") < 10:
+        raise SystemExit("Use a password of at least 10 characters")
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE users SET password_hash = %s, session_epoch = session_epoch + 1,
+                                            status = 'active', locked_at = NULL, updated_at = now()
+                            WHERE role = 'admin' AND (%s::text IS NULL OR username = %s)
+                        RETURNING username""", (generate_password_hash(password), username, username))
+            names = [r[0] for r in cur.fetchall()]
+            if not names:
+                raise SystemExit("No admin account found")
+        conn.commit()
+        print(f"New password set for {', '.join(names)}")
+    finally:
+        conn.close()
+
+
 def _seed_categories(conn):
-    """Every user gets the default taxonomy once; users who deleted it all keep it empty."""
+    """Every customer gets the default taxonomy once; those who deleted it all keep it empty.
+    Admin accounts own no finance data."""
     import seed_categories
 
     with conn.cursor() as cur:
         cur.execute(
             """SELECT u.id FROM users u
-               WHERE NOT EXISTS (SELECT 1 FROM categories c WHERE c.user_id = u.id)
+               WHERE u.role = 'user' AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.user_id = u.id)
                  AND NOT COALESCE((u.preferences->>'categories_seeded')::boolean, FALSE)"""
         )
         user_ids = [r[0] for r in cur.fetchall()]

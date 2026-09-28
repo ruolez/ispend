@@ -64,6 +64,7 @@ def create_app():
         g.t0 = time.perf_counter()
 
     app.before_request(auth.refresh_session_user)
+    app.before_request(auth.admin_scope_guard)
 
     @app.before_request
     def _guards():

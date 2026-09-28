@@ -30,7 +30,7 @@ SELECT u.id, u.role, u.created_at,
        s.trial_end, s.current_period_end, s.cancel_at_period_end, s.lapsed_at, s.grace_until,
        s.comped_until, s.synced_at
   FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
- WHERE u.id = %s
+ WHERE u.id = %s AND u.role = 'user'
 """
 
 
@@ -238,7 +238,7 @@ def summary():
                   s.current_period_end, s.cancel_at_period_end, s.lapsed_at, s.grace_until,
                   s.comped_until, s.stripe_subscription_id
              FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
-            WHERE u.status <> 'deleted'""") or []
+            WHERE u.status <> 'deleted' AND u.role = 'user'""") or []
     counts = {}
     for row in rows:
         state = entitlement.evaluate(row)["state"]

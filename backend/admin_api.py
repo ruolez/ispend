@@ -40,7 +40,8 @@ def _not_self(user_id, verb):
 
 def _load(user_id):
     return db.query(
-        "SELECT id, username, role, status, locked_at, lock_reason, deleted_at FROM users WHERE id = %s",
+        """SELECT id, username, role, status, locked_at, lock_reason, deleted_at FROM users
+            WHERE id = %s AND role = 'user'""",
         (user_id,), one=True)
 
 
@@ -88,7 +89,7 @@ def search():
     rows = db.query(
         """SELECT u.id, u.username, u.email, u.status, u.role, s.ent_state
              FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
-            WHERE u.id = %(id)s OR u.username ILIKE %(like)s OR u.email ILIKE %(like)s
+            WHERE u.role = 'user' AND (u.id = %(id)s OR u.username ILIKE %(like)s OR u.email ILIKE %(like)s)
             ORDER BY (u.id = %(id)s) DESC NULLS LAST, (lower(u.email) = lower(%(q)s)) DESC NULLS LAST,
                      u.last_seen_at DESC NULLS LAST, u.id
             LIMIT 8""",
@@ -107,7 +108,6 @@ def create_user():
     username = (data.get("username") or "").strip() or (email or "")
     invite = bool(data.get("send_invite"))
     password = admin_users.random_password() if invite else (data.get("password") or "")
-    role = data.get("role") if data.get("role") in ("admin", "user") else "user"
     access = data.get("access") or "trial"
     if access not in ("trial", "comped"):
         return api_error("access must be trial or comped")
@@ -129,8 +129,8 @@ def create_user():
         return api_error("Username already exists")
     with db.transaction():
         row = db.execute(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING id",
-            (username, email, generate_password_hash(password), role),
+            "INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, 'user') RETURNING id",
+            (username, email, generate_password_hash(password)),
             returning=True, commit=False,
         )
         # Without a row the evaluator would quietly start a trial from created_at; writing it
@@ -147,36 +147,11 @@ def create_user():
     ledger.record_admin(row["id"], "comped" if access == "comped" else "trial_started",
                         {"created_by_admin": True})
     ledger.refresh_ent_state(row["id"])
-    audit("user.create", {"id": row["id"], "username": username, "role": role, "access": access,
+    audit("user.create", {"id": row["id"], "username": username, "access": access,
                           "invited": invite}, target=row["id"])
     if invite:
         admin_users._invite({"id": row["id"], "email": email, "username": username})
     return jsonify({"id": row["id"], "invited": invite}), 201
-
-
-@bp.put("/users/<int:user_id>")
-@admin_required
-@step_up_required
-def update_user(user_id):
-    data = json_body()
-    if not _load(user_id):
-        return api_error("User not found", 404)
-    if "role" in data:
-        if data["role"] not in ("admin", "user"):
-            return api_error("Invalid role")
-        if data["role"] != "admin":
-            if user_id == _uid():
-                return api_error("You cannot remove your own admin role")
-            n = db.execute(
-                "UPDATE users SET role = 'user', updated_at = now() WHERE id = %(id)s" + _LAST_ADMIN_GUARD,
-                {"id": user_id, "uid": user_id})
-            if not n:
-                return api_error(LAST_ADMIN_ERROR, 409)
-        else:
-            db.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s", (user_id,))
-    audit("user.update", {"id": user_id, "fields": [k for k in data if k == "role"],
-                          "role": data.get("role")}, target=user_id)
-    return jsonify({"ok": True})
 
 
 @bp.put("/users/<int:user_id>/password")
@@ -439,3 +414,88 @@ def put_admin_settings():
     if changed:
         audit("settings.admin_update", {"fields": changed})
     return jsonify({"ok": True})
+
+
+# ---------- The admin's own account ----------
+
+WIPE_CONFIRM = "delete"
+
+
+@bp.get("/me/leftover-data")
+@admin_required
+def leftover_data():
+    """Finance data this admin account holds from before admin accounts stopped using the app."""
+    import privacy
+    counts = privacy.owned_data_counts(_uid())
+    return jsonify({"counts": counts, "any": any(counts.values())})
+
+
+@bp.post("/me/leftover-data/wipe")
+@admin_required
+@step_up_required
+def wipe_leftover_data():
+    import privacy
+    if (json_body().get("confirm") or "").strip().lower() != WIPE_CONFIRM:
+        return api_error(f"Type {WIPE_CONFIRM} to confirm", 409)
+    try:
+        counts = privacy.wipe_owned_data(_uid())
+    except privacy.EraseError as e:
+        return api_error(str(e), e.status)
+    audit("admin.leftover_data.wipe", counts)
+    return jsonify({"ok": True, "removed": counts})
+
+
+# ---------- Instance AI key ----------
+# The key and model every customer without their own use. Customers set their own in the app.
+
+AI_MASK = "••••••••"
+
+
+def _ai_config():
+    return {"api_key": AI_MASK if db.get_setting("openrouter_api_key") else "",
+            "model": db.get_setting("openrouter_model") or ""}
+
+
+@bp.get("/ai-config")
+@admin_required
+def get_ai_config():
+    return jsonify(_ai_config())
+
+
+@bp.put("/ai-config")
+@admin_required
+def put_ai_config():
+    data = json_body()
+    key = data.get("api_key")
+    if key is not None and key != AI_MASK:
+        blocked = step_up_missing()
+        if blocked:
+            return blocked
+        db.set_setting("openrouter_api_key", str(key).strip())
+    if "model" in data:
+        db.set_setting("openrouter_model", str(data.get("model") or "").strip()[:200])
+    audit("settings.ai_shared", {"key_changed": key is not None and key != AI_MASK, "model": "model" in data})
+    return jsonify(_ai_config())
+
+
+@bp.get("/ai-config/models")
+@admin_required
+def ai_models():
+    import openrouter
+    try:
+        return jsonify(openrouter.list_models(force=request.args.get("refresh") == "1"))
+    except openrouter.OpenRouterError as e:
+        return api_error(str(e), 502)
+
+
+@bp.post("/ai-config/test")
+@admin_required
+def ai_test():
+    import openrouter
+    data = json_body()
+    key = (data.get("api_key") or "").strip()
+    try:
+        return jsonify(openrouter.test_connection(key=None if key in ("", AI_MASK) else key,
+                                                  model_id=(data.get("model") or "").strip() or None))
+    except openrouter.OpenRouterError as e:
+        return api_error(str(e))

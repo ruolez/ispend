@@ -88,7 +88,7 @@ def resolve(audience, category):
         """SELECT u.id, u.username, u.email, u.status, u.email_verified_at, s.trial_end,
                   EXISTS (SELECT 1 FROM email_suppressions x WHERE x.email_sha256 = encode(sha256(lower(u.email)::bytea), 'hex')) AS suppressed
              FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
-            WHERE u.id = ANY(%s)""", (ids,)) or []
+            WHERE u.id = ANY(%s) AND u.role = 'user'""", (ids,)) or []
     send, skipped = [], {}
 
     def skip(reason):

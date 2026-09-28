@@ -240,6 +240,75 @@ def _cancel_stripe(uid):
     return True
 
 
+# ---------- wiping an account's finance data ----------
+#
+# An admin account owns no finance data. One that had some from before accounts were split keeps
+# its sign-in and history, and loses everything the customer app wrote. Every backed-up table is
+# listed as wiped or kept; a test fails when a new table is added without deciding.
+
+# Deleted by user_id, in an order the foreign keys accept.
+WIPED = ("transactions", "statements", "rules", "budgets", "merchant_memory", "import_layouts", "insights",
+         "recurring_dismissals", "anomaly_dismissals", "tags", "accounts", "categories", "data_exports")
+WIPED_WITH_PARENT = {
+    "import_rows": "statements", "transaction_events": "transactions",
+    "transaction_tags": "transactions", "transaction_splits": "transactions",
+}
+KEPT_ON_WIPE = {
+    "users": "the account itself",
+    "settings": "only the account's own u<id>: keys are wiped",
+    "subscriptions": "billing state, not finance data",
+    "subscription_events": "the revenue ledger",
+    "payments": "the revenue ledger",
+    "stripe_events": "Stripe delivery bookkeeping",
+    "auth_tokens": "sign-in",
+    "login_events": "sign-in history",
+    "audit_log": "the activity log",
+    "ai_calls": "usage and cost bookkeeping",
+    "email_log": "what was sent",
+    "user_activity_days": "usage counts",
+    "signup_attribution": "where the account came from",
+    "admin_notes": "the operator's notes",
+    "admin_tags": "the operator's labels",
+    "user_admin_tags": "the operator's labels",
+    "email_campaigns": "the operator's messages",
+    "email_suppressions": "hashed addresses",
+    "erasures": "anonymous records",
+    "metric_daily": "totals across everyone",
+    "metric_cache": "totals across everyone",
+    "app_errors": "server diagnostics",
+    "backup_jobs": "not backed up",
+    "schema_migrations": "not personal data",
+}
+
+
+def owned_data_counts(uid):
+    row = db.query(
+        """SELECT (SELECT COUNT(*) FROM transactions WHERE user_id = %(u)s) AS transactions,
+                  (SELECT COUNT(*) FROM statements WHERE user_id = %(u)s) AS statements,
+                  (SELECT COUNT(*) FROM accounts WHERE user_id = %(u)s) AS accounts,
+                  (SELECT COUNT(*) FROM rules WHERE user_id = %(u)s) AS rules,
+                  (SELECT COUNT(*) FROM categories WHERE user_id = %(u)s) AS categories,
+                  (SELECT COUNT(*) FROM budgets WHERE user_id = %(u)s) AS budgets""", {"u": uid}, one=True) or {}
+    return {k: int(v or 0) for k, v in row.items()}
+
+
+def wipe_owned_data(uid):
+    """Irreversible. Deletes the account's finance data and files and keeps the account. Returns
+    the counts that were removed."""
+    busy = db.query("""SELECT 1 FROM statements WHERE user_id = %s AND status IN ('parsing','committing')
+                        AND updated_at > now() - interval '10 minutes' LIMIT 1""", (uid,), one=True)
+    if busy:
+        raise EraseError("An import is still running for this account. Try again in a few minutes.")
+    counts = owned_data_counts(uid)
+    with db.transaction():
+        for table in WIPED:
+            db.execute(f"DELETE FROM {table} WHERE user_id = %s", (uid,), commit=False)
+        db.execute("DELETE FROM settings WHERE key LIKE %s", (f"u{uid}:%",), commit=False)
+    shutil.rmtree(os.path.join(config.STATEMENTS_DIR, str(uid)), ignore_errors=True)
+    shutil.rmtree(exports_dir(uid), ignore_errors=True)
+    return counts
+
+
 def erase(uid, requested_by, admin_id=None, reason=None):
     """Irreversible. Returns the erasure record."""
     user = db.query("SELECT id, username, email, role, status FROM users WHERE id = %s", (uid,), one=True)
