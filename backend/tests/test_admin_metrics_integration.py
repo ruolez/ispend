@@ -105,6 +105,18 @@ class OverviewTest(_pg.PgTestCase):
         kinds = [a["kind"] for a in self._overview()["alerts"]]
         self.assertIn("backup_stale", kinds)
 
+    def test_alerts_come_most_urgent_first_and_each_links_somewhere(self):
+        found = self._overview()["alerts"]
+        levels = [a["level"] for a in found]
+        self.assertEqual(levels, sorted(levels, key=lambda lv: {"error": 0, "warn": 1, "info": 2}[lv]))
+        self.assertTrue(all(a["href"].startswith("#") for a in found))
+
+    def test_every_home_tile_opens_something(self):
+        tiles = self._overview()["tiles"]
+        self.assertEqual([t["key"] for t in tiles if not t["drill"]], [])
+        signups = next(t for t in tiles if t["key"] == "signups")
+        self.assertRegex(signups["drill"], r"^#customers\?signup_from=\d{4}-\d\d-\d\d&signup_to=\d{4}-\d\d-\d\d")
+
     def test_snapshot_is_idempotent(self):
         import admin_metrics
         import activity

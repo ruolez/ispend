@@ -261,34 +261,36 @@ def overview(rng):
 
     states = state_counts()
     trial_spark = snapshot_series("ent:trialing", ends)
+    signed_up = f"signup_from={rng['start'].isoformat()}&signup_to={(rng['end'] - timedelta(days=1)).isoformat()}"
 
     tiles = [
         tile("mrr", "MRR", mrr_now, mrr_prev, unit="money", currency=cur,
              spark=[m for m, _ in mrr_series],
              help="Monthly recurring revenue: what active subscriptions bring in each month. Yearly plans "
-                  "count as a twelfth; trials and complimentary accounts count as nothing."),
+                  "count as a twelfth; trials and complimentary accounts count as nothing.", drill="#revenue"),
         tile("paying", "Paying customers", paying_now, paying_prev, spark=[p for _, p in mrr_series],
-             help="People with an active or past-due paid subscription."),
+             help="People with an active or past-due paid subscription.", drill="#customers?state=active,grace"),
         tile("trialing", "On a free trial", states.get("trialing", 0), None, spark=trial_spark,
-             help="Accounts in their free trial right now."),
+             help="Accounts in their free trial right now.", drill="#customers?state=trialing"),
         tile("trials_ending", "Trials ending in 7 days", states.get("trials_ending_7d", 0), None, good="neutral",
-             help="Trials that end within a week — the people to nudge."),
+             help="Trials that end within a week — the people to nudge.", drill="#customers?state=trialing&trial_ending=7"),
         tile("signups", "Sign-ups", sum(signups), prev_signups, spark=signups,
-             agg="sum", help="New accounts created in this period (administrators are not counted)."),
+             agg="sum", help="New accounts created in this period.", drill=f"#customers?{signed_up}&sort=created_at&dir=desc"),
         tile("activation", "Imported in first week", ratio(sum(act_y), sum(act_n)), prev_rate, unit="pct",
              spark=[ratio(y, n) for y, n in zip(act_y, act_n, strict=True)],
              agg="mean", help=f"Of the people who signed up in this period at least {ACTIVATION_DAYS} days ago, the share "
-                  f"who imported a statement within {ACTIVATION_DAYS} days. This is the activation rate."),
+                  f"who imported a statement within {ACTIVATION_DAYS} days. This is the activation rate.", drill="#engagement"),
         tile("importers", "Monthly importers", importers[-1] if importers else 0, importers_prev, spark=importers,
              help="People who imported at least one statement in the 30 days to the end of the period. "
-                  "Statements arrive monthly, so this is the truest sign of a healthy account."),
+                  "Statements arrive monthly, so this is the truest sign of a healthy account.", drill="#engagement"),
         tile("wau", "Weekly active", wau[-1] if wau else 0, wau_prev, spark=wau,
              help="People who imported, sorted transactions or read a report in the last 7 days of the period. "
-                  "Opening the app alone does not count."),
+                  "Opening the app alone does not count.", drill="#engagement"),
         tile("churned", "Cancelled", sum(churned), churned_prev, good="down", spark=churned,
-             agg="sum", help="Paying customers whose subscription ended in this period."),
+             agg="sum", help="Paying customers whose subscription ended in this period.", drill="#revenue"),
         tile("failed_payments", "Failed payments", sum(failed), failed_prev, good="down", spark=failed,
-             agg="sum", help="Renewal charges that did not go through. Stripe retries them; each failure opens a grace period."),
+             agg="sum", help="Renewal charges that did not go through. Stripe retries them; each failure opens a grace period.",
+             drill="#customers?state=grace"),
     ]
     series = {
         "labels": [s.isoformat() for s, _e in bkts],
@@ -313,10 +315,24 @@ def _range_json(rng):
     return {k: (v.isoformat() if isinstance(v, date) else v) for k, v in rng.items() if k != "tz"}
 
 
+# A customer counts as started when they imported a statement within their first week.
+_NOT_ACTIVATED = "NOT (u.first_commit_at IS NOT NULL AND u.first_commit_at < u.created_at + interval '7 days')"
+
+ALERT_ORDER = {"error": 0, "warn": 1, "info": 2}
+
+
 def alerts():
-    """Things that need a person, newest first. Each links to where it can be dealt with."""
-    row = db.query("""
+    """The Home inbox: things that need a person, the most urgent first. Each links to the list or
+    page where it can be dealt with; hash queries are turned into filters by the console's router."""
+    row = db.query(f"""
         SELECT (SELECT COUNT(*) FROM login_events WHERE new_network AND created_at > now() - interval '7 days') AS new_network,
+               (SELECT COUNT(*) FROM subscriptions s JOIN users u ON u.id = s.user_id
+                 WHERE s.ent_state = 'grace' AND u.role = 'user' AND u.status <> 'deleted') AS payment_due,
+               (SELECT COUNT(*) FROM subscriptions s JOIN users u ON u.id = s.user_id
+                 WHERE s.ent_state = 'trialing' AND s.trial_end < now() + interval '3 days'
+                   AND u.role = 'user' AND u.status = 'active' AND {_NOT_ACTIVATED}) AS trials_not_started,
+               (SELECT COUNT(*) FROM statements st JOIN users u ON u.id = st.user_id
+                 WHERE st.status = 'error' AND st.created_at > now() - interval '24 hours' AND u.role = 'user') AS failed_imports,
                (SELECT COUNT(*) FROM statements WHERE status IN ('parsing', 'committing')
                   AND updated_at < now() - interval '15 minutes') AS stuck_imports,
                (SELECT COUNT(*) FROM stripe_events WHERE status = 'failed'
@@ -327,26 +343,33 @@ def alerts():
                (SELECT MAX(finished_at) FROM backup_jobs WHERE kind = 'backup' AND status = 'done') AS last_backup
         """, one=True) or {}
     out = []
-    if row.get("new_network"):
-        out.append({"kind": "new_admin_network", "level": "warn", "count": int(row["new_network"]),
-                    "text": "An administrator signed in from a new network this week.", "href": "#activity?admin=1"})
-    if row.get("stuck_imports"):
-        out.append({"kind": "stuck_imports", "level": "warn", "count": int(row["stuck_imports"]),
-                    "text": "Imports have been stuck for more than 15 minutes.", "href": "#system"})
-    if row.get("webhook_failures"):
-        out.append({"kind": "webhook_failures", "level": "error", "count": int(row["webhook_failures"]),
-                    "text": "Stripe webhooks failed in the last day.", "href": "#system"})
-    if row.get("email_failures"):
-        out.append({"kind": "email_failures", "level": "warn", "count": int(row["email_failures"]),
-                    "text": "Emails failed to send in the last day.", "href": "#system"})
-    if row.get("errors"):
-        out.append({"kind": "errors", "level": "warn", "count": int(row["errors"]),
-                    "text": "Server errors were recorded in the last day.", "href": "#system"})
+
+    def add(kind, level, text, href):
+        n = int(row.get(kind) or 0)
+        if n:
+            out.append({"kind": kind, "level": level, "count": n, "text": text(n), "href": href})
+
+    def people(n):
+        return "1 customer" if n == 1 else f"{n} customers"
+
+    add("payment_due", "error", lambda n: f"{people(n)} could not be charged and are in their grace period.",
+        "#customers?state=grace")
+    add("webhook_failures", "error", lambda n: "Stripe could not reach iSpend in the last day.", "#system")
+    add("trials_not_started", "warn",
+        lambda n: f"{people(n)} end their trial within 3 days without having imported a statement.",
+        "#customers?state=trialing&trial_ending=3&activated=0")
+    add("failed_imports", "warn", lambda n: f"{n} statement{'s' if n != 1 else ''} could not be read in the last day.",
+        "#imports")
+    add("stuck_imports", "warn", lambda n: "Imports have been stuck for more than 15 minutes.", "#system")
+    add("email_failures", "warn", lambda n: "Emails failed to send in the last day.", "#system")
+    add("errors", "warn", lambda n: "Server errors were recorded in the last day.", "#system")
+    add("new_network", "warn", lambda n: "You signed in from a new network this week.", "#activity?admin=1")
     last = row.get("last_backup")
     if last is None or last < datetime.now(timezone.utc) - timedelta(days=7):
         out.append({"kind": "backup_stale", "level": "info", "count": 0,
                     "text": "No backup in the last 7 days." if last else "No backup has been made yet.",
                     "href": "#backup"})
+    out.sort(key=lambda a: ALERT_ORDER[a["level"]])
     return out
 
 
@@ -503,7 +526,8 @@ def revenue(rng):
         tile("arr", "ARR", now_br["end_mrr"] * 12, prev_br["end_mrr"] * 12, **money,
              help="Annual run rate: MRR × 12."),
         tile("paying", "Paying customers", now_br["customers_end"], prev_br["customers_end"],
-             spark=[p for _, p in mrr_series], help="Customers with an active or past-due paid subscription."),
+             spark=[p for _, p in mrr_series], help="Customers with an active or past-due paid subscription.",
+             drill="#customers?state=active,grace"),
         tile("arpa", "Average per customer", now_r["arpa"], prev_r["arpa"], **money,
              help="MRR divided by paying customers (ARPA)."),
         tile("net_new_mrr", "Net new MRR", now_r["net_new_mrr"], prev_r["net_new_mrr"], **money,

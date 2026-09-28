@@ -1,13 +1,16 @@
-/* Admin › Overview: the ten numbers that say how iSpend is doing, how they moved, and what needs a
-   person. Everything comes from GET /api/admin/metrics/overview (cached five minutes server side). */
+/* Admin › Home: what needs a person first, whether the machinery is working, then the numbers that
+   say how iSpend is doing and how they moved. Numbers and the inbox come from GET
+   /api/admin/metrics/overview (cached five minutes server side); the status strip from
+   /api/admin/system/health. Every tile and inbox row opens the list or page behind it. */
 
 const AOV = { charts: {}, data: null };
 
 AdminPanels.register('overview', {
   label: 'Home', icon: 'home', group: 'home', ranged: true, compare: true,
-  sub: 'Revenue, growth and use over the selected period',
+  sub: 'What needs you, and how iSpend is doing over the selected period',
   markup: `
     <div id="ov-alerts"></div>
+    <div class="adm-status" id="ov-status" aria-label="System status"></div>
     <div id="ov-tiles"></div>
     <div class="grid grid-2 mt-4">
       <section class="card chart-card">
@@ -16,17 +19,12 @@ AdminPanels.register('overview', {
         <div class="chart-legend" id="lg-ov-signups"></div>
       </section>
       <section class="card chart-card">
-        <header class="card-head"><h2>Active people</h2></header>
-        <div class="chart-body" style="--h:220px"><canvas id="ch-ov-active" aria-label="Weekly and monthly active people" role="img"></canvas></div>
+        <header class="card-head"><h2>Active customers</h2></header>
+        <div class="chart-body" style="--h:220px"><canvas id="ch-ov-active" aria-label="Weekly and monthly active customers" role="img"></canvas></div>
         <div class="chart-legend" id="lg-ov-active"></div>
       </section>
     </div>
-    <section class="card chart-card mt-4">
-      <header class="card-head"><h2>Monthly recurring revenue</h2><span class="hint" id="ov-mrr-note"></span></header>
-      <div class="chart-body" style="--h:240px"><canvas id="ch-ov-mrr" aria-label="Monthly recurring revenue over time" role="img"></canvas></div>
-      <div class="chart-legend" id="lg-ov-mrr"></div>
-    </section>
-    <div class="row-between mt-3"><span></span><span class="hint" id="ov-asof"></span></div>`,
+    <div class="row-between mt-3"><span class="hint" id="ov-mrr-note"></span><span class="hint" id="ov-asof"></span></div>`,
   load: loadAdminOverview,
 });
 
@@ -41,7 +39,8 @@ async function loadAdminOverview(host, ctx) {
   }
   if (!ctx.isCurrent()) return;
   AOV.data = d;
-  renderOverviewAlerts(d.alerts || []);
+  renderOverviewAlerts(d.alerts || [], AOV.leftover);
+  loadOverviewExtras(ctx);
   $('#ov-tiles').innerHTML = adminTiles(d.tiles);
   renderOverviewCharts(d);
   $('#ov-asof').innerHTML = adminAsOf(d.as_of);
@@ -52,15 +51,38 @@ async function loadAdminOverview(host, ctx) {
 const ALERT_ICON = { error: 'alert-circle', warn: 'alert-triangle', info: 'info' };
 const ALERT_TONE = { error: 'danger', warn: 'warning', info: 'info' };
 
-/* One compact list rather than a stack of banners: on a healthy day it is a single line or gone. */
-function renderOverviewAlerts(alerts) {
-  $('#ov-alerts').innerHTML = alerts.length ? `
-    <section class="card adm-alerts mb-4" aria-label="Needs attention">
-      ${alerts.map((a) => `<a class="adm-alert adm-alert--${ALERT_TONE[a.level] || 'info'}" href="${esc(a.href)}">
+/* The inbox: one compact list, most urgent first, each row going where it can be dealt with. On a
+   healthy day it says so in one line. */
+function renderOverviewAlerts(alerts, leftover) {
+  const rows = [...alerts];
+  if (leftover) rows.push({ level: 'info', count: 0, href: '#settings/account',
+    text: 'Your admin account still holds finance data from before. Delete it in Settings › My account.' });
+  $('#ov-alerts').innerHTML = `<section class="card adm-alerts mb-4" aria-labelledby="ov-inbox-h">
+    <header class="adm-inbox-head"><h2 id="ov-inbox-h">Needs attention</h2>${rows.length ? `<span class="badge badge-neutral">${fmtNumber(rows.length)}</span>` : ''}</header>
+    ${rows.length ? rows.map((a) => `<a class="adm-alert adm-alert--${ALERT_TONE[a.level] || 'info'}" href="${esc(a.href)}">
         ${icon(ALERT_ICON[a.level] || 'info', 'ico-sm')}<span class="grow">${esc(a.text)}</span>
-        ${a.count > 1 ? `<span class="badge badge-neutral">${fmtNumber(a.count)}</span>` : ''}${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}
-    </section>` : '';
+        ${a.count > 1 ? `<span class="badge badge-neutral">${fmtNumber(a.count)}</span>` : ''}${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')
+    : `<div class="adm-alert adm-alert--clear">${icon('check-circle', 'ico-sm')}<span class="grow">All clear — nothing needs you right now.</span></div>`}
+  </section>`;
 }
+
+/* The status strip and the leftover-data reminder load beside the numbers, never in their way. */
+async function loadOverviewExtras(ctx) {
+  const [health, leftover] = await Promise.all([
+    api(`/api/admin/system/health${ctx.force ? '?refresh=1' : ''}`).catch(() => null),
+    AOV.leftover === undefined ? api('/api/admin/me/leftover-data').then((r) => r.any).catch(() => false) : AOV.leftover,
+  ]);
+  if (!ctx.isCurrent()) return;
+  if (leftover !== AOV.leftover) { AOV.leftover = leftover; renderOverviewAlerts(AOV.data.alerts || [], leftover); }
+  $('#ov-status').innerHTML = health ? SYS_PARTS.filter(([k]) => k !== 'storage').map(([key, label]) => {
+    const off = key === 'stripe' && !health.stripe.enabled;
+    const st = health[key].status;
+    return `<a class="adm-status-item" href="#system" data-tip="${esc(chipSummary(key, health[key]))}">
+      <i class="dot" style="--c:var(--${off ? 'text-4' : SYS_TONE[st]})"></i><span>${esc(label)}</span>
+      <span class="sr-only">: ${esc(off ? 'off' : SYS_WORD[st])}, ${esc(chipSummary(key, health[key]))}</span></a>`;
+  }).join('') : '';
+}
+window.addEventListener('ispend:admin-leftover-cleared', () => { AOV.leftover = false; });
 
 function ovLabels(d) {
   return d.series.labels.map((l) => (d.range.bucket === 'month' ? fmtMonth(l.slice(0, 7)) : fmtDate(l)));
@@ -100,19 +122,6 @@ function renderOverviewCharts(d) {
   });
   charts.htmlLegend($('#lg-ov-active'), AOV.charts.active);
 
-  const cur = (d.currency || 'usd').toUpperCase();
-  AOV.charts.mrr = makeChart($('#ch-ov-mrr'), (t) => {
-    const a = catColor('c2');
-    return {
-      type: 'line',
-      data: { labels, datasets: [
-        { label: 'MRR', data: s.mrr.map((v) => v / 100), borderColor: a, backgroundColor: (c) => charts.gradientFill(c.chart.ctx, a, { from: 0.25 }), fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
-        ...(prev ? [{ label: 'MRR, previous period', data: prev.mrr.map((v) => v / 100), ...dashed(a) }] : []),
-      ] },
-      options: charts.lineOptions(t, { currency: cur }),
-    };
-  });
-  charts.htmlLegend($('#lg-ov-mrr'), AOV.charts.mrr, { currency: cur });
 }
 
 document.addEventListener('click', (e) => {

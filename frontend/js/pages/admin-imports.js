@@ -39,11 +39,11 @@ async function loadAdminImports(host, ctx) {
   $('#im-tiles').innerHTML = adminTiles([
     { key: 'uploaded', label: 'Statements uploaded', value: t.uploaded, spark: d.series.n, agg: 'sum', help: 'Files people uploaded in this period.' },
     { key: 'committed', label: 'Imported', value: t.committed, spark: d.series.committed, agg: 'sum', help: 'Uploads that became transactions.' },
-    { key: 'failed', label: 'Could not be read', value: t.failure_rate, unit: 'pct', help: `${plural(t.failed, 'upload')} in this period failed to read.` },
-    { key: 'read_time', label: 'Typical reading time', value: t.p50_ms == null ? null : t.p50_ms / 1000, unit: 'secs',
+    { key: 'failed', label: 'Could not be read', value: t.failure_rate, unit: 'pct', good: 'down', help: `${plural(t.failed, 'upload')} in this period failed to read.` },
+    { key: 'read_time', label: 'Typical reading time', value: t.p50_ms == null ? null : t.p50_ms / 1000, unit: 'secs', good: 'down',
       help: `Median time to read a file. The slowest 5% take ${t.p95_ms == null ? '—' : `${fmtNumber(t.p95_ms / 1000, { decimals: 1 })} s`} (scanned PDFs).` },
     { key: 'ai_calls', label: 'AI requests', value: a.calls, spark: ai.series.calls, agg: 'sum', help: `${plural(a.users, 'person')} used AI; ${fmtPct(a.error_rate || 0)} of requests failed.` },
-    { key: 'ai_cost', label: 'AI cost on the shared key', value: Math.round(a.shared_cost_usd * 100), unit: 'money', currency: 'usd',
+    { key: 'ai_cost', label: 'AI cost on the shared key', value: Math.round(a.shared_cost_usd * 100), unit: 'money', currency: 'usd', good: 'neutral',
       help: 'What the shared OpenRouter key spent. People who use their own key pay for their own requests.' },
   ].map((x) => ({ good: 'up', ...x })).map(adminTileFormatSeconds));
   renderImportChart(d);

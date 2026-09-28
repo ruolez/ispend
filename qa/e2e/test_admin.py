@@ -204,7 +204,18 @@ class TestShell:
         page.locator(".adm-kpi").first.wait_for()
         assert page.locator(".adm-kpi").count() == len(TILE_KEYS)
         assert page.locator("#admin-title").inner_text() == "Home"
-        assert page.locator("#ch-ov-mrr").is_visible()
+        assert page.locator("#ch-ov-signups").is_visible()
+        assert page.locator("#ov-alerts h2").inner_text() == "Needs attention"
+        assert page.locator("a.adm-kpi").count() == len(TILE_KEYS), "every tile opens the list or page behind it"
+
+    def test_a_tile_opens_the_customers_behind_it(self, page):
+        page.goto(f"{BASE}/admin?range=30d#overview")
+        page.locator('a.adm-kpi[data-kpi="trialing"]').click()
+        page.locator("#users-table tr[data-id], #users-table .empty").first.wait_for()
+        assert page.url.endswith("?range=30d&state=trialing#customers") or ("state=trialing" in page.url and page.url.endswith("#customers"))
+        assert page.locator("#u-views .tab.active").inner_text() == "On a trial"
+        page.go_back()
+        page.locator(".adm-kpi").first.wait_for()
         assert page.errors == []
 
     def test_admin_navigation_replaces_the_app_s(self, page):

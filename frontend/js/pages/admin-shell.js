@@ -141,7 +141,15 @@ function deltaHtml(t) {
     : t.delta_pct != null ? fmtPct(Math.abs(t.delta_pct)) : fmtAdminValue(Math.abs(t.delta), t.unit, t.currency);
   const word = dir === 'flat' ? 'No change' : size;
   return `<span class="stat-delta ${tone}">${dir === 'flat' ? '' : icon(dir === 'up' ? 'arrow-up-right' : 'arrow-down-right')}${esc(word)}
-    <span class="stat-delta-vs">vs previous</span></span>`;
+    <span class="stat-delta-vs" data-tip="${esc(`Compared with ${adminVsLabel().slice(3)}`)}">vs previous</span></span>`;
+}
+
+/* What a delta is measured against, in the period's own words. */
+function adminVsLabel(r = adminRange()) {
+  const days = { '7d': 7, '30d': 30, '90d': 90 }[r.range];
+  if (days) return `vs the ${days} days before`;
+  return { '12m': 'vs the 12 months before', mtd: 'vs last month so far', ytd: 'vs last year so far' }[r.range]
+    || 'vs the period before';
 }
 
 /* At most `max` points, combined the way the metric allows (see admin_metrics.tile): a 90-day run of
@@ -338,13 +346,21 @@ function adminAskToLeave(form) {
   });
 }
 
+/* Both hashchange and popstate lead here: Back to an entry whose query differs (the router rewrote
+   it) fires only popstate, a plain hash change fires both, one right after the other. */
+let adminLastNav = { href: null, at: 0 };
 async function adminOnHashChange() {
+  const now = Date.now();
+  if (ADMIN.asking) return undefined;           // the other event of the pair that opened the question
+  if (adminLastNav.href === location.href && now - adminLastNav.at < 250) return undefined;
+  adminLastNav = { href: location.href, at: now };
   const form = adminDirtyForm();
   const next = adminRoute();
   if (form && ADMIN.lastUrl && adminPageKey(next) !== adminPageKey(ADMIN.route)) {
     const target = location.href;
     history.replaceState(history.state, '', ADMIN.lastUrl);
-    const choice = await adminAskToLeave(form);
+    ADMIN.asking = true;
+    const choice = await adminAskToLeave(form).finally(() => { ADMIN.asking = false; });
     if (choice === 'stay') return undefined;
     if (choice === 'discard') form.discard();
     history.replaceState(history.state, '', target);
@@ -447,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#admin-layout').hidden = false;
     api('/api/admin/shell').then((sh) => paintEnvBadge(sh.stripe_mode)).catch(() => {});
     window.addEventListener('hashchange', adminOnHashChange);
+    window.addEventListener('popstate', adminOnHashChange);
     ui.shortcuts.register('r', () => AdminPanels.refresh(), { description: 'Admin: refresh this page' });
     window.PAGE_SHORTCUTS = [{ title: 'Admin', items: [['r', 'Refresh this page'],
       ...keys.filter((k) => ADMIN_KEYS[k]).map((k) => [`g ${ADMIN_KEYS[k]}`, ADMIN.sections[k].label])] }];
