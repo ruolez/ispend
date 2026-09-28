@@ -13,7 +13,9 @@
 .rv-list.has-focus .rv-card:not(.is-focused) { background: var(--bg); border-color: var(--border); } /* recede without dropping text contrast */
 .rv-card.is-leaving { opacity: 0; transform: translateX(24px); max-height: 0 !important; overflow: hidden; margin-top: -10px; padding-top: 0; padding-bottom: 0; border-width: 0; }
 .rv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.rv-name { font-size: var(--fs-lg); font-weight: 600; }
+/* The text column may shrink: a long raw bank line ellipsises instead of pushing the card sideways. */
+.rv-head > :first-child { min-width: 0; max-width: 100%; }
+.rv-name { font-size: var(--fs-lg); font-weight: 600; overflow-wrap: anywhere; }
 .rv-meta { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
 .rv-meta .amt { color: var(--text-2); font-weight: 500; }
 .rv-raw { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-4); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

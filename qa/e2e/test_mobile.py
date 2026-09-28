@@ -14,8 +14,10 @@ from helpers import PAGES, wait_loaded
 from smoke_fixtures import (  # noqa: F401  (pytest fixtures)
     BASE_URL,
     INIT_JS,
+    _data_user,
     api_login,
     browser,
+    data_persona_for,
     pw,
 )
 from test_phone import ALLOW_HSCROLL, INNER_OVERFLOW_JS
@@ -233,23 +235,26 @@ SHELL_JS = r"""
 
 @pytest.fixture(scope="module")
 def session_state(browser):
-    ctx = browser.new_context(base_url=BASE_URL, service_workers="block")
-    api_login(ctx, "admin")
-    state = ctx.storage_state()
-    ctx.close()
-    return state
+    """A signed-in cookie jar per persona: the customer with data for the app, admin for the console."""
+    states = {}
+    for persona in ("qa_data", "admin"):
+        ctx = browser.new_context(base_url=BASE_URL, service_workers="block")
+        api_login(ctx, persona)
+        states[persona] = ctx.storage_state()
+        ctx.close()
+    return states
 
 
 @pytest.fixture(scope="module")
 def device(browser, session_state):
-    """device(key, persona='admin'|'anon') -> a fresh page in a touch/mobile context of that size."""
+    """device(key, persona='qa_data'|'admin'|'anon') -> a fresh page in a touch/mobile context of that size."""
     made = []
 
-    def _open(key, persona="admin"):
+    def _open(key, persona="qa_data"):
         w, h = DEVICES[key]
         ctx = browser.new_context(viewport={"width": w, "height": h}, is_mobile=True, has_touch=True, user_agent=UA_IOS,
                                   device_scale_factor=2, base_url=BASE_URL, service_workers="block",
-                                  storage_state=session_state if persona == "admin" else None)
+                                  storage_state=session_state.get(persona))
         ctx.add_init_script(f"({INIT_JS})({json.dumps('light')});")
         made.append(ctx)
         return ctx.new_page()
@@ -269,7 +274,7 @@ def measure(device, page_key, dev=PHONE):
     """Measurements for one page on one device, computed once per session."""
     if (page_key, dev) not in _cache:
         auth = page_key in PAGES
-        page = device(dev, "admin" if auth else "anon")
+        page = device(dev, data_persona_for(page_key) if auth else "anon")
         page.goto(PAGES[page_key] if auth else AUTH_PAGES[page_key])
         if auth:
             wait_loaded(page)
@@ -425,7 +430,7 @@ def test_date_sheet_fits_visual_viewport(device):
 @pytest.mark.parametrize("page_key", ["index", "transactions", "review", "budgets", "categories", "rules", "reports", "statements"])
 def test_desktop_hides_phone_chrome(browser, session_state, page_key):
     """The phone-only chrome (topbar +, header ⋯, More sheet trigger, .phone-only controls, day headers) never shows at 1440."""
-    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, base_url=BASE_URL, service_workers="block", storage_state=session_state)
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, base_url=BASE_URL, service_workers="block", storage_state=session_state["qa_data"])
     try:
         page = ctx.new_page()
         page.goto(PAGES[page_key])

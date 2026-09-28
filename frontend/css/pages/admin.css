@@ -162,6 +162,7 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .adm-status:empty { display: none; }
 .adm-status-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); text-decoration: none; }
 @media (hover: hover) { .adm-status-item:hover { color: var(--text-1); text-decoration: none; } }
+@media (pointer: coarse) { .adm-status-item { min-height: 40px; } .adm-status { gap: 0 var(--sp-4); } }
 
 @media (max-width: 640px) {
   #admin-actions { justify-content: flex-start; width: 100%; }

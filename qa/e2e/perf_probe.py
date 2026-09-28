@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 from ratelimit import login_with_retry
 
 BASE_URL = os.environ.get("ISPEND_BASE_URL", "http://localhost:5559")
-USER = (os.environ.get("ISPEND_PERF_USER", "admin"), os.environ.get("ISPEND_PERF_PASSWORD", "admin"))
+USER = (os.environ.get("ISPEND_PERF_USER", "qa_data"), os.environ.get("ISPEND_PERF_PASSWORD", "qa-data-pass1"))
 TABS = ["/index.html", "/transactions.html", "/review.html", "/budgets.html"]
 # Two rounds of the bottom tabs (the second is the "warm" switch a returning thumb makes), then More pages.
 SEQUENCE = TABS + TABS + ["/reports.html", "/insights.html", "/categories.html", "/rules.html", "/settings.html"]

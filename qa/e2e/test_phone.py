@@ -11,7 +11,7 @@ import time
 import pytest
 
 from helpers import PAGES, wait_loaded
-from smoke_fixtures import base_url, browser, make_context, pw  # noqa: F401  (pytest fixtures)
+from smoke_fixtures import _data_user, base_url, browser, data_persona_for, make_context, pw  # noqa: F401  (pytest fixtures)
 from playwright.sync_api import TimeoutError as PWTimeout
 
 # Elements that legitimately scroll sideways on a phone (chip rows, tab strips, mapping tables, charts).
@@ -71,7 +71,7 @@ def _params(keys, xfail, reason):
 
 @pytest.mark.parametrize("page_key", _params(sorted(PAGES), OVERFLOW_XFAIL, "phone card-mode layouts land in Phase 4"))
 def test_no_inner_overflow_390(make_context, page_key):
-    _, page, _ = make_context("admin", "light", "390")
+    _, page, _ = make_context(data_persona_for(page_key), "light", "390")
     page.goto(PAGES[page_key])
     wait_loaded(page)
     bad = page.evaluate(INNER_OVERFLOW_JS, ALLOW_HSCROLL)
@@ -80,7 +80,7 @@ def test_no_inner_overflow_390(make_context, page_key):
 
 @pytest.mark.parametrize("page_key", _params(sorted(PAGES), WRAP_XFAIL, "amount cells still wrap; fixed in Phases 2 and 4"))
 def test_amounts_single_line_390(make_context, page_key):
-    _, page, _ = make_context("admin", "light", "390")
+    _, page, _ = make_context(data_persona_for(page_key), "light", "390")
     page.goto(PAGES[page_key])
     wait_loaded(page)
     wrapped = page.evaluate(AMOUNT_WRAP_JS, AMOUNT_SEL)
@@ -90,7 +90,7 @@ def test_amounts_single_line_390(make_context, page_key):
 @pytest.mark.parametrize("page_key", _params(["index", "transactions", "review", "rules", "reports"], KEYBOARD_XFAIL,
                                              "hand-painted segmented controls/tabs gain arrow keys in Phase 2"))
 def test_seg_tabs_keyboard(make_context, page_key):
-    _, page, _ = make_context("admin", "light", "1440")
+    _, page, _ = make_context("qa_data", "light", "1440")
     page.goto(PAGES[page_key])
     wait_loaded(page)
     groups = page.evaluate(GROUPS_JS)
@@ -272,7 +272,7 @@ def test_rem_scale(make_context):
 def test_kpi_grid_2x2_390(make_context):
     """Stat cards sit two per row on a phone and their values stay on one line."""
     for key in ("index", "insights"):
-        _, page, _ = make_context("admin", "light", "390")
+        _, page, _ = make_context("qa_data", "light", "390")
         page.goto(PAGES[key])
         wait_loaded(page)
         rects = page.evaluate("() => Array.from(document.querySelectorAll('.stat-grid > .stat')).map((s) => { const r = s.getBoundingClientRect(); const v = s.querySelector('.stat-value').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(v.height) }; })")
@@ -283,7 +283,7 @@ def test_kpi_grid_2x2_390(make_context):
 
 def test_card_mode_tables_390(make_context):
     """Breakdown, recurring, statements and import-preview tables become cards on a phone: no sideways scroll."""
-    _, page, _ = make_context("admin", "light", "390")
+    _, page, _ = make_context("qa_data", "light", "390")
     for key, table in (("index", ".bd-table"), ("insights", ".rec-table"), ("statements", ".tbl-statements")):
         page.goto(PAGES[key])
         wait_loaded(page)
@@ -312,7 +312,7 @@ def test_card_mode_tables_390(make_context):
 
 def test_bottom_sheet_pickers_390(make_context):
     """Popovers open as bottom sheets on a phone: full width, inside the viewport, presets and Apply visible."""
-    _, page, _ = make_context("admin", "light", "390")
+    _, page, _ = make_context("qa_data", "light", "390")
     page.goto(PAGES["transactions"])
     wait_loaded(page)
     page.click("#f-range")
@@ -332,7 +332,7 @@ def test_bottom_sheet_pickers_390(make_context):
     ("reports-cashflow", PAGES["reports"], "cashflow"),
 ])
 def test_no_inner_overflow_states_390(make_context, name, url, tab):
-    _, page, _ = make_context("admin", "light", "390")
+    _, page, _ = make_context("qa_data", "light", "390")
     page.goto(url)
     wait_loaded(page)
     if tab:

@@ -422,9 +422,10 @@ function paintEnvBadge(mode) {
   const [cls, label, tip] = ENV_BADGES[mode] || ENV_BADGES.off;
   let el = $('#adm-env');
   if (!el) {
-    el = document.createElement('a');
+    // Status, not a control: Settings › Billing is one click away in the sidebar.
+    el = document.createElement('span');
     el.id = 'adm-env';
-    el.href = '#settings/billing';
+    el.setAttribute('role', 'status');
     $('.tb-actions').prepend(el);
   }
   el.className = `badge ${cls} adm-env`;

@@ -2,7 +2,8 @@
 
 Run:  <venv>/bin/pytest qa/e2e/test_smoke.py -q
 Results are appended to qa/reports/smoke-results.jsonl; qa/e2e/make_report.py renders the tables.
-Personas: qa_tester (empty data, mutable) and admin (populated, READ-ONLY: every modal is cancelled)."""
+Personas: qa_tester (empty data, mutable), qa_data (populated, READ-ONLY: every modal is cancelled)
+and admin, which only opens the console."""
 # ruff: noqa: F811  (pytest fixtures imported from smoke_fixtures are re-bound as test parameters)
 import json
 import time
@@ -11,14 +12,14 @@ import pytest
 from playwright.sync_api import TimeoutError as PwTimeout
 
 from ratelimit import login_with_retry, submit_login
-from smoke_fixtures import PERSONAS, SHOTS, THEMES, VIEWPORTS, record
-from smoke_fixtures import _results_sink, base_url, browser, make_context, pw  # noqa: F401  (pytest fixtures)
+from smoke_fixtures import PERSONAS, SHOTS, THEMES, VIEWPORTS, data_persona_for, personas_for, record
+from smoke_fixtures import _data_user, _results_sink, base_url, browser, make_context, pw  # noqa: F401  (pytest fixtures)
 from helpers import (
     BUTTONS_JS, CHART_PAGES, DENY_WORDS, PAGES, close_layers, layers, perf_state, rgb, scan_text, settle,
     shell_state, unexpected_console, wait_loaded,
 )
 
-MATRIX = [(pg, persona, theme, vp) for pg in PAGES for persona in PERSONAS for theme in THEMES for vp in VIEWPORTS]
+MATRIX = [(pg, persona, theme, vp) for pg in PAGES for persona in personas_for(pg) for theme in THEMES for vp in VIEWPORTS]
 LIGHT_BG = (245, 246, 248)
 DARK_BG = (12, 14, 19)
 
@@ -424,7 +425,8 @@ def probe_goto(page, rec, steps, pg):
 
 @pytest.mark.parametrize("pg,theme,vp", PROBE_COMBOS, ids=[f"{a}-{b}-{c}" for a, b, c in PROBE_COMBOS])
 def test_probes_admin(make_context, pg, theme, vp):
-    ctx, page, rec = make_context("admin", theme, vp)
+    persona = data_persona_for(pg)
+    ctx, page, rec = make_context(persona, theme, vp)
     page.goto(PAGES[pg], wait_until="domcontentloaded")
     wait_loaded(page)
     steps = []
@@ -447,10 +449,10 @@ def test_probes_admin(make_context, pg, theme, vp):
     probe_palette(page, rec, steps, pg)
     probe_shortcuts_sheet(page, rec, steps)
     probe_sidebar(page, rec, steps, vp)
-    shot(page, f"probe-{pg}-admin-{theme}-{vp}")
+    shot(page, f"probe-{pg}-{persona}-{theme}-{vp}")
     probe_goto(page, rec, steps, pg)
     bad = [s for s in steps if not s["ok"]]
-    record("probe", page=pg, persona="admin", theme=theme, vp=vp, steps=steps, status="fail" if bad else "pass",
+    record("probe", page=pg, persona=persona, theme=theme, vp=vp, steps=steps, status="fail" if bad else "pass",
            slow=rec.slow, console=rec.console, pageerrors=rec.pageerrors, http_errors=rec.http_errors, failed=rec.failed)
     assert not bad, f"{pg}/{theme}/{vp} probe failures:\n  " + "\n  ".join(f"{s['label']}: {s['detail']} {json.dumps(s['problems'], default=str)[:400]}" for s in bad)
 
@@ -512,19 +514,19 @@ def test_auth_login_next_and_wrong_password(make_context):
 
 
 def test_auth_logout_back_and_storage_residue(make_context, base_url):
-    """Admin logs in via UI, loads transactions (populates caches), signs out, presses Back, then
-    qa_tester logs in from the same tab: does qa_tester see admin's cached accounts/categories?"""
+    """qa_data logs in via UI, loads transactions (populates caches), signs out, presses Back, then
+    qa_tester logs in from the same tab: does qa_tester see qa_data's cached accounts/categories?"""
     ctx, page, rec = make_context("anon", "light", "1440")
-    # admin's real account names, via API in a separate request context (read-only)
+    # qa_data's account names, via API in a separate request context (read-only)
     api = ctx.request
-    r = login_with_retry(lambda: api.post(f"{base_url}/api/auth/login", data={"username": "admin", "password": "admin"}))
+    r = login_with_retry(lambda: api.post(f"{base_url}/api/auth/login", data={"username": PERSONAS["qa_data"][0], "password": PERSONAS["qa_data"][1]}))
     assert r.ok
     admin_accounts = [a["name"] for a in api.get(f"{base_url}/api/accounts?all=1").json()]
     api.post(f"{base_url}/api/auth/logout")
 
     page.goto("/login.html", wait_until="load")
-    page.fill("#username", "admin")
-    page.fill("#password", "admin")
+    page.fill("#username", PERSONAS["qa_data"][0])
+    page.fill("#password", PERSONAS["qa_data"][1])
     submit_login(page)
     page.goto("/transactions.html?range=all", wait_until="domcontentloaded")
     wait_loaded(page)
@@ -589,7 +591,7 @@ def test_auth_logout_back_and_storage_residue(make_context, base_url):
 
 # ---------------------------------------------------------------- 7: theme behaviours
 def test_theme_no_flash_with_stored_dark(make_context):
-    ctx, page, rec = make_context("admin", "dark", "1440")
+    ctx, page, rec = make_context("qa_data", "dark", "1440")
     page.goto("/index.html", wait_until="domcontentloaded")
     at_dcl = page.evaluate("() => ({ bg: getComputedStyle(document.body).backgroundColor, attr: document.documentElement.getAttribute('data-theme') })")
     wait_loaded(page)

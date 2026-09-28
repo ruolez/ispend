@@ -28,6 +28,7 @@ QUICK = '--quick' in sys.argv
 
 USERS = {
     'qa_tester': {'username': 'qa_tester', 'password': 'qa-tester-pass1'},
+    'qa_data': {'username': 'qa_data', 'password': 'qa-data-pass1'},
     'admin': {'username': 'admin', 'password': 'admin'},
 }
 
@@ -185,7 +186,7 @@ def main():
                 errs = []
                 page.on('console', lambda m: errs.append(f'{m.type}: {m.text[:160]}') if m.type in ('error', 'warning') else None)
                 page.on('pageerror', lambda e: errs.append(f'pageerror: {str(e)[:160]}'))
-                for pg in PAGES:
+                for pg in [p for p in PAGES if p != 'admin']:   # the console is admin-only; scanned below
                     url = f'{BASE}/{pg}.html' if pg != 'login' else f'{BASE}/login.html'
                     if pg == 'login':
                         # logged-out view: open in a fresh context without cookies
@@ -217,22 +218,23 @@ def main():
                     print(f"[{theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} small={len(rec.get('walk', {}).get('small', []))} lowc={len(rec.get('walk', {}).get('contrast', []))} targets<44={len(rec.get('walk', {}).get('targets', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
                 context.close()
 
-        # ---- admin: READ-ONLY populated pages (1440 + 390, both themes) ----
+        # ---- populated pages, READ-ONLY (1440 + 390, both themes): the app as qa_data, the console as admin ----
         for theme in THEMES:
             for (w, h) in ([(1440, 900), (390, 844)] if not QUICK else [(1440, 900)]):
+              for who, pages in (('qa_data', [p for p in PAGES if p not in ('login', 'admin')]), ('admin', ['admin'])):
                 context = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, service_workers="block")
                 context.add_init_script(f"try{{localStorage.setItem('ispend.theme','{theme}');localStorage.removeItem('ispend.sidebar');}}catch(e){{}}")
-                login(context, 'admin')
+                login(context, who)
                 page = context.new_page()
-                for pg in [p for p in PAGES if p != 'login']:
+                for pg in pages:
                     page.goto(f'{BASE}/{pg}.html'); settle(page)
                     if pg == 'transactions':
                         page.wait_for_timeout(1200)
-                    rec = scan_state(page, f'admin/{pg}/{theme}/{w}', os.path.join(SHOTS, f'a11y-admin-{pg}-{theme}-{w}.png'))
-                    rec.update(page=pg, theme=theme, width=w, user='admin')
+                    rec = scan_state(page, f'{who}/{pg}/{theme}/{w}', os.path.join(SHOTS, f'a11y-{who}-{pg}-{theme}-{w}.png'))
+                    rec.update(page=pg, theme=theme, width=w, user=who)
                     rec['focus'] = tab_focus(page, 15)
                     results['admin_runs'].append(rec)
-                    print(f"[admin {theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} lowc={len(rec.get('walk', {}).get('contrast', []))} small={len(rec.get('walk', {}).get('small', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
+                    print(f"[{who} {theme} {w}] {pg}: axe={len(rec.get('axe', []))} overflow={rec.get('walk', {}).get('overflow')} lowc={len(rec.get('walk', {}).get('contrast', []))} small={len(rec.get('walk', {}).get('small', []))} inner={len(rec.get('walk', {}).get('innerOverflow', []))}", flush=True)
                     # read-only layer states on the wide viewport and on the phone (bottom sheets)
                     if w in (1440, 390):
                         states = []

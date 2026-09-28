@@ -12,7 +12,7 @@ with sync_playwright() as pw:
     for theme in ('light', 'dark'):
         ctx = b.new_context(viewport={'width': 1440, 'height': 900}, service_workers="block")
         ctx.add_init_script(f"localStorage.setItem('ispend.theme','{theme}')")
-        login(ctx, 'admin', 'admin')
+        login(ctx, 'qa_data', 'qa-data-pass1')
         pg = ctx.new_page()
         pg.goto(f'{BASE}/import.html'); pg.wait_for_load_state('networkidle'); pg.wait_for_timeout(500)
         sel = pg.evaluate("(() => { const s = document.querySelector('#upload-account'); const c = getComputedStyle(s); return { bgImage: c.backgroundImage.slice(0, 40), bg: c.backgroundColor, appearance: c.appearance }; })()")

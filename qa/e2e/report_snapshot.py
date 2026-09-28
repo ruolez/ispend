@@ -1,8 +1,8 @@
 """Byte-level snapshot of every /api/reports/* payload for one user, so schema or aggregation
 changes (budgets, tags, splits) can prove they left existing numbers untouched.
 
-    <venv>/bin/python qa/e2e/report_snapshot.py capture --user admin --dir /path/outside/repo
-    <venv>/bin/python qa/e2e/report_snapshot.py verify  --user admin --dir /path/outside/repo
+    <venv>/bin/python qa/e2e/report_snapshot.py capture --user qa_data --dir /path/outside/repo
+    <venv>/bin/python qa/e2e/report_snapshot.py verify  --user qa_data --dir /path/outside/repo
     <venv>/bin/python qa/e2e/report_snapshot.py capture --user qa_flows --dir qa/fixtures/report-snapshots/qa_flows
 
 Every URL uses explicit from/to dates, a fixed `end` month and explicit `vs` months, so the
@@ -22,7 +22,7 @@ from ratelimit import login_with_retry  # noqa: E402
 
 BASE = os.environ.get("ISPEND_BASE_URL", "http://localhost:5559")
 USERS = {
-    "admin": ("admin", "admin"),
+    "qa_data": ("qa_data", "qa-data-pass1"),
     "qa_flows": ("qa_flows", "qa-flows-pass1"),
     "qa_tester": ("qa_tester", "qa-tester-pass1"),
 }

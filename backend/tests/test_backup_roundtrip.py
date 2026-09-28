@@ -242,6 +242,30 @@ class BackupRoundTripTest(unittest.TestCase):
         db.execute("""INSERT INTO auth_tokens (user_id, kind, token_hash, expires_at, used_at)
                       VALUES (%s, 'verify', %s, now() + interval '7 days', now())""",
                    (admin_id, "c" * 64))
+        # The revenue ledger, usage and operator tables added with the admin console.
+        db.execute("""INSERT INTO subscription_events (user_id, source, kind, mrr_to_cents, currency, occurred_at)
+                      VALUES (%s, 'webhook', 'subscribed', 999, 'usd', '2026-03-01T10:00:00Z')""", (uid,))
+        db.execute("""INSERT INTO payments (user_id, stripe_invoice_id, status, currency, amount_paid_cents, paid_at)
+                      VALUES (%s, 'in_rt_1', 'paid', 'usd', 999, '2026-03-01T10:00:00Z')""", (uid,))
+        db.execute("INSERT INTO metric_daily (day, metric, dim, value) VALUES ('2026-03-01', 'mrr_cents', 'usd', 999)")
+        vip = db.execute("INSERT INTO admin_tags (name, color) VALUES ('VIP', 'c3') RETURNING id", returning=True)["id"]
+        db.execute("INSERT INTO user_admin_tags (user_id, tag_id, created_by) VALUES (%s, %s, %s)", (uid, vip, admin_id))
+        db.execute("INSERT INTO admin_notes (user_id, author_id, body, pinned) VALUES (%s, %s, 'asked about CSV', true)",
+                   (uid, admin_id))
+        db.execute("INSERT INTO erasures (erased_user_id, requested_by, counts) VALUES (9999, 'self', '{\"transactions\": 3}')")
+        db.execute("INSERT INTO email_suppressions (email_sha256, reason) VALUES (%s, 'unsubscribed')", ("d" * 64,))
+        db.execute("""INSERT INTO login_events (user_id, kind, ok, ip, device) VALUES (%s, 'password', true, '203.0.113.9', 'desktop')""",
+                   (uid,))
+        db.execute("INSERT INTO user_activity_days (user_id, day, kinds) VALUES (%s, '2026-03-01', 3)", (uid,))
+        campaign = db.execute("""INSERT INTO email_campaigns (subject, body, category, audience, status, created_by)
+                                 VALUES ('Hello', 'Body', 'service', '{"ids": [1]}', 'done', %s) RETURNING id""",
+                              (admin_id,), returning=True)["id"]
+        db.execute("""INSERT INTO email_log (user_id, to_address, template, category, status, campaign_id)
+                      VALUES (%s, 'rt@example.com', 'campaign', 'campaign', 'sent', %s)""", (uid, campaign))
+        db.execute("INSERT INTO signup_attribution (user_id, channel, utm_source) VALUES (%s, 'search', 'google')", (uid,))
+        db.execute("INSERT INTO data_exports (user_id, token, status) VALUES (%s, 'rt-token', 'expired')", (uid,))
+        db.execute("""INSERT INTO import_layouts (user_id, layout_key, mapping, account_id)
+                      VALUES (%s, 'rt-layout', '{"date": 0}', %s)""", (uid, acct))
 
     # ---------- the round trip ----------
 

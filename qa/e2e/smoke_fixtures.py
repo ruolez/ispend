@@ -8,6 +8,7 @@ import pathlib
 import pytest
 from playwright.sync_api import sync_playwright
 
+from data_persona import DATA_USER, ensure_data_user
 from helpers import Recorder
 from ratelimit import login_with_retry
 
@@ -17,7 +18,19 @@ REPORTS = QA_DIR / "reports"
 SHOTS = REPORTS / "screenshots"
 RESULTS = REPORTS / "smoke-results.jsonl"
 
-PERSONAS = {"admin": ("admin", "admin"), "qa_tester": ("qa_tester", "qa-tester-pass1")}
+# qa_data: a customer with data (read-only by convention); qa_tester: empty and mutable; admin: the
+# console, which is the only page it can open.
+PERSONAS = {"qa_data": DATA_USER, "qa_tester": ("qa_tester", "qa-tester-pass1"), "admin": ("admin", "admin")}
+
+
+def personas_for(page):
+    """Who can open a page: the console is the admin's alone, the app belongs to customers."""
+    return ["admin"] if page == "admin" else ["qa_data", "qa_tester"]
+
+
+def data_persona_for(page):
+    """The populated account for a page."""
+    return "admin" if page == "admin" else "qa_data"
 VIEWPORTS = {"1440": (1440, 900), "390": (390, 844)}
 THEMES = ["light", "dark"]
 
@@ -34,6 +47,11 @@ def record(kind, **data):
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     with RESULTS.open("a") as f:
         f.write(json.dumps({"kind": kind, **data}, default=str) + "\n")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _data_user():
+    ensure_data_user()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -72,7 +90,7 @@ def make_context(browser):
     """make_context(persona, theme, viewport_key, color_scheme=None, stored_theme=True) -> (context, page, recorder)."""
     created = []
 
-    def _make(persona="admin", theme="light", viewport="1440", color_scheme=None, stored_theme=True):
+    def _make(persona="qa_data", theme="light", viewport="1440", color_scheme=None, stored_theme=True):
         w, h = VIEWPORTS[viewport]
         kw = {"viewport": {"width": w, "height": h}, "accept_downloads": True, "base_url": BASE_URL}
         if color_scheme:

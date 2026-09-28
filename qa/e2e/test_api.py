@@ -2165,7 +2165,7 @@ class TestSettings:
             assert body["openrouter_api_key"] == "••••••••" and body["openrouter_model"] == "qa/model-x"
             assert "evil" not in body and "is_admin" not in body and "shared_api_key" not in body
             assert set(body) == {"openrouter_api_key", "openrouter_model", "ai_categorize_enabled", "ai_insights_enabled",
-                                 "shared_available", "shared_model", "is_admin"}
+                                 "shared_available", "shared_model"}
             c = u1.get("/api/settings/client").json()
             assert c == {"ai_configured": True, "ai_categorize_enabled": False, "ai_insights_enabled": False, "ai_model": "qa/model-x"}
             assert secret not in u1.get("/api/ai/status").text

@@ -1,6 +1,6 @@
 """Before/after screenshots of every page on phones, for eyeballing a mobile change.
 
-    <venv>/bin/python qa/e2e/phone_gallery.py <out-dir> [--widths 320,375,430] [--themes light,dark] [--user admin]
+    <venv>/bin/python qa/e2e/phone_gallery.py <out-dir> [--widths 320,375,430] [--themes light,dark] [--user qa_data]
 
 Writes <out-dir>/<width>-<theme>-<page>.png (first screen) and ...-full.png (whole page) plus the
 login/signup pages signed out. Read-only: it only navigates. Keep <out-dir> outside the repo.
@@ -23,7 +23,7 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--widths", default="320,375,430")
     ap.add_argument("--themes", default="light,dark")
-    ap.add_argument("--user", default="admin")
+    ap.add_argument("--user", default="qa_data")
     ap.add_argument("--pages", default=",".join(PAGES))
     a = ap.parse_args()
     out = pathlib.Path(a.out)

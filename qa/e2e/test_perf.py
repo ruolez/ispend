@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import perf_probe
+from data_persona import ensure_data_user
 
 WARM_TABS_MS = 200  # a bottom tab visited before shows its content within this, cached data included
 
@@ -16,6 +17,7 @@ WARM_TABS_MS = 200  # a bottom tab visited before shows its content within this,
 def walk():
     if not perf_probe.stamp_worker(check=True):
         pytest.skip("needs the nginx container to stamp the production service worker")
+    ensure_data_user()
     perf_probe.stamp_worker("on")  # the dev overlay stamps "dev"; measure the production worker
     try:
         with sync_playwright() as p:

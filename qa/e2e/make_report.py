@@ -20,7 +20,7 @@ def matrix(rows):
     m = [r for r in rows if r["kind"] == "matrix"]
     pages = ["login", "index", "transactions", "review", "import", "statements", "categories", "rules", "reports", "budgets", "insights", "settings"]
     cols = [("anon", "light", "1440"), ("anon", "dark", "1440"), ("anon", "light", "390"), ("anon", "dark", "390")]
-    cols += [(p, t, v) for p in ("qa_tester", "admin") for t in ("light", "dark") for v in ("1440", "390")]
+    cols += [(p, t, v) for p in ("qa_tester", "qa_data", "admin") for t in ("light", "dark") for v in ("1440", "390")]
     idx = {(r["page"], r["persona"], r["theme"], r["vp"]): r for r in m}
     out = ["| page | " + " | ".join(f"{p}<br>{t}/{v}" for p, t, v in cols) + " |", "|---|" + "---|" * len(cols)]
     for pg in pages:
@@ -84,7 +84,7 @@ def perf(rows):
 
 
 def api_calls(rows):
-    m = [r for r in rows if r["kind"] == "matrix" and r["theme"] == "light" and r["vp"] == "1440" and r["persona"] == "admin"]
+    m = [r for r in rows if r["kind"] == "matrix" and r["theme"] == "light" and r["vp"] == "1440" and r["persona"] in ("qa_data", "admin")]
     out = []
     for r in sorted(m, key=lambda r: r["page"]):
         calls = [c["url"].split("5559", 1)[-1] for c in r.get("api_calls", [])]
