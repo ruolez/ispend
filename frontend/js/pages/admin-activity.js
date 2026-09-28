@@ -108,11 +108,11 @@ function auditDetail(detail, hidden = 0) {
   const privacy = hidden ? `<span class="adm-kv" data-tip="Names, file names and amounts people entered stay private">${icon('eye-off', 'ico-sm')}<b>${hidden} private</b></span>` : '';
   if (!entries.length) return privacy ? `<div class="adm-audit-detail">${privacy}</div>` : '';
   const val = (v) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
-  const shown = entries.slice(0, 5).map(([k, v]) =>
-    `<span class="adm-kv"><i>${esc(words(k))}</i><b>${esc(val(v))}</b></span>`).join('');
+  const shown = entries.map(([k, v], i) =>
+    `<span class="adm-kv ${i >= 5 ? 'is-extra' : ''}" title="${esc(`${words(k)}: ${val(v)}`)}"><i>${esc(words(k))}</i><b>${esc(val(v))}</b></span>`).join('');
   const rest = entries.length - 5;
   return `<div class="adm-audit-detail">${shown}${rest > 0
-    ? `<span class="adm-kv" data-tip="${esc(JSON.stringify(detail))}">+${rest} more</span>` : ''}${privacy}</div>`;
+    ? `<button type="button" class="adm-kv adm-kv-more" data-act="audit-expand" aria-expanded="false">+${rest} more</button>` : ''}${privacy}</div>`;
 }
 
 function auditRow(a, { compact = false } = {}) {
@@ -222,6 +222,14 @@ document.addEventListener('click', (e) => {
       return undefined;
     }
     case 'audit-more': return ui.busy(el, () => loadActivity({ more: true }));
+    case 'audit-expand': {
+      const box = el.closest('.adm-audit-detail');
+      const open = !box.classList.contains('is-open');
+      box.classList.toggle('is-open', open);
+      el.setAttribute('aria-expanded', String(open));
+      el.textContent = open ? 'Show less' : `+${box.querySelectorAll('.is-extra').length} more`;
+      return undefined;
+    }
     case 'clear-audit-user': return setAuditFilter({ user: undefined, who: undefined });
     case 'toggle-admin-only': return setAuditFilter({ admin: auditFilters().adminOnly ? undefined : '1' });
     case 'audit-action-filter': return openActionFilter(el);

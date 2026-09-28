@@ -24,14 +24,14 @@ async function loadMessages() {
   const host = $('#msg-list');
   host.innerHTML = ui.skeletonList(4);
   let rows;
-  try { rows = await api('/api/admin/email/campaigns'); } catch (err) { host.innerHTML = ui.errorBox(err.message); return; }
+  try { rows = await api('/api/admin/email/campaigns'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-messages' }); return; }
   if (!rows.length) {
-    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'mail', title: 'No messages sent yet', body: 'Write to everyone on a trial, to paying customers, or to anyone you select in Users.', action: { label: 'New message', act: 'compose' } })}</div>`;
+    host.innerHTML = `<div class="card">${ui.emptyState({ icon: 'mail', title: 'No messages sent yet', body: 'Write to everyone on a trial, to paying customers, or to anyone you select in Customers.', action: { label: 'New message', act: 'compose' } })}</div>`;
     return;
   }
   host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>Subject</th><th>Kind</th><th>Sent</th>
     <th class="right">To</th><th class="right">Delivered</th><th class="right">Failed</th><th></th></tr></thead><tbody>
-    ${rows.map((c) => `<tr><td class="fw-500">${esc(c.subject)}<div class="sub text-3">by ${esc(c.author || 'someone')}</div></td>
+    ${rows.map((c) => `<tr class="is-clickable" data-campaign="${c.id}"><td class="fw-500"><button type="button" class="row-link" data-act="open-campaign" data-id="${c.id}">${esc(c.subject)}</button><div class="sub text-3">by ${esc(c.author || 'someone')}</div></td>
       <td><span class="badge ${c.category === 'marketing' ? 'badge-info' : 'badge-neutral'}">${c.category === 'marketing' ? 'News' : 'Account'}</span></td>
       <td class="text-3">${esc(fmtDateTime(c.created_at))}</td>
       <td class="right num">${fmtNumber(c.recipients)}</td><td class="right num">${fmtNumber(c.sent)}</td>
@@ -148,6 +148,9 @@ const SKIP_WORDS = { no_email: 'without an email address', not_active: 'locked o
   unconfirmed: 'not confirmed' };
 
 document.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-act="reload-messages"]')) { loadMessages(); return; }
+  const row = e.target.closest('tr[data-campaign]');
+  if (row && !e.target.closest('[data-act="cancel-campaign"]')) { openCampaign(Number(row.dataset.campaign)); return; }
   const el = e.target.closest('[data-act="compose"], [data-act="cancel-campaign"]');
   if (!el) return;
   if (el.dataset.act === 'compose') { openComposer(); return; }
@@ -156,3 +159,29 @@ document.addEventListener('click', async (e) => {
     loadMessages();
   }
 });
+
+/* One message: what was sent, to whom, and who it did not reach. A quick look, so a side panel. */
+async function openCampaign(id) {
+  const d = ui.drawer({ title: 'Message', html: ui.skeletonList(5), width: 560 });
+  let c;
+  try { c = await api(`/api/admin/email/campaigns/${id}`); } catch (err) { d.setBody(ui.errorBox(err.message)); return; }
+  const counts = c.counts || {};
+  const audience = typeof c.audience === 'object' && c.audience ? c.audience : {};
+  const who = audience.query ? ((AUDIENCES.find(([q]) => q === audience.query) || [])[1] || 'Customers matching a filter')
+    : audience.ids ? plural(audience.ids.length, 'selected customer') : '—';
+  d.setTitle(c.subject);
+  d.setBody(`
+    <dl class="adm-dl">
+      <div><dt>Sent</dt><dd>${esc(fmtDateTime(c.created_at))}${c.author ? ` by ${esc(c.author)}` : ''}</dd></div>
+      <div><dt>To</dt><dd>${esc(who)}</dd></div>
+      <div><dt>Kind</dt><dd>${c.category === 'marketing' ? 'News or offers' : 'About their account'}</dd></div>
+      <div><dt>Delivered</dt><dd>${fmtNumber(counts.sent || 0)} of ${fmtNumber(c.recipients || 0)}</dd></div>
+      ${counts.failed ? `<div><dt>Failed</dt><dd class="text-danger">${fmtNumber(counts.failed)}</dd></div>` : ''}
+      ${c.skipped ? `<div><dt>Skipped</dt><dd>${fmtNumber(c.skipped)} <span class="text-3">(no email, unsubscribed or not confirmed)</span></dd></div>` : ''}
+    </dl>
+    <div class="section-label mt-5 mb-2">Message</div>
+    <div class="cmp-preview"><pre class="cmp-sent-body">${esc(c.body || '')}</pre></div>
+    ${(c.failures || []).length ? `<div class="section-label mt-5 mb-2">Did not arrive</div>
+      <ul class="p360-list">${c.failures.map((f) => `<li>${f.user_id ? `<a class="row-link" href="#customers/${f.user_id}/activity">${esc(f.username || `#${f.user_id}`)}</a>` : '<span class="text-4">deleted account</span>'}
+        <span class="grow text-3 truncate">${esc(f.error || '')}</span></li>`).join('')}</ul>` : ''}`);
+}

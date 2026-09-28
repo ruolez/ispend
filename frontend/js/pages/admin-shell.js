@@ -168,10 +168,12 @@ function thinSpark(values, agg = 'last', max = 16) {
   return out;
 }
 
-/* Rows that divide evenly: 10 tiles are 5 × 2, 6 are 3 × 2, never 4 + 2. */
+/* Rows as even as they can be: 10 tiles are 5 × 2, 6 are 3 × 2, 11 are 4 + 4 + 3 — never a lone
+   tile on its own row. Fewest empty cells wins; on a tie, the wider row. */
 function tileColumns(n) {
   if (n <= 5) return n;
-  return [5, 4, 3].find((c) => n % c === 0) || 5;
+  const empty = (c) => (c - (n % c)) % c;
+  return [5, 4, 3].reduce((best, c) => (empty(c) < empty(best) ? c : best));
 }
 
 function adminTiles(tiles) {
@@ -458,10 +460,13 @@ document.addEventListener('DOMContentLoaded', () => {
     shell: 'admin', groups, footer, bottom: ADMIN_BOTTOM.filter((k) => ADMIN.sections[k]),
     more: keys.filter((k) => !ADMIN_BOTTOM.includes(k)).map(adminNavItem), menu: ADMIN_MENU,
     brandBadge: 'Admin', searchLabel: 'Search customers, pages and actions…', title: 'Admin',
-  }).then((me) => {
+  }).then(async (me) => {
     ADMIN.me = me;
     $('#admin-layout').hidden = false;
-    api('/api/admin/shell').then((sh) => paintEnvBadge(sh.stripe_mode)).catch(() => {});
+    // Small and needed by the first paint (badges say "Full access" rather than "Paying" with billing off).
+    const sh = await api('/api/admin/shell').catch(() => ({ stripe_mode: 'off' }));
+    ADMIN.stripeMode = sh.stripe_mode;
+    paintEnvBadge(sh.stripe_mode);
     window.addEventListener('hashchange', adminOnHashChange);
     window.addEventListener('popstate', adminOnHashChange);
     ui.shortcuts.register('r', () => AdminPanels.refresh(), { description: 'Admin: refresh this page' });

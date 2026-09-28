@@ -72,7 +72,7 @@ async function saveAdminBilling() {
   await api('/api/admin/billing/config', { method: 'PUT', body });
   toast('Billing settings saved', { type: 'success' });
   ABL.bar.set(false);
-  api('/api/admin/shell').then((sh) => paintEnvBadge(sh.stripe_mode)).catch(() => {});
+  api('/api/admin/shell').then((sh) => { ADMIN.stripeMode = sh.stripe_mode; paintEnvBadge(sh.stripe_mode); }).catch(() => {});
   return loadAdminBilling(ABL.host);
 }
 

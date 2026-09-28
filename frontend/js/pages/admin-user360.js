@@ -82,7 +82,7 @@ function renderPerson() {
       <div class="min-w-0 grow">
         <h1 class="cust-name truncate">${esc(label)}</h1>
         <div class="cust-badges">
-          ${state ? `<span class="badge ${ACCESS_BADGE[state] || 'badge-neutral'}">${esc(ACCESS_LABEL[state] || state)}</span>` : ''}
+          ${state ? accessBadge(state) : ''}
           ${u.status !== 'active' ? `<span class="user-status"><i class="dot" style="--c:var(--${STATUS_COLOR[u.status]})"></i>${esc(STATUS_LABEL[u.status])}${u.lock_reason ? ` · ${esc(u.lock_reason)}` : ''}</span>` : ''}
           ${u.email ? (u.email_confirmed ? `<span class="text-3">${icon('check', 'ico-sm')} Email confirmed</span>` : '<span class="text-warning">Email not confirmed</span>') : '<span class="text-4">No email address</span>'}
           <button type="button" class="cust-id" data-p360="copy-id" data-tip="Copy the customer number">#${u.id}</button>
@@ -118,7 +118,7 @@ function factsCard() {
   const act = P360.data.activation;
   const state = personState();
   const facts = [
-    ['Access', state ? `<span class="badge ${ACCESS_BADGE[state] || 'badge-neutral'}">${esc(ACCESS_LABEL[state] || state)}</span>` : '—'],
+    ['Access', state ? accessBadge(state) : '—'],
     ['Plan', s.plan ? esc(s.plan === 'yearly' ? 'Yearly' : 'Monthly') : '—'],
     ['MRR', s.mrr_cents ? esc(fmtMoney(s.mrr_cents / 100, cur)) : '—'],
     ['Paid so far', s.lifetime_cents ? esc(fmtMoney(s.lifetime_cents / 100, cur)) : '—'],
@@ -131,7 +131,7 @@ function factsCard() {
     ...(u.email && u.username !== u.email ? [['Username', esc(u.username)]] : []),
   ];
   return `<section class="card cust-facts">
-    <dl>${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <dl class="adm-dl">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
     <div class="section-label mt-4 mb-2">Tags</div>${tagsBlock()}
   </section>`;
 }
@@ -166,7 +166,7 @@ function summaryTab() {
     </section>
     <section class="card card-pad mt-4">
     <div class="section-label mb-2">What they have</div>
-    <div class="adm-detail-grid">${tiles.map(([l, v]) => `<div class="adm-tile"><div class="l">${esc(l)}</div><div class="v">${fmtNumber(v || 0)}</div></div>`).join('')}</div>
+    ${kpis(tiles.map(([l, v]) => [l, fmtNumber(v || 0)]), 'mb-4')}
     <div class="setting-row"><div><div class="title">Statements cover</div><div class="desc">Last import ${r.last_import_at ? esc(fmtRelative(r.last_import_at)) : 'never'}</div></div>
       <div class="text-1">${r.first_txn ? `${esc(fmtDate(r.first_txn, { year: true }))} – ${esc(fmtDate(r.last_txn, { year: true }))}` : '—'}</div></div>
     <div class="setting-row"><div><div class="title">Storage</div><div class="desc">${fmtNumber(st.unique_files || 0)} files</div></div>
@@ -201,7 +201,7 @@ function billingTab() {
   const billingEvents = (P360.data.timeline || []).filter((t) => BILLING_KINDS.has(t.kind));
   return `
     <section class="card card-pad">
-    <div class="p360-facts">${rows.map(([k, v]) => `<div><span class="text-3">${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    <dl class="adm-dl">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
     <div class="row gap-2 wrap mt-4">
       <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-trial" ${state === 'active' ? 'disabled data-tip="They are paying; a trial does not apply"' : ''}>${icon('clock', 'ico-sm')}Extend trial</button>
       <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-grace" ${state === 'grace' || state === 'read_only' ? '' : 'disabled data-tip="Only after a payment fails or a trial runs out"'}>${icon('clock', 'ico-sm')}Extend grace</button>
@@ -221,7 +221,7 @@ function billingTab() {
     : '<div class="hint">No payments yet.</div>'}
     </section>
     ${billingEvents.length ? `<section class="card card-pad mt-4"><div class="section-label mb-2">Subscription history</div>
-      <ol class="timeline p360-timeline">${billingEvents.map(feedItemHtml).join('')}</ol></section>` : ''}`;
+      <ol class="timeline cust-feed">${billingEvents.map(feedItemHtml).join('')}</ol></section>` : ''}`;
 }
 
 /* ---------- activity: one feed ---------- */

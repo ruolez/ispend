@@ -228,7 +228,8 @@ def campaigns():
 @bp.get("/email/campaigns/<int:campaign_id>")
 @admin_required
 def campaign_detail(campaign_id):
-    row = db.query("SELECT * FROM email_campaigns WHERE id = %s", (campaign_id,), one=True)
+    row = db.query("""SELECT c.*, u.username AS author FROM email_campaigns c
+                        LEFT JOIN users u ON u.id = c.created_by WHERE c.id = %s""", (campaign_id,), one=True)
     if not row:
         return api_error("Not found", 404)
     counts = db.query("SELECT status, COUNT(*) AS n FROM email_log WHERE campaign_id = %s GROUP BY 1", (campaign_id,)) or []

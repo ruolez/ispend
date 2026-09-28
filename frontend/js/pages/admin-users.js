@@ -19,6 +19,13 @@ const ACCESS_LABEL = { trialing: 'Trial', active: 'Paying', grace: 'Payment due'
   comped: 'Free access' };
 const ACCESS_BADGE = { trialing: 'badge-info', active: 'badge-success', grace: 'badge-warning',
   read_only: 'badge-neutral', comped: 'badge-accent' };
+/* With billing off every account evaluates to "active": call that what it is. */
+function accessBadge(key) {
+  const free = key === 'active' && ADMIN.stripeMode === 'off';
+  const label = free ? 'Full access' : ACCESS_LABEL[key] || key;
+  return `<span class="badge ${free ? 'badge-neutral' : ACCESS_BADGE[key] || 'badge-neutral'}">${esc(label)}</span>`;
+}
+
 /* The tabs above the table: the questions asked every day, then the admin's own saved views. */
 const VIEW_TABS = [['All', ''], ['On a trial', '?state=trialing'], ['Paying', '?state=active'],
   ['Payment due', '?state=grace'], ['Never imported', '?activated=0&sort=created_at&dir=desc']];
@@ -258,7 +265,7 @@ function stateBadge(u) {
   const key = u.comped_until ? 'comped' : u.state;
   if (!key) return '<span class="text-4">—</span>';
   const sub = key === 'trialing' && u.trial_end ? ` <span class="sub">ends ${esc(fmtRelative(u.trial_end))}</span>` : '';
-  return `<span class="badge ${ACCESS_BADGE[key] || 'badge-neutral'}">${esc(ACCESS_LABEL[key] || key)}</span>${u.plan && key === 'active' ? ` <span class="sub">${esc(u.plan)}</span>` : ''}${sub}`;
+  return `${accessBadge(key)}${u.plan && key === 'active' ? ` <span class="sub">${esc(u.plan)}</span>` : ''}${sub}`;
 }
 
 function renderUsersTable() {
