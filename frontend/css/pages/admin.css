@@ -3,11 +3,13 @@
 #admin-panels .tbl .sub { margin-bottom: 0; }              /* .settings-section .sub adds one */
 #admin-panels .card-body > .empty { padding: var(--sp-6) var(--sp-4); }
 #admin-panels .tbl-summary:empty { display: none; }
-/* Settings-style panels are a form, not a dashboard: cap the measure so a label and its control
-   stay near each other on a wide screen. Overview's cards keep the full width. */
-#admin-panels .settings-section { max-width: 840px; }
+/* A card with plain padding, for content that is not a header + body pair. A table inside any
+   card sits flush: the card is the frame. */
+.card-pad { padding: var(--sp-5); }
+#admin-panels .card > .tbl-wrap, #admin-panels .card > div > .tbl-wrap, #admin-panels .card-body > .tbl-wrap { border: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); box-shadow: none; }
+#admin-panels .card-pad .tbl-wrap { box-shadow: none; }
 
-/* One action group per tab lives in the page head; showTab() reveals the current one. */
+/* One action group per section lives in the page head; adminShow() reveals the current one. */
 .adm-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .adm-search { flex: 1 1 180px; max-width: 260px; }
 .adm-search .input { padding-left: 32px; }
@@ -32,13 +34,7 @@
 .adm-bar-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adm-bar-row .progress { height: 5px; }
 
-.adm-storage-bar { display: flex; height: 10px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-3); }
-.adm-storage-bar > i { display: block; }
-.adm-legend { display: flex; flex-wrap: wrap; gap: var(--sp-4); font-size: var(--fs-sm); color: var(--text-3); }
-.adm-legend span { display: inline-flex; align-items: center; gap: 6px; }
-
 .adm-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
-.adm-reason { color: var(--text-4); margin-left: 4px; vertical-align: middle; }
 .user-status .sub { color: var(--text-4); font-size: var(--fs-xs); margin-left: 6px; }
 #users-table tr.is-trashed td:not(.col-actions) { opacity: 0.65; }
 
@@ -50,7 +46,6 @@
 .num-input { width: 84px; }
 .min-w-0 { min-width: 0; }
 
-.adm-drawer-head { flex-wrap: wrap; }
 .adm-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .adm-tile { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }
 .adm-tile .l { font-size: var(--fs-xs); color: var(--text-3); }
@@ -276,3 +271,62 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 
 /* Stripe mode, always in the topbar. */
 .adm-env { text-decoration: none; white-space: nowrap; margin-right: 8px; }
+
+/* ---------- Page chrome ---------- */
+.adm-crumb { margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+.adm-crumb a { display: inline-flex; align-items: center; gap: 2px; color: var(--text-3); }
+
+/* ---------- Settings hub ---------- */
+/* Forms, not dashboards: the measure is capped so a label and its control stay near each other. */
+.adm-settings-body { min-width: 0; max-width: 880px; }
+.adm-settings-head { margin-bottom: var(--sp-4); }
+.adm-settings-head h2 { font-size: var(--fs-xl); font-weight: 650; }
+.adm-settings-head p { color: var(--text-3); margin-top: 4px; }
+.adm-settings .settings-section.card { margin-bottom: var(--sp-4); }
+.adm-settings .card-pad > .setting-row:first-child, .adm-settings .card-pad > .adm-sec-head + .sub + .setting-row { padding-top: var(--sp-2); }
+
+/* ---------- Customers list ---------- */
+.adm-view-tabs { margin-bottom: var(--sp-3); }
+.adm-tag-list { list-style: none; margin: 0; padding: 0; }
+.adm-tag-list li { padding: 8px 0; }
+.adm-tag-list li + li { border-top: 1px solid var(--border); }
+
+/* ---------- One customer ---------- */
+.cust-head { display: flex; align-items: flex-start; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+.cust-name { font-size: var(--fs-2xl); font-weight: 650; line-height: 1.2; }
+.cust-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: 6px; font-size: var(--fs-sm); }
+.cust-badges > span { display: inline-flex; align-items: center; gap: 4px; }
+.cust-id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); padding: 1px 6px; border-radius: var(--r-sm); background: var(--surface-2); }
+.cust-actions { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+.cust-tabs { margin-bottom: var(--sp-4); }
+.cust-tabs .tab { text-decoration: none; }
+.cust-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--sp-5); align-items: start; }
+.cust-side { position: sticky; top: calc(var(--topbar-h) + var(--safe-top) + 16px); }
+.cust-facts { padding: var(--sp-4) var(--sp-5); }
+.cust-facts dl { margin: 0; }
+.cust-facts dl > div { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); padding: 8px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.cust-facts dt { color: var(--text-3); }
+.cust-facts dd { margin: 0; font-weight: 500; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.cust-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cust-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.cust-danger .title { font-weight: 600; color: var(--danger-text); }
+.cust-danger .desc { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; max-width: 560px; }
+.cust-feed-filter { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.cust-feed { list-style: none; margin: 0; padding: 0; }
+.cust-feed .adm-day { position: static; background: none; }
+.cust-feed-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.cust-feed-item::before { display: none; }
+.cust-feed-ico { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--text-3); display: grid; place-items: center; }
+.cust-feed-ico.is-danger { background: var(--danger-soft); color: var(--danger-text); }
+@media (max-width: 960px) {
+  .cust-grid { grid-template-columns: 1fr; }
+  .cust-side { position: static; order: -1; }
+}
+@media (max-width: 640px) {
+  .cust-head { flex-wrap: wrap; }
+  .cust-head > .avatar { display: none; }
+  .cust-name { font-size: var(--fs-xl); }
+  .cust-actions { width: 100%; }
+  .cust-actions .btn:not(.btn-icon) { flex: 1 1 auto; justify-content: center; }
+}

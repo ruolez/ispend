@@ -399,11 +399,11 @@ def probe_goto(page, rec, steps, pg):
             # the console's g-chords switch sections in place (a hash change, no page load)
             page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
             page.keyboard.press("g")
-            page.keyboard.press("u")
-            page.wait_for_function("() => location.hash.startsWith('#users')", timeout=3000)
+            page.keyboard.press("c")
+            page.wait_for_function("() => location.hash.startsWith('#customers')", timeout=3000)
             wait_loaded(page)
             return page.url
-        step(steps, rec, "goto:g u", do_section)
+        step(steps, rec, "goto:g c", do_section)
         return
     key, target = ("d", "/index.html") if pg == "transactions" else ("t", "/transactions.html")
 

@@ -445,6 +445,27 @@ def wipe_leftover_data():
     return jsonify({"ok": True, "removed": counts})
 
 
+@bp.get("/me/logins")
+@admin_required
+def my_logins():
+    """The admin's own recent sign-ins, for Settings › Account."""
+    rows = db.query(
+        """SELECT id, kind, ok, reason, ip::text AS ip, browser, os, device, country, new_network, created_at
+             FROM login_events WHERE user_id = %s ORDER BY id DESC LIMIT 20""", (_uid(),)) or []
+    return jsonify(rows_json(rows))
+
+
+@bp.post("/me/sign-out-others")
+@admin_required
+def sign_out_others():
+    """Every other browser signed in as this admin has to sign in again; this one stays."""
+    row = db.execute("""UPDATE users SET session_epoch = session_epoch + 1, updated_at = now()
+                         WHERE id = %s RETURNING session_epoch""", (_uid(),), returning=True)
+    session["uepoch"] = row["session_epoch"]
+    audit("admin.sign_out_others", {})
+    return jsonify({"ok": True})
+
+
 # ---------- Instance AI key ----------
 # The key and model every customer without their own use. Customers set their own in the app.
 

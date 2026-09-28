@@ -2,10 +2,22 @@
    hidden by the server (admin_privacy); admin actions are shown whole. auditRow() is shared with the
    person view. */
 
-const AD = { audit: { items: [], cursor: null, action: '', q: '', actions: null, userId: null, userName: '', adminOnly: false }, wired: false };
+const AD = { audit: { items: [], cursor: null, actions: null }, wired: false };
+
+/* The filters live in the URL (?action=&q=&user=&who=&admin=1), so a link from anywhere — a
+   customer's page, an alert on Home — opens the log already filtered, in this tab or a new one. */
+function auditFilters() {
+  const q = qs();
+  return { action: q.action || '', q: q.q || '', userId: Number(q.user) || null, userName: q.who || '',
+    adminOnly: q.admin === '1' };
+}
+function setAuditFilter(patch) {
+  setQs(patch, { merge: true });
+  return loadActivity();
+}
 
 AdminPanels.register('activity', {
-  label: 'Activity', icon: 'clock', group: 'operations',
+  label: 'Activity log', short: 'Activity', icon: 'clock', group: 'operations', params: ['admin', 'user', 'who', 'action', 'q'],
   sub: 'Everything that has happened here, newest first',
   actions: '<a class="btn btn-secondary" id="a-export" href="/api/admin/audit?format=csv" download data-admin-download></a>',
   markup: `
@@ -27,22 +39,22 @@ function wireActivity() {
   AD.wired = true;
   $('#a-export').innerHTML = `${icon('download')}<span class="label">Export CSV</span>`;
   $('#audit-toolbar .ico-wrap').innerHTML = icon('search');
-  if (qs().admin === '1') AD.audit.adminOnly = true;
-  $('#a-search').addEventListener('input', debounce(() => { AD.audit.q = $('#a-search').value.trim(); loadActivity(); }, 250));
-  paintAuditButtons();
+  $('#a-search').addEventListener('input', debounce(() => setAuditFilter({ q: $('#a-search').value.trim() || undefined }), 250));
 }
 
 function paintAuditButtons() {
-  $('#a-action-btn').innerHTML = `${icon('filter')}<span class="label">${esc(AD.audit.action ? auditTitle(AD.audit.action) : 'All actions')}</span>`;
-  $('#a-action-btn').classList.toggle('is-on', !!AD.audit.action);
+  const f = auditFilters();
+  if (document.activeElement !== $('#a-search')) $('#a-search').value = f.q;
+  $('#a-action-btn').innerHTML = `${icon('filter')}<span class="label">${esc(f.action ? auditTitle(f.action) : 'All actions')}</span>`;
+  $('#a-action-btn').classList.toggle('is-on', !!f.action);
   const adminBtn = $('#a-admin-btn');
   adminBtn.innerHTML = `${icon('shield')}<span class="label">Admin actions only</span>`;
-  adminBtn.setAttribute('aria-pressed', String(!!AD.audit.adminOnly));
-  adminBtn.classList.toggle('is-on', !!AD.audit.adminOnly);
-  // Reached from a person's "See all their activity"; without a visible chip the filter is invisible and stuck.
+  adminBtn.setAttribute('aria-pressed', String(f.adminOnly));
+  adminBtn.classList.toggle('is-on', f.adminOnly);
+  // Reached from a customer's page; without a visible chip the filter is invisible and stuck.
   const chip = $('#a-user-chip');
-  chip.hidden = !AD.audit.userId;
-  if (AD.audit.userId) chip.innerHTML = `${icon('user')}<span class="label">${esc(AD.audit.userName || `#${AD.audit.userId}`)}</span>${icon('x', 'ico-sm')}`;
+  chip.hidden = !f.userId;
+  if (f.userId) chip.innerHTML = `${icon('user')}<span class="label">${esc(f.userName || `#${f.userId}`)}</span>${icon('x', 'ico-sm')}`;
 }
 
 /* ---------- Activity ---------- */
@@ -148,12 +160,13 @@ async function loadActivity({ more = false } = {}) {
     AD.audit.items = [];
     AD.audit.cursor = null;
   }
-  const qs = toQuery({ action: AD.audit.action || undefined, q: AD.audit.q || undefined,
-    user_id: AD.audit.userId || undefined, admin: AD.audit.adminOnly ? 1 : undefined,
-    cursor: more ? AD.audit.cursor : undefined, limit: 50 });
+  const f = auditFilters();
+  const filters = { action: f.action || undefined, q: f.q || undefined, user_id: f.userId || undefined,
+    admin: f.adminOnly ? 1 : undefined };
+  paintAuditButtons();
   let data;
   try {
-    data = await api(`/api/admin/audit${qs}`);
+    data = await api(`/api/admin/audit${toQuery({ ...filters, cursor: more ? AD.audit.cursor : undefined, limit: 50 })}`);
   } catch (err) {
     host.innerHTML = ui.errorBox(err.message, { retry: 'reload-audit' });
     $('#audit-summary').innerHTML = '';
@@ -162,8 +175,7 @@ async function loadActivity({ more = false } = {}) {
   AD.audit.items = more ? AD.audit.items.concat(data.items) : data.items;
   AD.audit.cursor = data.next_cursor;
   $('[data-act="audit-more"]').hidden = !data.next_cursor;
-  $('#a-export').href = `/api/admin/audit${toQuery({ action: AD.audit.action || undefined, q: AD.audit.q || undefined, user_id: AD.audit.userId || undefined, admin: AD.audit.adminOnly ? 1 : undefined, format: 'csv' })}`;
-  paintAuditButtons();
+  $('#a-export').href = `/api/admin/audit${toQuery({ ...filters, format: 'csv' })}`;
   const n = AD.audit.items.length;
   $('#audit-summary').innerHTML = n
     ? `<span><b>${fmtNumber(n)}</b> ${n === 1 ? 'entry' : 'entries'}${data.next_cursor ? ' so far' : ''}</span>`
@@ -171,18 +183,19 @@ async function loadActivity({ more = false } = {}) {
   host.innerHTML = n
     ? `<div class="adm-audit">${auditList(AD.audit.items)}</div>`
     : ui.emptyState({ icon: 'clock', title: 'No activity recorded',
-      body: AD.audit.action || AD.audit.q || AD.audit.userId ? 'Nothing matches these filters.' : 'Actions show up here as people use iSpend.' });
+      body: f.action || f.q || f.userId || f.adminOnly ? 'Nothing matches these filters.' : 'Actions show up here as people use iSpend.' });
 }
 
 async function openActionFilter(anchor) {
   if (!AD.audit.actions) {
     try { AD.audit.actions = await api('/api/admin/audit/actions'); } catch { AD.audit.actions = []; }
   }
-  ui.menu(anchor, [{ label: 'All actions', checked: !AD.audit.action, onClick: () => { AD.audit.action = ''; paintAuditButtons(); loadActivity(); } },
+  const cur = auditFilters().action;
+  ui.menu(anchor, [{ label: 'All actions', checked: !cur, onClick: () => setAuditFilter({ action: undefined }) },
     { divider: true },
-    ...AD.audit.actions.slice(0, 25).map((a) => ({
-      label: `${auditTitle(a.action)} (${fmtNumber(a.n)})`, icon: auditIcon(a.action), checked: AD.audit.action === a.action,
-      onClick: () => { AD.audit.action = a.action; paintAuditButtons(); loadActivity(); },
+    ...AD.audit.actions.slice(0, 60).map((a) => ({
+      label: `${auditTitle(a.action)} (${fmtNumber(a.n)})`, icon: auditIcon(a.action), checked: cur === a.action,
+      onClick: () => setAuditFilter({ action: a.action }),
     }))]);
 }
 
@@ -203,24 +216,14 @@ document.addEventListener('click', (e) => {
     case 'reload-audit': return loadActivity();
     case 'audit-for-user': {
       e.preventDefault();
-      const wasActivity = AdminPanels.current() === 'activity';
-      AD.audit.userId = Number(el.dataset.id);
-      AD.audit.userName = el.dataset.name || '';
-      if (wasActivity) { paintAuditButtons(); return loadActivity(); }
-      location.hash = '#activity';   // the section switch closes the drawer this link sits in
+      const params = { user: el.dataset.id, who: el.dataset.name || undefined };
+      if (AdminPanels.current() === 'activity') return setAuditFilter(params);
+      location.href = adminHref('activity', { params });
       return undefined;
     }
     case 'audit-more': return ui.busy(el, () => loadActivity({ more: true }));
-    case 'clear-audit-user':
-      AD.audit.userId = null;
-      AD.audit.userName = '';
-      paintAuditButtons();
-      return loadActivity();
-    case 'toggle-admin-only':
-      AD.audit.adminOnly = !AD.audit.adminOnly;
-      setQs({ admin: AD.audit.adminOnly ? '1' : undefined }, { merge: true });
-      paintAuditButtons();
-      return loadActivity();
+    case 'clear-audit-user': return setAuditFilter({ user: undefined, who: undefined });
+    case 'toggle-admin-only': return setAuditFilter({ admin: auditFilters().adminOnly ? undefined : '1' });
     case 'audit-action-filter': return openActionFilter(el);
     default: return undefined;
   }

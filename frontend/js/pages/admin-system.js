@@ -74,7 +74,7 @@ function renderSysImports(p) {
     ${p.stuck.length ? `<div class="section-label mt-6 mb-2">Stuck for more than 15 minutes</div>
       <ul class="p360-list">${p.stuck.map((s) => `<li><span class="grow">#${s.id} · ${esc(s.bank_profile)} ${esc(s.file_kind || '')} · ${esc(s.status)}
         <span class="text-3">for ${fmtNumber(s.age_min)} min</span></span>
-        <button type="button" class="btn btn-ghost btn-xs" data-act="open-person" data-id="${s.user_id}">Person</button>
+        <a class="btn btn-ghost btn-xs" href="#customers/${s.user_id}">Customer</a>
         <button type="button" class="btn btn-secondary btn-xs" data-act="stop-import" data-id="${s.id}">Stop</button></li>`).join('')}</ul>
       <div class="hint mt-2">Stopping marks it failed and tells the person to upload the file again.</div>` : ''}
     <a class="btn btn-ghost btn-sm mt-4" href="#imports">Import details by bank ${icon('arrow-right', 'ico-sm')}</a></div>`;
@@ -94,7 +94,7 @@ function renderSysErrors(p) {
 
 function renderSysEmail(p) {
   $('#sys-email').innerHTML = `${sysHead('Email', p.status)}<div class="card-body">
-    ${p.configured ? '' : `<div class="notice notice-warning mb-4">${icon('alert-triangle')}<div class="grow">Email is not set up, so confirmation links, password resets and billing notices are not being sent.</div><a class="btn btn-secondary btn-sm" href="#signups">Set up</a></div>`}
+    ${p.configured ? '' : `<div class="notice notice-warning mb-4">${icon('alert-triangle')}<div class="grow">Email is not set up, so confirmation links, password resets and billing notices are not being sent.</div><a class="btn btn-secondary btn-sm" href="#settings/email">Set up</a></div>`}
     ${kpis([['Sent today', fmtNumber(p.sent_24h)], ['Failed today', fmtNumber(p.failed_24h), p.failed_24h ? 'text-danger' : ''],
       ['Not sent (no email set up)', fmtNumber(p.skipped_24h)], ['Stuck in the queue', fmtNumber(p.stuck), p.stuck ? 'text-danger' : '']])}
     ${p.last_failure ? `<div class="hint mt-3">Last failure ${esc(fmtRelative(p.last_failure.at))} (${esc(p.last_failure.template.replace(/_/g, ' '))}): ${esc(p.last_failure.error || 'no reason given')}</div>` : ''}
@@ -107,13 +107,13 @@ function renderSysEmail(p) {
 function renderSysStripe(p) {
   const r = p.reconcile_last;
   $('#sys-stripe').innerHTML = `${sysHead('Stripe', p.status, !p.enabled)}<div class="card-body">
-    ${!p.enabled ? '<div class="hint">Stripe is not set up, so nobody is billed. Add the keys under Billing.</div>' : `
+    ${!p.enabled ? '<div class="hint">Stripe is not set up, so nobody is billed. Add the keys in <a href="#settings/billing">Settings › Billing</a>.</div>' : `
       ${kpis([['Last event', p.last_event_at ? esc(fmtRelative(p.last_event_at)) : 'Never'], ['Events today', fmtNumber(p.events_24h)],
         ['Failed this week', fmtNumber(p.failed_7d), p.failed_7d ? 'text-danger' : ''], ['Slowest 5%', p.p95_ms == null ? '—' : `${fmtNumber(p.p95_ms)}<span class="u"> ms</span>`]])}
       ${p.recent_failed.length ? `<ul class="p360-list mt-4">${p.recent_failed.map((e) => `<li><span class="grow"><b>${esc(e.type)}</b>
         <span class="sub">${esc(e.error || '')}</span></span><span class="text-3">${esc(fmtRelative(e.received_at))}</span></li>`).join('')}</ul>` : ''}
       <div class="hint mt-3">${r ? `Last compared with Stripe ${esc(fmtRelative(r.started_at))}${r.error ? ` — failed: ${esc(r.error)}` : `: ${plural(r.fixed.length, 'record')} corrected`}.` : 'Never compared with Stripe.'}
-        <a href="#billing">Revenue records</a></div>`}</div>`;
+        <a href="#revenue">Revenue records</a></div>`}</div>`;
 }
 
 function renderSysBackups(p) {

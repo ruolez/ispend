@@ -1,79 +1,144 @@
-/* Admin › one person: access and money, how they got started, what they have (counts only), their
-   story, sign-ins, emails, notes and tags, and every action an operator can take on them.
-   Opens as a drawer over any section (full screen on phones) from GET /api/admin/users/<id>. */
+/* Admin › Customers › one customer, as a page of its own: #customers/<id>/<tab>. Access and money,
+   how they got started, what they have (counts only), one activity feed, notes and tags, and every
+   action an operator can take on them. Everything comes from GET /api/admin/users/<id>. */
 
-const P360 = { id: null, data: null, drawer: null, tab: 'summary' };
-const P360_TABS = [['summary', 'Summary'], ['billing', 'Billing'], ['history', 'History'], ['notes', 'Notes']];
+const P360 = { id: null, data: null, open: false, tab: 'overview', feed: 'all', seq: 0 };
+const P360_TABS = [['overview', 'Overview'], ['billing', 'Billing'], ['activity', 'Activity'], ['notes', 'Notes']];
 
-async function openUserDrawer(id) {
+function p360Host() { return $('#cust-person'); }
+
+/* Called by the Customers section when the route names a customer. Switching tabs repaints from
+   what is loaded; opening another customer (or a reload) fetches. */
+async function showCustomer(id, tab) {
+  const same = P360.open && P360.id === id && P360.data;
+  P360.open = true;
   P360.id = id;
-  P360.drawer = ui.drawer({ title: 'Person', html: ui.skeletonList(8), width: 760,
-    onClose: () => { P360.drawer = null; P360.id = null; } });
-  return refreshPerson();
+  P360.tab = P360_TABS.some(([k]) => k === tab) ? tab : 'overview';
+  adminSetHead(null);
+  if (same) { renderPerson(); return; }
+  P360.data = null;
+  P360.feed = 'all';
+  p360Host().innerHTML = `<div class="cust">${ui.skeleton(120, 14)}<div class="mt-4">${ui.skeletonList(8)}</div></div>`;
+  await refreshPerson();
 }
-window.openUserDrawer = openUserDrawer;
+
+function closeCustomer() {
+  P360.open = false;
+  P360.data = null;
+}
 
 async function refreshPerson() {
-  const d = P360.drawer;
-  if (!d) return;
+  if (!P360.open) return;
+  const seq = ++P360.seq;
+  const id = P360.id;
+  let data;
   try {
-    P360.data = await api(`/api/admin/users/${P360.id}`);
+    data = await api(`/api/admin/users/${id}`);
   } catch (err) {
-    d.setBody(ui.errorBox(err.message));
+    if (seq !== P360.seq) return;
+    p360Host().innerHTML = `<div class="cust">${custCrumb()}${err.status === 404
+      ? ui.emptyState({ icon: 'user', title: 'No such customer', body: 'They may have been erased, or the link is wrong.', action: { label: 'All customers', href: '#customers' } })
+      : ui.errorBox(err.message, { retry: 'reload-person' })}</div>`;
     return;
   }
+  if (seq !== P360.seq || !P360.open || P360.id !== id) return;
+  P360.data = data;
   renderPerson();
 }
-window.addEventListener('ispend:admin-user-changed', () => { if (P360.drawer) refreshPerson(); });
+window.addEventListener('ispend:admin-user-changed', () => { if (P360.open) refreshPerson(); });
 
 function personLabel(u) { return u.email || u.username; }
 
+function custCrumb() {
+  // Hash-only, so the list's filters (in the query) come back with it.
+  return `<nav class="adm-crumb" aria-label="Breadcrumb"><a href="#customers">${icon('chevron-left', 'ico-sm')}Customers</a></nav>`;
+}
+
+function personState() {
+  const { billing: b, subscription: s } = P360.data;
+  return b && b.comped_until ? 'comped' : ((s || {}).ent_state || (b && b.state));
+}
+
+/* The one access action that fits where they are; everything else is in the ⋯ menu. */
+function primaryAccessAction() {
+  const { subscription: s, billing: b } = P360.data;
+  const state = personState();
+  if (state === 'trialing') return `<button type="button" class="btn btn-secondary" data-p360="extend-trial">${icon('clock')}<span class="label">Extend trial</span></button>`;
+  if (state === 'grace') return `<button type="button" class="btn btn-secondary" data-p360="extend-grace">${icon('clock')}<span class="label">Extend grace</span></button>`;
+  if (s.stripe_customer_url) return `<a class="btn btn-secondary" href="${esc(s.stripe_customer_url)}" target="_blank" rel="noopener">${icon('external-link')}<span class="label">Open in Stripe</span></a>`;
+  return `<button type="button" class="btn btn-secondary" data-p360="comp">${icon('gift')}<span class="label">${b && b.comped_until ? 'Change free access' : 'Give free access'}</span></button>`;
+}
+
 function renderPerson() {
-  const { user: u, billing: b } = P360.data;
-  const d = P360.drawer;
-  d.setTitle(personLabel(u));
-  const state = b && b.comped_until ? 'comped' : ((P360.data.subscription || {}).ent_state || (b && b.state));
-  d.setBody(`
-    <div class="p360-head">
-      <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(personLabel(u)))}</span>
+  const { user: u } = P360.data;
+  const state = personState();
+  const label = personLabel(u);
+  $('#tb-title').textContent = label;
+  setPageTitle(label);
+  p360Host().innerHTML = `<div class="cust">
+    ${custCrumb()}
+    <header class="cust-head">
+      <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(label))}</span>
       <div class="min-w-0 grow">
-        <div class="p360-name truncate">${esc(personLabel(u))}</div>
-        <div class="p360-badges">
+        <h1 class="cust-name truncate">${esc(label)}</h1>
+        <div class="cust-badges">
           ${state ? `<span class="badge ${ACCESS_BADGE[state] || 'badge-neutral'}">${esc(ACCESS_LABEL[state] || state)}</span>` : ''}
-          ${u.role === 'admin' ? '<span class="badge badge-info">Admin</span>' : ''}
-          ${u.status !== 'active' ? `<span class="user-status"><i class="dot" style="--c:var(--${STATUS_COLOR[u.status]})"></i>${esc(STATUS_LABEL[u.status])}</span>` : ''}
-          ${u.email ? (u.email_confirmed ? `<span class="text-3">${icon('check', 'ico-sm')} email confirmed</span>` : '<span class="text-warning">email not confirmed</span>') : '<span class="text-4">no email address</span>'}
-          ${u.lock_reason ? `<span class="text-3">· ${esc(u.lock_reason)}</span>` : ''}
+          ${u.status !== 'active' ? `<span class="user-status"><i class="dot" style="--c:var(--${STATUS_COLOR[u.status]})"></i>${esc(STATUS_LABEL[u.status])}${u.lock_reason ? ` · ${esc(u.lock_reason)}` : ''}</span>` : ''}
+          ${u.email ? (u.email_confirmed ? `<span class="text-3">${icon('check', 'ico-sm')} Email confirmed</span>` : '<span class="text-warning">Email not confirmed</span>') : '<span class="text-4">No email address</span>'}
+          <button type="button" class="cust-id" data-p360="copy-id" data-tip="Copy the customer number">#${u.id}</button>
+          <span class="text-3">Customer since ${esc(fmtDate(u.created_at, { year: true }))}</span>
         </div>
-        <div class="p360-tags" id="p360-tags">${tagChips(P360.data.tags)}<button type="button" class="btn btn-ghost btn-xs" data-p360="tags">${icon('tag', 'ico-sm')}Tags</button></div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" data-p360="menu" aria-haspopup="menu">${icon('more-horizontal')}<span class="label">Actions</span></button>
+      <div class="cust-actions">
+        ${u.email ? `<button type="button" class="btn btn-secondary" data-p360="email">${icon('mail')}<span class="label">Email</span></button>` : ''}
+        ${primaryAccessAction()}
+        <button type="button" class="btn btn-secondary btn-icon" data-p360="menu" aria-haspopup="menu" aria-label="More actions">${icon('more-horizontal')}</button>
+      </div>
+    </header>
+    <nav class="tabs cust-tabs" role="tablist" aria-label="About this customer">${P360_TABS.map(([k, l]) =>
+      `<a role="tab" class="tab ${P360.tab === k ? 'active' : ''}" aria-selected="${P360.tab === k}" href="#customers/${u.id}/${k}">${esc(l)}${k === 'notes' && P360.data.notes.length ? ` <span class="pill">${P360.data.notes.length}</span>` : ''}</a>`).join('')}</nav>
+    <div class="cust-grid">
+      <div class="cust-main" id="p360-tab" role="tabpanel">${tabHtml(P360.tab)}</div>
+      <aside class="cust-side" aria-label="Facts">${factsCard()}</aside>
     </div>
-    ${personKpis()}
-    <div class="tabs p360-tabs" role="tablist" aria-label="About this person">${P360_TABS.map(([k, l]) =>
-      `<button type="button" role="tab" class="tab ${P360.tab === k ? 'active' : ''}" aria-selected="${P360.tab === k}" data-p360-tab="${k}">${esc(l)}${k === 'notes' && P360.data.notes.length ? ` <span class="pill">${P360.data.notes.length}</span>` : ''}</button>`).join('')}</div>
-    <div id="p360-tab">${tabHtml(P360.tab)}</div>`);
+  </div>`;
 }
 
 function tagChips(tags) {
   return (tags || []).map((t) => `<span class="adm-tag" style="--c:var(--${esc(t.color)})">${esc(t.name)}</span>`).join('');
 }
 
-function personKpis() {
-  const { user: u, subscription: s } = P360.data;
+function tagsBlock() {
+  return `<div class="cust-tags" id="p360-tags">${tagChips(P360.data.tags)}<button type="button" class="btn btn-ghost btn-xs" data-p360="tags">${icon('tag', 'ico-sm')}${P360.data.tags.length ? 'Edit' : 'Add tags'}</button></div>`;
+}
+
+function factsCard() {
+  const { user: u, subscription: s, billing: b, attribution: at } = P360.data;
   const cur = (s.currency || 'usd').toUpperCase();
   const act = P360.data.activation;
-  return kpis([
+  const state = personState();
+  const facts = [
+    ['Access', state ? `<span class="badge ${ACCESS_BADGE[state] || 'badge-neutral'}">${esc(ACCESS_LABEL[state] || state)}</span>` : '—'],
+    ['Plan', s.plan ? esc(s.plan === 'yearly' ? 'Yearly' : 'Monthly') : '—'],
     ['MRR', s.mrr_cents ? esc(fmtMoney(s.mrr_cents / 100, cur)) : '—'],
     ['Paid so far', s.lifetime_cents ? esc(fmtMoney(s.lifetime_cents / 100, cur)) : '—'],
-    ['Last seen', u.last_seen_at ? esc(fmtRelative(u.last_seen_at)) : 'Never'],
+    ...(s.trial_end && state === 'trialing' ? [['Trial ends', esc(fmtDateLong(s.trial_end))]] : []),
+    ...(s.current_period_end ? [[s.cancel_at_period_end ? 'Ends on' : 'Renews on', esc(fmtDateLong(s.current_period_end))]] : []),
+    ...(b && b.comped_until ? [['Free until', b.comped_until === 'forever' ? 'Forever' : esc(fmtDateLong(b.comped_until))]] : []),
+    ['Last seen', u.last_seen_at ? `<span data-tip="${esc(fmtDateTime(u.last_seen_at))}">${esc(fmtRelative(u.last_seen_at))}</span>` : 'Never'],
     ['Activated', act.activated ? 'Yes' : (act.first_commit_at ? 'Later' : 'Not yet')],
-  ], 'p360-kpis');
+    ['Came from', at ? esc(at.channel) : '—'],
+    ...(u.email && u.username !== u.email ? [['Username', esc(u.username)]] : []),
+  ];
+  return `<section class="card cust-facts">
+    <dl>${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <div class="section-label mt-4 mb-2">Tags</div>${tagsBlock()}
+  </section>`;
 }
 
 function tabHtml(tab) {
   if (tab === 'billing') return billingTab();
-  if (tab === 'history') return historyTab();
+  if (tab === 'activity') return activityTab();
   if (tab === 'notes') return notesTab();
   return summaryTab();
 }
@@ -89,6 +154,7 @@ function summaryTab() {
     ['Rules', c.rules], ['Categories', c.categories], ['Budgets', c.budgets], ['Tags', c.tags], ['Merchants', c.merchants]];
   return `
     ${pinned.map((n) => `<div class="notice notice-info mb-3">${icon('star')}<div class="grow p360-note-body">${esc(n.body)}</div></div>`).join('')}
+    <section class="card card-pad">
     <div class="section-label mb-2">Getting started</div>
     <ol class="p360-steps">
       ${step(true, 'Signed up', u.created_at)}
@@ -97,7 +163,9 @@ function summaryTab() {
       ${step(!!a.first_commit_at, a.activated ? 'Imported it within the first week' : 'Imported a statement', a.first_commit_at)}
     </ol>
     ${at ? `<div class="hint mt-2">Came from <b>${esc(at.channel)}</b>${at.utm_campaign ? ` · campaign ${esc(at.utm_campaign)}` : ''}${at.referrer_host ? ` · via ${esc(at.referrer_host)}` : ''}.</div>` : ''}
-    <div class="section-label mt-6 mb-2">What they have</div>
+    </section>
+    <section class="card card-pad mt-4">
+    <div class="section-label mb-2">What they have</div>
     <div class="adm-detail-grid">${tiles.map(([l, v]) => `<div class="adm-tile"><div class="l">${esc(l)}</div><div class="v">${fmtNumber(v || 0)}</div></div>`).join('')}</div>
     <div class="setting-row"><div><div class="title">Statements cover</div><div class="desc">Last import ${r.last_import_at ? esc(fmtRelative(r.last_import_at)) : 'never'}</div></div>
       <div class="text-1">${r.first_txn ? `${esc(fmtDate(r.first_txn, { year: true }))} – ${esc(fmtDate(r.last_txn, { year: true }))}` : '—'}</div></div>
@@ -106,7 +174,13 @@ function summaryTab() {
     ${P360.data.ai && P360.data.ai.calls ? `<div class="setting-row"><div><div class="title">AI</div>
       <div class="desc">${fmtNumber(P360.data.ai.calls)} calls${P360.data.ai.errors ? `, ${fmtNumber(P360.data.ai.errors)} failed` : ''}</div></div>
       <div class="text-1">${P360.data.ai.shared_cost_usd ? `${esc(fmtMoney(P360.data.ai.shared_cost_usd, 'USD'))} on the shared key` : 'Own key'}</div></div>` : ''}
-    <div class="hint mt-4">${icon('eye-off', 'ico-sm')} Only counts are shown here — never their transactions, merchants, balances or files.</div>`;
+    <div class="hint mt-4">${icon('eye-off', 'ico-sm')} Only counts are shown here — never their transactions, merchants, balances or files.</div>
+    </section>
+    <section class="card card-pad mt-4 cust-danger">
+      <div class="row-between gap-4 wrap"><div class="min-w-0"><div class="title">Erase this customer</div>
+        <div class="desc">Deletes their account, statements, transactions and files, cancels any subscription first, and keeps only anonymous bookkeeping. This cannot be undone.</div></div>
+        <button type="button" class="btn btn-danger-solid" data-p360="erase">Erase…</button></div>
+    </section>`;
 }
 
 /* ---------- billing ---------- */
@@ -123,53 +197,92 @@ function billingTab() {
     ...(b && b.grace_until ? [['Grace period until', fmtDateLong(b.grace_until)]] : []),
   ];
   const payments = s.payments || [];
-  const isAdmin = u.role === 'admin';
+  const state = personState();
+  const billingEvents = (P360.data.timeline || []).filter((t) => BILLING_KINDS.has(t.kind));
   return `
+    <section class="card card-pad">
     <div class="p360-facts">${rows.map(([k, v]) => `<div><span class="text-3">${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
     <div class="row gap-2 wrap mt-4">
-      <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-trial" ${isAdmin ? 'disabled' : ''}>${icon('clock', 'ico-sm')}Extend trial</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-grace" ${isAdmin ? 'disabled' : ''}>${icon('clock', 'ico-sm')}Extend grace</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-p360="comp" ${isAdmin ? 'disabled' : ''}>${icon('gift', 'ico-sm')}${b && b.comped_until ? 'Change complimentary access' : 'Give complimentary access'}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-trial" ${state === 'active' ? 'disabled data-tip="They are paying; a trial does not apply"' : ''}>${icon('clock', 'ico-sm')}Extend trial</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-p360="extend-grace" ${state === 'grace' || state === 'read_only' ? '' : 'disabled data-tip="Only after a payment fails or a trial runs out"'}>${icon('clock', 'ico-sm')}Extend grace</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-p360="comp">${icon('gift', 'ico-sm')}${b && b.comped_until ? 'Change free access' : 'Give free access'}</button>
       ${s.stripe_subscription_id ? `<button type="button" class="btn btn-secondary btn-sm" data-p360="sync">${icon('refresh', 'ico-sm')}Refresh from Stripe</button>
         <button type="button" class="btn btn-secondary btn-sm" data-p360="cancel">${icon('x', 'ico-sm')}Cancel subscription</button>` : ''}
       ${s.stripe_customer_url ? `<a class="btn btn-ghost btn-sm" href="${esc(s.stripe_customer_url)}" target="_blank" rel="noopener">${icon('external-link', 'ico-sm')}Open in Stripe</a>` : ''}
     </div>
-    ${isAdmin ? '<div class="hint mt-2">Administrators are never billed.</div>' : ''}
-    <div class="section-label mt-6 mb-2">Payments</div>
+    </section>
+    <section class="card card-pad mt-4">
+    <div class="section-label mb-2">Payments</div>
     ${payments.length ? `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>Date</th><th>Status</th><th class="right">Amount</th></tr></thead><tbody>
       ${payments.map((p) => `<tr><td>${esc(fmtDateLong(p.paid_at || p.failed_at || p.period_start))}</td>
         <td><span class="badge ${p.status === 'paid' ? 'badge-success' : p.status === 'failed' ? 'badge-danger' : 'badge-neutral'}">${esc(p.status.replace('_', ' '))}</span></td>
         <td class="right num">${esc(fmtMoney((p.amount_paid_cents - (p.amount_refunded_cents || 0)) / 100, (p.currency || 'usd').toUpperCase()))}</td></tr>`).join('')}
       </tbody></table></div>`
-    : '<div class="hint">No payments yet.</div>'}`;
+    : '<div class="hint">No payments yet.</div>'}
+    </section>
+    ${billingEvents.length ? `<section class="card card-pad mt-4"><div class="section-label mb-2">Subscription history</div>
+      <ol class="timeline p360-timeline">${billingEvents.map(feedItemHtml).join('')}</ol></section>` : ''}`;
 }
 
-/* ---------- history ---------- */
+/* ---------- activity: one feed ---------- */
 
-function historyTab() {
-  const { timeline, logins, emails, admin_actions: acts, recent_activity: recent } = P360.data;
-  const tl = timeline.map((t) => `<li class="tl-item"><span class="tl-dot tl-${esc(t.kind)}"></span>
-      <div class="grow">${esc(t.kind === 'admin' ? auditTitle(t.label) : t.label)}${t.amount_cents ? ` · ${esc(fmtMoney(t.amount_cents / 100, (t.currency || 'usd').toUpperCase()))}` : ''}${t.by ? ` <span class="text-3">by ${esc(t.by)}</span>` : ''}</div>
-      <time class="text-3" datetime="${esc(t.at || '')}" data-tip="${esc(t.at ? fmtDateTime(t.at) : '')}">${t.at ? esc(fmtRelative(t.at)) : ''}</time></li>`).join('');
-  const login = (l) => `<tr><td>${esc(fmtDateTime(l.created_at))}</td>
-    <td>${l.ok ? '<span class="text-success">Signed in</span>' : `<span class="text-danger">Failed · ${esc((l.reason || '').replace('_', ' '))}</span>`}${l.kind !== 'password' ? ` <span class="text-3">(${esc(l.kind.replace('_', ' '))})</span>` : ''}${l.new_network ? ' <span class="badge badge-warning">new network</span>' : ''}</td>
-    <td class="text-3">${esc([l.browser, l.os].filter(Boolean).join(' on ') || l.device || '—')}</td>
-    <td class="text-3 num">${esc(l.ip || '—')}${l.country ? ` · ${esc(l.country)}` : ''}</td></tr>`;
-  return `
-    <div class="section-label mb-2">Story</div>
-    <ol class="timeline p360-timeline">${tl}</ol>
-    <div class="section-label mt-6 mb-2">Sign-ins</div>
-    ${logins.length ? `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>When</th><th>Result</th><th>Device</th><th>Address</th></tr></thead>
-      <tbody>${logins.map(login).join('')}</tbody></table></div>` : '<div class="hint">No sign-ins recorded yet.</div>'}
-    <div class="section-label mt-6 mb-2">Emails</div>
-    ${emails.length ? `<ul class="p360-list">${emails.map((m) => `<li><span class="grow">${esc(m.template.replace(/_/g, ' '))}</span>
-      <span class="badge ${m.status === 'sent' ? 'badge-success' : m.status === 'failed' ? 'badge-danger' : 'badge-neutral'}" ${m.error ? `data-tip="${esc(m.error)}"` : ''}>${esc(m.status)}</span>
-      <span class="text-3">${esc(fmtRelative(m.created_at))}</span></li>`).join('')}</ul>` : '<div class="hint">Nothing sent yet.</div>'}
-    <div class="section-label mt-6 mb-2">What administrators did</div>
-    ${acts.length ? `<div class="adm-audit adm-audit--compact">${acts.map((a) => auditRow(a, { compact: true })).join('')}</div>` : '<div class="hint">Nothing yet.</div>'}
-    <div class="section-label mt-6 mb-2">Their recent activity</div>
-    ${recent.length ? `<div class="adm-audit adm-audit--compact">${recent.map((a) => auditRow(a, { compact: true })).join('')}</div>
-      <a class="btn btn-secondary btn-sm mt-3" href="#activity" data-act="audit-for-user" data-id="${P360.id}" data-name="${esc(personLabel(P360.data.user))}">See all their activity</a>` : '<div class="hint">Nothing recorded.</div>'}`;
+const BILLING_KINDS = new Set(['payment', 'payment_failed', 'subscribed', 'canceled', 'plan_changed', 'mrr_changed',
+  'status_changed', 'cancel_scheduled', 'cancel_unscheduled', 'trial_started', 'trial_extended', 'grace_extended',
+  'comped', 'uncomped']);
+const FEED_FILTERS = [['all', 'Everything'], ['account', 'Their account'], ['billing', 'Billing'], ['signin', 'Sign-ins'],
+  ['email', 'Emails'], ['admin', 'By admins']];
+const FEED_ICON = { account: 'user', billing: 'credit-card', signin: 'lock', email: 'mail', admin: 'shield' };
+
+/* Their story, sign-ins, emails and what they and the admins did, newest first. */
+function feedItems() {
+  const { timeline, logins, emails, recent_activity: recent } = P360.data;
+  const items = [];
+  (timeline || []).forEach((t) => {
+    const group = t.kind === 'admin' ? 'admin' : BILLING_KINDS.has(t.kind) ? 'billing' : 'account';
+    items.push({ at: t.at, group, danger: t.kind === 'payment_failed',
+      label: t.kind === 'admin' ? auditTitle(t.label) : t.label,
+      sub: [t.amount_cents ? fmtMoney(t.amount_cents / 100, (t.currency || 'usd').toUpperCase()) : null,
+        t.by ? `by ${t.by}` : null].filter(Boolean).join(' · ') });
+  });
+  (logins || []).forEach((l) => items.push({ at: l.created_at, group: 'signin', danger: !l.ok,
+    label: l.ok ? (l.kind === 'password' ? 'Signed in' : cap(words(l.kind))) : `Sign-in failed · ${words(l.reason || '')}`,
+    sub: [[l.browser, l.os].filter(Boolean).join(' on ') || l.device, l.ip, l.country].filter(Boolean).join(' · '),
+    badge: l.new_network ? ['badge-warning', 'new network'] : null }));
+  (emails || []).forEach((m) => items.push({ at: m.created_at, group: 'email', danger: m.status === 'failed',
+    label: `Email: ${words(m.template)}`, sub: m.error || '',
+    badge: [m.status === 'sent' ? 'badge-success' : m.status === 'failed' ? 'badge-danger' : 'badge-neutral', m.status] }));
+  (recent || []).filter((a) => !String(a.action).startsWith('auth.login')).forEach((a) =>
+    items.push({ at: a.created_at, group: 'account', label: auditTitle(a.action), sub: '' }));
+  return items.filter((i) => i.at).sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+function feedItemHtml(t) {
+  const group = t.group || (BILLING_KINDS.has(t.kind) ? 'billing' : 'account');
+  return `<li class="tl-item cust-feed-item"><span class="cust-feed-ico ${t.danger ? 'is-danger' : ''}" aria-hidden="true">${icon(FEED_ICON[group] || 'circle', 'ico-sm')}</span>
+    <div class="grow min-w-0"><div>${esc(t.label)}${t.badge ? ` <span class="badge ${t.badge[0]}">${esc(t.badge[1])}</span>` : ''}${!t.group && t.amount_cents ? ` · ${esc(fmtMoney(t.amount_cents / 100, (t.currency || 'usd').toUpperCase()))}` : ''}</div>
+      ${t.sub ? `<div class="text-3 fs-sm truncate">${esc(t.sub)}</div>` : ''}</div>
+    <time class="text-3" datetime="${esc(t.at || '')}" data-tip="${esc(t.at ? fmtDateTime(t.at) : '')}">${t.at ? esc(fmtRelative(t.at)) : ''}</time></li>`;
+}
+
+function activityTab() {
+  const all = feedItems();
+  const shown = P360.feed === 'all' ? all : all.filter((i) => i.group === P360.feed);
+  let day = null;
+  const list = shown.map((t) => {
+    const label = dayLabel(t.at);
+    const head = label === day ? '' : `<li class="adm-day" role="presentation">${esc(label)}</li>`;
+    day = label;
+    return head + feedItemHtml(t);
+  }).join('');
+  const u = P360.data.user;
+  return `<section class="card card-pad">
+    <div class="seg cust-feed-filter" role="radiogroup" aria-label="Show">${FEED_FILTERS.map(([k, l]) => {
+      const n = k === 'all' ? all.length : all.filter((i) => i.group === k).length;
+      return `<button type="button" class="seg-btn ${P360.feed === k ? 'active' : ''}" role="radio" aria-checked="${P360.feed === k}" data-p360-feed="${k}" ${n ? '' : 'disabled'}>${esc(l)}</button>`;
+    }).join('')}</div>
+    ${shown.length ? `<ol class="timeline cust-feed mt-4">${list}</ol>` : '<div class="hint mt-4">Nothing here yet.</div>'}
+    <a class="btn btn-secondary btn-sm mt-4" href="${esc(adminHref('activity', { params: { user: u.id, who: personLabel(u) } }))}">${icon('clock', 'ico-sm')}Open in the activity log</a>
+  </section>`;
 }
 
 /* ---------- notes ---------- */
@@ -196,28 +309,35 @@ function notesTab() {
 function personAsRow() {
   const u = P360.data.user;
   const listed = (typeof AU !== 'undefined' && AU.items.find((x) => x.id === u.id)) || {};
-  return { ...listed, ...u, is_self: u.id === (window.currentUser || {}).id,
+  return { ...listed, ...u,
     txn_count: P360.data.counts.transactions, statement_count: P360.data.counts.statements,
     storage_bytes: P360.data.storage.source_bytes };
 }
 
 function personMenu(anchor) {
   const u = personAsRow();
-  const isMe = u.is_self;
+  const s = P360.data.subscription || {};
   const extra = [
     ...(u.email && !u.email_confirmed ? [
       { label: 'Resend the confirmation email', icon: 'mail', onClick: () => personPost('resend-confirmation', 'Confirmation email sent') },
       { label: 'Mark email as confirmed', icon: 'check', onClick: () => personPost('mark-confirmed', 'Email marked as confirmed') },
     ] : []),
-    ...(u.email ? [{ label: 'Email this person…', icon: 'mail', onClick: () => openComposer({ audience: { ids: [u.id] }, label: personLabel(u) }) }] : []),
-    { label: u.email ? 'Change email address…' : 'Add an email address…', icon: 'pencil', disabled: isMe, onClick: changeEmail },
-    ...(u.email && !isMe ? [{ label: 'Send an invitation to set a password', icon: 'mail', onClick: () => personPost('invite', 'Invitation sent') }] : []),
+    { label: u.email ? 'Change email address…' : 'Add an email address…', icon: 'pencil', onClick: changeEmail },
+    ...(u.email ? [{ label: 'Send an invitation to set a password', icon: 'mail', onClick: () => personPost('invite', 'Invitation sent') }] : []),
+    ...(s.stripe_subscription_id ? [{ label: 'Refresh from Stripe', icon: 'refresh', onClick: syncFromStripe }] : []),
+    ...(s.stripe_customer_url ? [{ label: 'Open in Stripe', icon: 'external-link', onClick: () => window.open(s.stripe_customer_url, '_blank', 'noopener') }] : []),
     { divider: true },
     { label: 'Email them a copy of their data', icon: 'download', disabled: !u.email, onClick: () => personPost('export', 'Preparing their data — they will get an email with the link') },
-    { label: 'Erase permanently…', icon: 'trash', danger: true, disabled: isMe, onClick: erasePerson },
     { divider: true },
   ];
-  ui.menu(anchor, [...extra, ...userMenuItems(u).filter((item) => item.label !== 'Open')]);
+  ui.menu(anchor, [...extra, ...userMenuItems(u).filter((item) => item.label !== 'Open'),
+    { label: 'Erase permanently…', icon: 'trash', danger: true, onClick: erasePerson }]);
+}
+
+async function syncFromStripe() {
+  await api(`/api/admin/billing/users/${P360.id}/sync`, { method: 'POST', body: {} });
+  toast('Refreshed from Stripe', { type: 'success' });
+  afterChange();
 }
 
 function erasePerson() {
@@ -232,8 +352,8 @@ function erasePerson() {
       if ($('#er-confirm', m.el).value.trim() !== u.username) { ui.fieldError($('#er-confirm', m.el), 'That does not match'); return false; }
       await api(`/api/admin/users/${P360.id}/erase`, { method: 'POST', body: { confirm: u.username, reason: $('#er-reason', m.el).value.trim() } });
       toast(`${personLabel(u)} erased`, { type: 'success' });
-      if (P360.drawer) P360.drawer.forceClose();
-      afterChange();
+      closeCustomer();
+      location.hash = '#customers';
       return undefined;
     } }],
   });
@@ -316,7 +436,7 @@ async function editTags(anchor) {
     onChange: async (sel) => {
       await api(`/api/admin/users/${P360.id}/tags`, { method: 'PUT', body: { tag_ids: Array.from(sel).map(Number) } });
       P360.data.tags = all.filter((t) => sel.has(String(t.id)));
-      $('#p360-tags').innerHTML = `${tagChips(P360.data.tags)}<button type="button" class="btn btn-ghost btn-xs" data-p360="tags">${icon('tag', 'ico-sm')}Tags</button>`;
+      $('#p360-tags').outerHTML = tagsBlock();
       if (typeof AU !== 'undefined') AU.facets = null;
     },
   });
@@ -324,24 +444,30 @@ async function editTags(anchor) {
 }
 
 document.addEventListener('click', async (e) => {
-  const tab = e.target.closest('[data-p360-tab]');
-  if (tab && P360.drawer) {
-    P360.tab = tab.dataset.p360Tab;
-    $$('[data-p360-tab]').forEach((b) => { const on = b === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+  if (P360.open && e.target.closest('[data-act="reload-person"]')) { refreshPerson(); return; }
+  if (!P360.open || !P360.data) return;
+  const feed = e.target.closest('[data-p360-feed]');
+  if (feed) {
+    P360.feed = feed.dataset.p360Feed;
     $('#p360-tab').innerHTML = tabHtml(P360.tab);
     return;
   }
   const el = e.target.closest('[data-p360]');
-  if (!el || !P360.drawer) return;
+  if (!el) return;
   const run = (fn) => ui.busy(el, fn);
   switch (el.dataset.p360) {
     case 'menu': personMenu(el); break;
+    case 'email': openComposer({ audience: { ids: [P360.id] }, label: personLabel(P360.data.user) }); break;
+    case 'erase': erasePerson(); break;
+    case 'copy-id':
+      try { await navigator.clipboard.writeText(String(P360.id)); toast('Customer number copied'); } catch { /* clipboard blocked */ }
+      break;
     case 'tags': editTags(el); break;
     case 'extend-trial': daysDialog('Extend the trial', 'Counted from today, or from the current trial end if that is later.', 'Extend trial', 'extend-trial'); break;
     case 'extend-grace': daysDialog('Extend the grace period', 'More time to fix a failed payment before the account becomes read-only.', 'Extend grace', 'extend-grace'); break;
     case 'comp': compDialog(); break;
     case 'cancel': cancelSubscription(); break;
-    case 'sync': run(async () => { await api(`/api/admin/billing/users/${P360.id}/sync`, { method: 'POST', body: {} }); toast('Refreshed from Stripe', { type: 'success' }); afterChange(); }); break;
+    case 'sync': run(syncFromStripe); break;
     case 'pin': run(async () => { await api(`/api/admin/notes/${el.dataset.id}`, { method: 'PUT', body: { pinned: el.dataset.pinned !== 'true' } }); refreshPerson(); }); break;
     case 'delete-note':
       if (await ui.confirm({ title: 'Delete this note?', confirmText: 'Delete', danger: true })) {

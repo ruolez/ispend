@@ -105,7 +105,7 @@ async function initNav(activePage, opts = {}) {
       <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>${opts.brandBadge ? `<span class="badge badge-accent sb-badge">${esc(opts.brandBadge)}</span>` : ''}
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
       <nav class="sb-nav">
-        ${groups.map((g) => `<div class="sb-group"><div class="sb-group-label">${esc(g.label)}</div>${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
+        ${groups.map((g) => `<div class="sb-group">${g.label ? `<div class="sb-group-label">${esc(g.label)}</div>` : ''}${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>

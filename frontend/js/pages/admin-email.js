@@ -12,7 +12,7 @@ const AUDIENCES = [
 ];
 
 AdminPanels.register('messages', {
-  label: 'Messages', icon: 'mail', group: 'settings',
+  label: 'Messages', icon: 'send', group: 'customers',
   sub: 'Email one person, a group, or everyone — with a record of every message sent',
   actions: '<button type="button" class="btn btn-primary" data-act="compose"></button>',
   markup: '<div id="msg-list"></div>',

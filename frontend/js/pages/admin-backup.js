@@ -5,7 +5,7 @@ const POLL_MS = 1500;
 const RESTORE_TOKEN_KEY = 'ispend.restoreJob';
 
 AdminPanels.register('backup', {
-  label: 'Backup', icon: 'database',
+  label: 'Backups', icon: 'database', group: 'operations',
   sub: 'One archive with every user, their data and every uploaded file',
   actions: `<button type="button" class="btn btn-secondary btn-icon" data-act="reload-backups" aria-label="Refresh backups"></button>
     <button type="button" class="btn btn-primary" data-act="start-backup"><span class="label">Create a backup</span></button>`,

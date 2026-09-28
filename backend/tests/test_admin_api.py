@@ -29,7 +29,7 @@ ROUTES = [
     ("get", "/api/admin/me/leftover-data"), ("post", "/api/admin/me/leftover-data/wipe"),
     ("get", "/api/admin/ai-config"), ("put", "/api/admin/ai-config"),
     ("get", "/api/admin/ai-config/models"), ("post", "/api/admin/ai-config/test"),
-    ("get", "/api/admin/shell"),
+    ("get", "/api/admin/shell"), ("get", "/api/admin/me/logins"), ("post", "/api/admin/me/sign-out-others"),
 ]
 
 

@@ -219,19 +219,26 @@ Transactions keeps `saved_views` in the account preferences (`[{id, name, query,
 
 ## Admin
 `/admin` is a console with its own shell: `initNav('<section>', {shell: 'admin', groups, footer, bottom,
-more, brandBadge, searchLabel, title, menu})` swaps the app's navigation for the admin's (no billing
-banner, pinned views or review pill; the account menu carries `menu`) and
-`window.PALETTE` makes ⌘K search people (`GET /api/admin/search`) instead of transactions.
-`js/pages/admin-shell.js` owns the registry, routing, the period picker and the KPI tile; each section is
-one file that calls `AdminPanels.register(key, {label, icon, group, sub, ranged, markup, actions,
-load(host, ctx)})`. The hash is the section, the query holds filters and the period
-(`?range=90d&cmp=1`), so views bookmark and survive a reload; admin nav links are hash-only so switching
-keeps the query. `ctx.range` is the period as an API query string, `ctx.isCurrent()` guards late
-responses. `adminTiles(tiles)` renders the server's tile objects (value, prev, delta, `good` direction —
-a rising cancellation count is red — `agg`-thinned sparkline, help tooltip, optional drill link).
-Numbers come from `/api/admin/metrics/*` (`backend/admin_metrics.py`, periods from `admin_range.py`,
-five-minute `metric_cache`, `as_of` stamp).
+more, brandBadge, searchLabel, title, menu})` swaps the app's navigation for the admin's (Home ·
+Customers · Business · Operations groups, Settings in the sidebar foot; no billing banner, pinned views or
+review pill) and `window.PALETTE` makes ⌘K search customers (`GET /api/admin/search`) instead of
+transactions. `js/pages/admin-shell.js` owns the registry, the router, the period picker and the KPI tile;
+each section is one file that calls `AdminPanels.register(key, {label, icon, group, sub, ranged, compare,
+params, markup, actions, load(host, ctx)})`.
 
+- **URLs.** `/admin?<period and the open section's filters>#<section>[/<id>[/<tab>]]` — e.g.
+  `/admin?state=trialing#customers`, `#customers/42/billing`, `#settings/email`. Build links with
+  `adminHref(section, {id, tab, params})`; a section's `params` are dropped when another section opens,
+  and old links (`#users?state=…`, `#billing`) are rewritten on arrival (`ADMIN_ALIASES`). `ctx.route`
+  is `{section, id, tab}`, `ctx.range` the period as an API query string, `ctx.isCurrent()` guards late
+  responses. A section showing one record (a customer) calls `adminSetHead(null)` and draws its own header.
+- **Settings** is one section with a page per subject: `AdminSettings.register(key, {label, icon, sub,
+  load(host)})`. A page that edits takes `adminDirtyBar('settings/<key>', {save, discard})`; the shell
+  asks Save / Discard / Stay before its unsaved edits are left.
+- **Tiles.** `adminTiles(tiles)` renders the server's tile objects (value, prev, delta, `good` direction —
+  a rising cancellation count is red — `agg`-thinned sparkline, help tooltip, optional drill link).
+  Numbers come from `/api/admin/metrics/*` (`backend/admin_metrics.py`, periods from `admin_range.py`,
+  five-minute `metric_cache`, `as_of` stamp).
 - **Guarding.** An admin account runs the console and nothing else. `initNav(page, {shell: 'admin'})` is
   the console; any other `initNav` is the app. Each sends the wrong kind of account to its own home
   (`homeFor(me)` in `api.js`) before painting, and `api()` does the same on a `403 {code: "admin_account"}`

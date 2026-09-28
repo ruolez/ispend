@@ -167,6 +167,24 @@ class WipeCoverageTest(unittest.TestCase):
                 self.assertLess(order.index(child), order.index(parent))
 
 
+class OwnAccountTest(_Api):
+    def test_signing_out_other_sessions_keeps_this_one(self):
+        self.x.routes.append(("UPDATE users SET session_epoch", {"session_epoch": 4}))
+        c = self.app.test_client()
+        with c.session_transaction() as sess:
+            sess["user_id"], sess["role"], sess["uepoch"] = 1, "admin", 3
+        with mock.patch.object(FAKE, "query", side_effect=self.q), \
+                mock.patch.object(FAKE, "execute", side_effect=self.x), mock.patch.object(util, "db", FAKE):
+            res = c.post("/api/admin/me/sign-out-others")
+        with c.session_transaction() as sess:
+            self.assertEqual((res.status_code, sess["uepoch"]), (200, 4))
+        self.assertEqual(self.x.sql("UPDATE users SET session_epoch")[0][1], (1,))
+
+    def test_sign_ins_are_only_your_own(self):
+        self._call("get", "/api/admin/me/logins")
+        self.assertEqual(self.q.sql("FROM login_events")[0][1], (1,))
+
+
 class ShellTest(_Api):
     def test_the_stripe_badge_follows_the_configured_key(self):
         import billing

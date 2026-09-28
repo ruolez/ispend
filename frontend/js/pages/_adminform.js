@@ -44,10 +44,12 @@ function collectConfigFields(prefix, keys) {
   return body;
 }
 
-/* A save bar rather than a button at the bottom: these forms are long enough that the button would
-   be off screen while typing. It is fixed to the viewport, not the panel, so leaving the tab must
-   take it along. Same pattern as the AI settings page. */
-function adminDirtyBar(tab, { saveAct, discardAct, unsavedText }) {
+/* The save bar every settings page uses: it appears with the first edit, saves or discards the page,
+   and registers the page with the shell, which asks before anyone leaves with unsaved changes.
+   Fixed to the viewport, not the page, so it is removed whenever the page is left.
+     const bar = adminDirtyBar('settings/billing', { save: async () => {...}, discard: () => reload() });
+     host.addEventListener('input', () => bar.set(true)); */
+function adminDirtyBar(pageKey, { save, discard }) {
   let el = null;
   let dirty = false;
   const set = (v) => {
@@ -57,20 +59,34 @@ function adminDirtyBar(tab, { saveAct, discardAct, unsavedText }) {
       el.className = 'floatbar';
       el.setAttribute('role', 'status');
       el.innerHTML = `<span>Unsaved changes</span><span class="sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-act="${discardAct}">Discard</button>
-        <button type="button" class="btn btn-primary btn-sm" data-act="${saveAct}">Save</button>`;
+        <button type="button" class="btn btn-ghost btn-sm" data-bar="discard">Discard</button>
+        <button type="button" class="btn btn-primary btn-sm" data-bar="save">Save</button>`;
+      el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-bar]');
+        if (!b) return;
+        if (b.dataset.bar === 'discard') { bar.discard(); return; }
+        ui.busy(b, () => bar.save());
+      });
       document.body.appendChild(el);
     } else if (!v && el) {
       el.remove();
       el = null;
     }
   };
-  window.addEventListener('ispend:admin-tab', (e) => {
-    if (e.detail === tab) return;
-    if (dirty) toast(unsavedText, { type: 'info' });
-    set(false);
-  });
-  return { set, get dirty() { return dirty; } };
+  const bar = {
+    set,
+    get dirty() { return dirty; },
+    async save() { await save(); set(false); },
+    discard() { set(false); return discard && discard(); },
+  };
+  ADMIN.forms[pageKey] = bar;
+  window.addEventListener('ispend:admin-tab', () => { if (adminPageKey(adminRoute()) !== pageKey) set(false); });
+  return bar;
+}
+
+/* A settings page's intro: what it controls, in a sentence. */
+function settingsIntro(text) {
+  return `<p class="adm-settings-intro">${text}</p>`;
 }
 
 document.addEventListener('click', (e) => {

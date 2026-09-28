@@ -1,12 +1,13 @@
 /* Admin › Revenue: MRR and how it moved (new, returning, upgrades, downgrades, cancellations), churn and
    retention of revenue, what trials turn into, the plan mix and recent payments. Computed from
-   iSpend's own revenue ledger; compare it with Stripe under Billing › Revenue records. */
+   iSpend's own revenue ledger, which the "Revenue records" card at the bottom compares with Stripe. */
 
 const ARV = { charts: {} };
 
 AdminPanels.register('revenue', {
-  label: 'Revenue', icon: 'trending-up', group: 'insights', ranged: true,
+  label: 'Revenue', icon: 'trending-up', group: 'business', ranged: true, params: ['reconcile'],
   sub: 'Recurring revenue, how it moved, and what trials turn into',
+  actions: '<button type="button" class="btn btn-secondary" data-act="rv-goto-records"></button>',
   markup: `
     <div id="rv-note"></div>
     <div id="rv-tiles"></div>
@@ -27,6 +28,7 @@ AdminPanels.register('revenue', {
       <section class="card"><header class="card-head"><h2>Plan mix</h2></header><div class="card-body" id="rv-plans"></div></section>
     </div>
     <section class="card mt-4"><header class="card-head"><h2>Payments in this period</h2></header><div id="rv-payments"></div></section>
+    <section class="card card-pad mt-4" id="rv-records"></section>
     <div class="row-between mt-3"><span></span><span class="hint" id="rv-asof"></span></div>`,
   load: loadAdminRevenue,
 });
@@ -46,10 +48,12 @@ async function loadAdminRevenue(host, ctx) {
   if (!ctx.isCurrent()) return;
   ARV.data = d;
   const cur = (d.currency || 'usd').toUpperCase();
+  $('[data-act="rv-goto-records"]').innerHTML = `${icon('refresh')}<span class="label">Compare with Stripe</span>`;
+  loadRevenueRecords();
   $('#rv-note').innerHTML = !d.history_from
     ? `<div class="notice notice-info mb-4">${icon('info')}<div class="grow">No subscriptions yet. Revenue shows here from the first
-        Stripe subscription; if Stripe already has customers, compare under Billing › Revenue records to bring their history in.</div>
-        <a class="btn btn-secondary btn-sm" href="#billing">Billing</a></div>`
+        Stripe subscription; if Stripe already has customers, compare with Stripe (below) to bring their history in.</div>
+        <a class="btn btn-secondary btn-sm" href="#settings/billing">Billing settings</a></div>`
     : (d.history_from > d.range.start
       ? `<div class="hint mb-3">${icon('info', 'ico-sm')} Revenue records begin ${esc(fmtDateLong(d.history_from))}; earlier days show nothing.</div>` : '');
   $('#rv-tiles').innerHTML = adminTiles(d.tiles);
@@ -105,7 +109,7 @@ function renderTrialCohorts(t) {
       <th>Signed up</th><th class="right">People</th><th class="right">Paid in time</th><th class="right">Rate</th><th class="right">Median days</th></tr></thead>
       <tbody>${t.rows.map((r) => `<tr class="${r.maturing === r.signups ? 'is-maturing' : ''}">
         <td>${esc(t.bucket === 'month' ? fmtMonth(r.cohort.slice(0, 7)) : `Week of ${fmtDate(r.cohort)}`)}</td>
-        <td class="right num"><a class="row-link" href="#users?signup_from=${esc(r.cohort)}&signup_to=${esc(cohortEnd(r.cohort, t.bucket))}" data-drill-users>${fmtNumber(r.signups)}</a></td>
+        <td class="right num"><a class="row-link" href="${esc(adminHref('customers', { params: { signup_from: r.cohort, signup_to: cohortEnd(r.cohort, t.bucket) } }))}">${fmtNumber(r.signups)}</a></td>
         <td class="right num">${fmtNumber(r.paid_in_window)}</td>
         <td class="right num" ${r.maturing ? `data-tip="${esc(people(r.maturing))} still inside the window"` : ''}>${r.rate == null ? '—' : esc(fmtPct(r.rate))}${r.maturing ? '<span class="adm-maturing">*</span>' : ''}</td>
         <td class="right num">${r.median_days_to_paid == null ? '—' : fmtNumber(r.median_days_to_paid, { decimals: 1 })}</td></tr>`).join('')}</tbody></table></div>
@@ -138,25 +142,67 @@ function renderPayments(rows) {
   $('#rv-payments').innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>When</th><th>Person</th><th>Status</th><th>Plan</th><th class="right">Amount</th></tr></thead>
     <tbody>${rows.map((p) => `<tr>
       <td class="text-3">${esc(fmtDateTime(p.at))}</td>
-      <td>${p.user_id ? `<button type="button" class="row-link" data-act="open-person" data-id="${p.user_id}">${esc(p.email || p.username || `#${p.user_id}`)}</button>` : '<span class="text-4">deleted account</span>'}</td>
+      <td>${p.user_id ? `<a class="row-link" href="#customers/${p.user_id}/billing">${esc(p.email || p.username || `#${p.user_id}`)}</a>` : '<span class="text-4">deleted account</span>'}</td>
       <td><span class="badge ${p.status === 'paid' ? 'badge-success' : p.status === 'failed' ? 'badge-danger' : 'badge-neutral'}">${esc(p.status.replace('_', ' '))}</span></td>
       <td class="text-3">${esc(p.plan || '—')}</td>
       <td class="right num">${esc(fmtMoney((p.amount_paid_cents - (p.amount_refunded_cents || 0)) / 100, (p.currency || 'usd').toUpperCase()))}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
-/* Links from a chart or table into the people list carry their filters in the hash's query part;
-   move them into the real query so the list picks them up. */
-document.addEventListener('click', (e) => {
-  const drill = e.target.closest('a[data-drill-users]');
-  if (drill) {
-    e.preventDefault();
-    const [, query] = drill.getAttribute('href').split('?');
-    const next = Object.fromEntries(new URLSearchParams(query));
-    setQs(Object.fromEntries(FILTER_KEYS.map((k) => [k, next[k]])), { merge: true });
-    location.hash = '#users';
+/* ---------- revenue records: the check that the ledger still agrees with Stripe ---------- */
+
+async function loadRevenueRecords() {
+  const host = $('#rv-records');
+  let summary, r;
+  try {
+    [summary, r] = await Promise.all([api('/api/admin/billing/summary'), api('/api/admin/billing/reconcile')]);
+  } catch (err) {
+    host.innerHTML = ui.errorBox(err.message);
     return;
   }
-  const person = e.target.closest('[data-act="open-person"]');
-  if (person) { openUserDrawer(Number(person.dataset.id)); return; }
-  if (e.target.closest('[data-act="reload-revenue"]')) AdminPanels.refresh();
+  ARV.reconcile = r;
+  if (!summary.enabled) {
+    host.innerHTML = `<div class="section-label mb-2">Revenue records</div><div class="hint">Stripe is not set up, so there is nothing to compare. Add the keys in <a href="#settings/billing">Settings › Billing</a>.</div>`;
+  } else {
+    const last = r.last;
+    const text = !last ? 'Never compared with Stripe yet. The first comparison also imports the history of subscriptions that started before revenue tracking did.'
+      : last.error ? `The last comparison ${fmtRelative(last.started_at)} failed: ${last.error}`
+        : `Last compared ${fmtRelative(last.started_at)}: ${plural(last.checked, 'customer')} checked, ${plural(last.fixed.length, 'record')} corrected, ${plural(last.payments_added, 'payment')} added.`;
+    host.innerHTML = `<div class="row-between gap-4 wrap"><div class="min-w-0">
+        <div class="section-label mb-2">Revenue records ${r.running ? '<span class="badge badge-info">Comparing…</span>' : ''}</div>
+        <div class="desc">${esc(text)}</div></div>
+      <div class="row gap-2 wrap">
+        <button type="button" class="btn btn-secondary btn-sm" data-act="reconcile-stripe" ${r.running ? 'disabled' : ''}>Compare with Stripe</button>
+        ${last ? `<button type="button" class="btn btn-ghost btn-sm" data-act="reconcile-stripe-full" ${r.running ? 'disabled' : ''}>Compare everything</button>` : ''}
+        <button type="button" class="btn btn-ghost btn-sm" data-act="sync-stale" data-tip="Ask Stripe again about subscriptions not heard from in a day">Refresh stale subscriptions</button>
+      </div></div>`;
+  }
+  if (qs().reconcile) {
+    setQs({ reconcile: undefined }, { merge: true, replace: true });
+    host.scrollIntoView({ block: 'center' });
+  }
+}
+
+async function startReconcile(el, full) {
+  return ui.busy(el, async () => {
+    await api('/api/admin/billing/reconcile', { method: 'POST', body: { full } });
+    toast('Comparing with Stripe — this runs in the background', { type: 'success' });
+    loadRevenueRecords();
+  });
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el || AdminPanels.current() !== 'revenue') return undefined;
+  switch (el.dataset.act) {
+    case 'reload-revenue': return AdminPanels.refresh();
+    case 'rv-goto-records': $('#rv-records').scrollIntoView({ behavior: 'smooth', block: 'center' }); return undefined;
+    case 'reconcile-stripe': return startReconcile(el, false);
+    case 'reconcile-stripe-full': return startReconcile(el, true);
+    case 'sync-stale':
+      return ui.busy(el, async () => {
+        const r = await api('/api/admin/billing/sync-stale', { method: 'POST', body: {} });
+        toast(`${plural(r.queued, 'subscription')} queued for a Stripe refresh`, { type: 'success' });
+      });
+    default: return undefined;
+  }
 });

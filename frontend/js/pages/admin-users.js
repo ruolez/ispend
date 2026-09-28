@@ -1,5 +1,6 @@
-/* Admin › Users: everyone with an account — searchable, filterable, sortable, paged server-side —
-   with bulk actions, saved views and CSV export. A row opens the person (admin-user360.js).
+/* Admin › Customers: everyone with an account — searchable, filterable, sortable, paged server-side —
+   with view tabs, bulk actions, saved views and CSV export. A row opens the customer's own page
+   (#customers/<id>, admin-user360.js).
 
    Filters live in the URL query (see FILTER_KEYS), so a view bookmarks, survives a reload and can be
    linked to from a KPI tile or a cohort cell. */
@@ -8,16 +9,19 @@ const AU = {
   items: [], total: 0, retention: 30, purgeDue: 0,
   selected: new Set(), allMatching: false, facets: null, wired: false, seq: 0,
 };
-const FILTER_KEYS = ['q', 'status', 'role', 'state', 'plan', 'trial_ending', 'confirmed', 'activated',
+const FILTER_KEYS = ['q', 'status', 'state', 'plan', 'trial_ending', 'confirmed', 'activated',
   'seen_within', 'inactive_for', 'signup_from', 'signup_to', 'source', 'tag', 'sort', 'dir', 'page'];
 const PER_PAGE = 50;
 
 const STATUS_LABEL = { active: 'Active', locked: 'Locked', deleted: 'Trash' };
 const STATUS_COLOR = { active: 'success', locked: 'warning', deleted: 'text-4' };
 const ACCESS_LABEL = { trialing: 'Trial', active: 'Paying', grace: 'Payment due', read_only: 'Read-only',
-  admin_exempt: 'Admin', comped: 'Complimentary' };
+  comped: 'Free access' };
 const ACCESS_BADGE = { trialing: 'badge-info', active: 'badge-success', grace: 'badge-warning',
-  read_only: 'badge-neutral', admin_exempt: 'badge-accent', comped: 'badge-accent' };
+  read_only: 'badge-neutral', comped: 'badge-accent' };
+/* The tabs above the table: the questions asked every day, then the admin's own saved views. */
+const VIEW_TABS = [['All', ''], ['On a trial', '?state=trialing'], ['Paying', '?state=active'],
+  ['Payment due', '?state=grace'], ['Never imported', '?activated=0&sort=created_at&dir=desc']];
 const STATUS_FILTERS = [['', 'Active & locked'], ['active', 'Active'], ['locked', 'Locked'], ['deleted', 'Trash'], ['all', 'Everyone']];
 const PLAN_FILTERS = [['', 'Any plan'], ['monthly', 'Monthly'], ['yearly', 'Yearly']];
 const SEEN_FILTERS = [['', 'Any time', {}], ['s7', 'Seen in the last 7 days', { seen_within: 7 }],
@@ -31,22 +35,26 @@ const USER_COLS = [
   ['txn', 'Transactions', 'txn_count', 'right'], ['created', 'Signed up', 'created_at'],
 ];
 
-AdminPanels.register('users', {
-  label: 'Users', icon: 'users', group: 'insights',
+AdminPanels.register('customers', {
+  label: 'Customers', icon: 'users', group: 'customers', params: [...FILTER_KEYS, 'add'],
   sub: 'Everyone with an account, their access, and how they are getting on',
   actions: `<button type="button" class="btn btn-secondary" data-act="users-views" aria-haspopup="menu"></button>
     <button type="button" class="btn btn-secondary" data-act="users-export"></button>
     <button type="button" class="btn btn-primary" data-act="add-user"></button>`,
   markup: `
-    <div id="users-notice"></div>
-    <div class="tbl-toolbar adm-users-toolbar" id="users-toolbar">
-      <div class="input-group adm-search"><span class="ico-wrap"></span>
-        <input id="u-search" class="input input-sm" type="search" placeholder="Search by email, name or #id…" aria-label="Search people"></div>
-      <div class="adm-chips" id="u-chips"></div>
+    <div id="cust-list">
+      <div id="users-notice"></div>
+      <div class="tabs adm-view-tabs" id="u-views" role="tablist" aria-label="Views"></div>
+      <div class="tbl-toolbar adm-users-toolbar" id="users-toolbar">
+        <div class="input-group adm-search"><span class="ico-wrap"></span>
+          <input id="u-search" class="input input-sm" type="search" placeholder="Search by email, name or #id…" aria-label="Search customers"></div>
+        <div class="adm-chips" id="u-chips"></div>
+      </div>
+      <div class="tbl-summary" id="users-summary"></div>
+      <div id="users-table"></div>
+      <div class="adm-pager" id="users-pager"></div>
     </div>
-    <div class="tbl-summary" id="users-summary"></div>
-    <div id="users-table"></div>
-    <div class="adm-pager" id="users-pager"></div>`,
+    <div id="cust-person" hidden></div>`,
   load: loadUsersSection,
 });
 
@@ -65,16 +73,24 @@ function filtered() {
   return Object.keys(f).some((k) => !['sort', 'dir', 'page'].includes(k));
 }
 
-async function loadUsersSection() {
+async function loadUsersSection(host, ctx) {
   wireUsers();
-  openUserFromQuery();
+  const id = Number(ctx.route.id);
+  $('#cust-list').hidden = !!id;
+  $('#cust-person').hidden = !id;
+  paintBulkBar();
+  if (id) return showCustomer(id, ctx.route.tab);
+  closeCustomer();
+  if (qs().add) { setQs({ add: undefined }, { merge: true, replace: true }); openAddUser(); }
   return loadUsers();
 }
+
+function customerHref(id) { return `#customers/${id}`; }
 
 function wireUsers() {
   if (AU.wired) return;
   AU.wired = true;
-  $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add user</span>`;
+  $('[data-act="add-user"]').innerHTML = `${icon('plus')}<span class="label">Add customer</span>`;
   $('[data-act="users-export"]').innerHTML = `${icon('download')}<span class="label">Export</span>`;
   $('[data-act="users-views"]').innerHTML = `${icon('star')}<span class="label">Views</span>${icon('chevron-down', 'ico-sm')}`;
   $('#users-toolbar .ico-wrap').innerHTML = icon('search');
@@ -84,19 +100,11 @@ function wireUsers() {
   $('#users-table').addEventListener('click', (e) => {
     if (e.target.closest('[data-act], input, label')) return;
     const tr = e.target.closest('tr[data-id]');
-    if (tr) openUserDrawer(Number(tr.dataset.id));
+    if (tr && !e.target.closest('a')) location.hash = customerHref(tr.dataset.id);
   });
   $('#users-table').addEventListener('change', onSelectChange);
   document.body.addEventListener('click', onUsersAction);
   api('/api/admin/users/facets').then((f) => { AU.facets = f; paintChips(); }).catch(() => {});
-}
-
-/* ?user=<id> opens that person (the command palette and links from other sections use it). */
-function openUserFromQuery() {
-  const open = Number(qs().user);
-  if (!open) return;
-  setQs({ user: undefined }, { merge: true });
-  openUserDrawer(open);
 }
 
 async function loadUsers() {
@@ -117,6 +125,7 @@ async function loadUsers() {
   }
   if (seq !== AU.seq) return;
   host.classList.remove('is-refreshing');
+  paintViewTabs();
   Object.assign(AU, { items: data.items, total: data.total, page: data.page, retention: data.retention_days,
     purgeDue: data.purge_due_count });
   renderUsersNotice();
@@ -142,18 +151,37 @@ function paintChips() {
   const tags = (f.tag || '').split(',').filter(Boolean);
   const tagNames = tags.map((id) => ((AU.facets && AU.facets.tags) || []).find((t) => String(t.id) === id)).filter(Boolean).map((t) => t.name);
   const signup = f.signup_from || f.signup_to;
+  // Four filters people reach for every day stay in view; the rest sit behind "More filters", which
+  // says how many of them are on.
+  const moreOn = [!!f.plan, !!setup.length, !!f.source, !!signup].filter(Boolean).length;
   $('#u-chips').innerHTML = [
-    chip('f-status', (STATUS_FILTERS.find(([v]) => v === (f.status || '')) || STATUS_FILTERS[0])[1], !!f.status, 'users'),
     chip('f-state', states.length ? states.map((s) => ACCESS_LABEL[s] || s).join(', ') + (f.trial_ending ? ' · ending soon' : '')
       : (f.trial_ending ? 'Trial ending soon' : 'Any access'), !!(states.length || f.trial_ending), 'credit-card'),
-    chip('f-plan', (PLAN_FILTERS.find(([v]) => v === (f.plan || '')) || PLAN_FILTERS[0])[1], !!f.plan, 'repeat'),
     chip('f-seen', seen[0] ? seen[1] : 'Any activity', !!seen[0], 'clock'),
-    chip('f-setup', setup.length ? setup.join(', ') : 'Getting started', !!setup.length, 'check-circle'),
-    chip('f-source', f.source ? `From ${f.source}` : 'Any source', !!f.source, 'globe'),
     chip('f-tag', tagNames.length ? tagNames.join(', ') : 'Any tag', !!tags.length, 'tag'),
-    chip('f-signup', signup ? `Signed up ${f.signup_from ? fmtDate(f.signup_from, { year: true }) : '…'} – ${f.signup_to ? fmtDate(f.signup_to, { year: true }) : '…'}` : 'Any sign-up date', !!signup, 'calendar'),
+    chip('f-status', (STATUS_FILTERS.find(([v]) => v === (f.status || '')) || STATUS_FILTERS[0])[1], !!f.status, 'users'),
+    chip('f-more', moreOn ? `More filters · ${moreOn}` : 'More filters', !!moreOn, 'filter'),
     filtered() ? '<button type="button" class="btn btn-ghost btn-sm" data-act="clear-filters">Clear</button>' : '',
   ].join('');
+  AU.moreLabels = {
+    plan: (PLAN_FILTERS.find(([v]) => v === (f.plan || '')) || PLAN_FILTERS[0])[1],
+    setup: setup.length ? setup.join(', ') : 'Getting started: anyone',
+    source: f.source ? `From ${f.source}` : 'Any source',
+    signup: signup ? `Signed up ${f.signup_from ? fmtDate(f.signup_from, { year: true }) : '…'} – ${f.signup_to ? fmtDate(f.signup_to, { year: true }) : '…'}` : 'Any sign-up date',
+  };
+}
+
+/* The view tabs: a built-in or saved view is "on" when the list's filters are exactly its query. */
+function currentViewQuery() {
+  return toQuery(Object.fromEntries(Object.entries(uq()).filter(([k]) => k !== 'page')));
+}
+function paintViewTabs() {
+  const cur = currentViewQuery();
+  const views = [...VIEW_TABS, ...adminViews().map((v) => [v.name, v.query])];
+  $('#u-views').innerHTML = views.map(([label, query]) => {
+    const on = (query || '') === cur;
+    return `<button type="button" role="tab" class="tab ${on ? 'active' : ''}" aria-selected="${on}" data-act="view-tab" data-query="${esc(query)}">${esc(label)}</button>`;
+  }).join('');
 }
 
 function menuOf(anchor, rows, current, apply) {
@@ -171,6 +199,20 @@ function openStateFilter(anchor) {
     { divider: true },
     { label: 'Trial ends within 7 days', checked: !!f.trial_ending, onClick: () => setUq({ trial_ending: f.trial_ending ? undefined : 7 }) },
   ]);
+}
+
+function openSetupFilter(anchor) {
+  const f = uq();
+  ui.menu(anchor, [{ label: 'Anyone', checked: !f.confirmed && !f.activated, onClick: () => setUq({ confirmed: undefined, activated: undefined }) },
+    { divider: true },
+    ...SETUP_FILTERS.map(([k, v, l]) => ({ label: l, checked: f[k] === v, onClick: () => setUq({ [k]: f[k] === v ? undefined : v }) }))]);
+}
+
+function openSourceFilter(anchor) {
+  const f = uq();
+  const sources = (AU.facets && AU.facets.sources) || [];
+  ui.menu(anchor, [{ label: 'Any source', checked: !f.source, onClick: () => setUq({ source: undefined }) }, { divider: true },
+    ...sources.map((x) => ({ label: `${x.channel} (${fmtNumber(x.n)})`, checked: f.source === x.channel, onClick: () => setUq({ source: x.channel }) }))]);
 }
 
 function openSignupFilter(anchor) {
@@ -213,7 +255,7 @@ function renderUsersSummary() {
 }
 
 function stateBadge(u) {
-  const key = u.comped_until && u.state !== 'admin_exempt' ? 'comped' : u.state;
+  const key = u.comped_until ? 'comped' : u.state;
   if (!key) return '<span class="text-4">—</span>';
   const sub = key === 'trialing' && u.trial_end ? ` <span class="sub">ends ${esc(fmtRelative(u.trial_end))}</span>` : '';
   return `<span class="badge ${ACCESS_BADGE[key] || 'badge-neutral'}">${esc(ACCESS_LABEL[key] || key)}</span>${u.plan && key === 'active' ? ` <span class="sub">${esc(u.plan)}</span>` : ''}${sub}`;
@@ -224,7 +266,7 @@ function renderUsersTable() {
   if (!AU.items.length) {
     host.innerHTML = filtered()
       ? ui.emptyState({ icon: 'search', title: 'Nobody matches', body: 'Try a different search or clear the filters.', action: { label: 'Clear filters', act: 'clear-filters' } })
-      : ui.emptyState({ icon: 'users', title: 'You are the only one here', body: 'Add an account for someone, or open sign-ups under Sign-ups & email.', action: { label: 'Add user', act: 'add-user' } });
+      : ui.emptyState({ icon: 'users', title: 'No customers yet', body: 'Open sign-ups in Settings › Sign-ups, or add an account for someone.', action: { label: 'Add a customer', act: 'add-user' } });
     return;
   }
   const f = uq();
@@ -239,8 +281,7 @@ function renderUsersTable() {
     <th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
     ${AU.items.map((u) => `<tr data-id="${u.id}" class="is-clickable ${u.status === 'deleted' ? 'is-trashed' : ''} ${AU.selected.has(u.id) ? 'is-selected' : ''}">
       <td><span class="row gap-2 min-w-0"><input type="checkbox" class="check adm-check hide-mobile" data-select="${u.id}" aria-label="Select ${esc(u.email || u.username)}" ${AU.selected.has(u.id) ? 'checked' : ''}><span class="avatar" aria-hidden="true">${esc(initials(u.email || u.username))}</span>
-        <span class="min-w-0"><button type="button" class="row-link fw-500 truncate" data-act="user-open" data-id="${u.id}">${esc(u.email || u.username)}</button>
-          ${u.is_self ? ' <span class="badge badge-accent">You</span>' : ''}${u.role === 'admin' ? ' <span class="badge badge-info">Admin</span>' : ''}
+        <span class="min-w-0"><a class="row-link fw-500 truncate" href="${customerHref(u.id)}">${esc(u.email || u.username)}</a>
           <span class="sub adm-user-sub">${u.status !== 'active' ? `<span class="user-status"><i class="dot" style="--c:var(--${STATUS_COLOR[u.status]})"></i>${esc(STATUS_LABEL[u.status])}</span>` : ''}
             ${u.email && !u.email_confirmed ? '<span class="text-4">unconfirmed</span>' : ''}
             ${u.email && u.username !== u.email ? `<span class="text-4">${esc(u.username)}</span>` : ''}
@@ -293,7 +334,7 @@ function selectionCount() { return AU.allMatching ? AU.total : AU.selected.size;
 function paintBulkBar() {
   let bar = document.getElementById('users-bulk');
   const n = selectionCount();
-  if (!n || AdminPanels.current() !== 'users') { if (bar) bar.remove(); return; }
+  if (!n || AdminPanels.current() !== 'customers' || P360.open) { if (bar) bar.remove(); return; }
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'users-bulk';
@@ -330,7 +371,7 @@ function bulkLabel() { return people(selectionCount()); }
 async function bulkLock() {
   const m = ui.modal({
     title: `Lock ${bulkLabel()}?`,
-    html: `<p class="mb-4">They are signed out and cannot sign in until unlocked. Nothing is deleted. You and the last administrator are skipped.</p>
+    html: `<p class="mb-4">They are signed out and cannot sign in until unlocked. Nothing is deleted.</p>
       <div class="field"><label for="bl-reason">Reason (optional)</label><input id="bl-reason" class="input" maxlength="200"></div>`,
     actions: [{ label: 'Cancel' }, { label: 'Lock', danger: true, onClick: () => runBulk('lock', { reason: $('#bl-reason', m.el).value.trim() }) }],
   });
@@ -340,7 +381,7 @@ async function bulkTrial() {
   const m = ui.modal({
     title: `Extend the trial for ${bulkLabel()}`,
     html: `<div class="field"><label for="bt-days">Extra days</label><input id="bt-days" class="input num-input" type="number" min="1" max="365" value="7"></div>
-      <div class="hint">Counted from today, or from the current trial end if that is later. Administrators are skipped.</div>`,
+      <div class="hint">Counted from today, or from the current trial end if that is later.</div>`,
     actions: [{ label: 'Cancel' }, { label: 'Extend', primary: true, onClick: () => runBulk('extend_trial', { days: Number($('#bt-days', m.el).value) }) }],
   });
 }
@@ -377,6 +418,53 @@ function newTag() {
         api('/api/admin/users/facets').then((f) => { AU.facets = f; paintChips(); }).catch(() => {});
       } }],
       onClose: () => resolve(made),
+    });
+  });
+}
+
+/* Rename or delete the labels admins put on customers. */
+async function manageTags() {
+  const tags = await adminTags(true);
+  const row = (t) => `<li class="row gap-2" data-tag="${t.id}"><span class="adm-tag" style="--c:var(--${esc(t.color)})">${esc(t.name)}</span>
+    <span class="grow"></span>
+    <button type="button" class="btn btn-ghost btn-xs" data-tag-act="rename">Rename</button>
+    <button type="button" class="btn btn-ghost btn-xs text-danger" data-tag-act="delete">Delete</button></li>`;
+  const m = ui.modal({
+    title: 'Tags',
+    html: tags.length ? `<ul class="adm-tag-list">${tags.map(row).join('')}</ul>` : '<p class="hint">No tags yet.</p>',
+    actions: [{ label: 'Done', primary: true }],
+  });
+  const refresh = async () => {
+    await adminTags(true);
+    AU.facets = await api('/api/admin/users/facets').catch(() => AU.facets);
+    loadUsers();
+  };
+  m.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-tag-act]');
+    if (!b) return;
+    const li = b.closest('[data-tag]');
+    const tag = tags.find((t) => String(t.id) === li.dataset.tag);
+    if (b.dataset.tagAct === 'delete') {
+      if (!(await ui.confirm({ title: `Delete the tag “${tag.name}”?`, body: 'It comes off every customer who has it. The customers are not affected.', confirmText: 'Delete tag', danger: true }))) return;
+      await api(`/api/admin/tags/${tag.id}`, { method: 'DELETE' });
+      li.remove();
+      refresh();
+      return;
+    }
+    const r = ui.modal({
+      title: 'Rename tag',
+      width: 420,
+      html: `<div class="field"><label for="rt-name">Name</label><input id="rt-name" class="input" maxlength="40" value="${esc(tag.name)}" autofocus></div>`,
+      actions: [{ label: 'Cancel' }, { label: 'Rename', primary: true, onClick: async () => {
+        const name = $('#rt-name', r.el).value.trim();
+        if (!name) { ui.fieldError($('#rt-name', r.el), 'Give it a name'); return false; }
+        if (name === tag.name) return undefined;
+        await api(`/api/admin/tags/${tag.id}`, { method: 'PUT', body: { name } });
+        tag.name = name;
+        li.outerHTML = row(tag);
+        refresh();
+        return undefined;
+      } }],
     });
   });
 }
@@ -442,30 +530,21 @@ function deleteViewMenu() {
 
 /* ---------- row menu and dialogs ---------- */
 
-function activeAdminCount() {
-  return AU.items.filter((u) => u.role === 'admin' && u.status === 'active').length;
-}
-
 function userRowMenu(anchor, u) { ui.menu(anchor, userMenuItems(u)); }
 
 function userMenuItems(u) {
-  const isMe = u.is_self;
-  const lastAdmin = u.role === 'admin' && u.status === 'active' && activeAdminCount() === 1;
-  const guard = isMe ? 'Use the account menu for your own account' : (lastAdmin ? 'This is the only active administrator' : null);
   const items = [
-    ...(guard ? [{ label: guard, header: true }] : []),
-    { label: 'Open', icon: 'eye', onClick: () => openUserDrawer(u.id) },
-    { label: 'Email a password reset link', icon: 'mail', disabled: isMe || !u.email || u.status !== 'active', onClick: () => sendResetLink(u) },
-    { label: 'Sign out everywhere', icon: 'log-out', disabled: isMe, onClick: () => signOutEverywhere(u) },
-    { label: u.role === 'admin' ? 'Make regular user' : 'Make admin', icon: 'shield', disabled: !!guard, onClick: () => changeRole(u) },
-    { label: 'Set a password…', icon: 'key', disabled: isMe, onClick: () => openSetPassword(u) },
+    { label: 'Open', icon: 'eye', onClick: () => { location.hash = customerHref(u.id); } },
+    { label: 'Email a password reset link', icon: 'mail', disabled: !u.email || u.status !== 'active', onClick: () => sendResetLink(u) },
+    { label: 'Sign out everywhere', icon: 'log-out', onClick: () => signOutEverywhere(u) },
+    { label: 'Set a password…', icon: 'key', onClick: () => openSetPassword(u) },
     { divider: true },
   ];
   if (u.status !== 'deleted') {
     items.push(u.status === 'locked'
       ? { label: 'Unlock', icon: 'unlock', onClick: () => unlockUser(u) }
-      : { label: 'Lock', icon: 'lock', disabled: !!guard, onClick: () => openLock(u) });
-    items.push({ label: 'Move to trash', icon: 'trash', danger: true, disabled: !!guard, onClick: () => trashUser(u) });
+      : { label: 'Lock', icon: 'lock', onClick: () => openLock(u) });
+    items.push({ label: 'Move to trash', icon: 'trash', danger: true, onClick: () => trashUser(u) });
   } else {
     items.push({ label: 'Restore', icon: 'rotate-ccw', onClick: () => restoreUser(u) });
     items.push({ label: 'Delete permanently', icon: 'trash', danger: true, onClick: () => openPurge(u) });
@@ -491,21 +570,6 @@ async function signOutEverywhere(u) {
   if (!ok) return;
   await api(`/api/admin/users/${u.id}/sign-out-all`, { method: 'POST' });
   toast('Signed out everywhere', { type: 'success' });
-}
-
-async function changeRole(u) {
-  const promote = u.role !== 'admin';
-  const ok = await ui.confirm({
-    title: promote ? `Make ${whoOf(u)} an admin?` : `Remove admin from ${whoOf(u)}?`,
-    body: promote
-      ? 'Admins manage everyone’s accounts, see all the usage figures, and can share the AI key. This takes effect the next time they do anything.'
-      : 'They keep their own data, but lose account management and the shared AI key the next time they do anything.',
-    confirmText: promote ? 'Make admin' : 'Remove admin',
-  });
-  if (!ok) return;
-  await api(`/api/admin/users/${u.id}`, { method: 'PUT', body: { role: promote ? 'admin' : 'user' } });
-  toast('Role updated', { type: 'success' });
-  afterChange();
 }
 
 function openSetPassword(u) {
@@ -595,7 +659,7 @@ function openPurge(u) {
 
 function openAddUser() {
   const m = ui.modal({
-    title: 'Add a user',
+    title: 'Add a customer',
     html: `<form id="user-form" novalidate>
       <div class="field"><label for="u-email">Email</label><input id="u-email" class="input" type="email" autocomplete="off" spellcheck="false" autofocus></div>
       <label class="check-row mb-4"><input type="checkbox" id="u-invite" class="check" checked>
@@ -606,8 +670,6 @@ function openAddUser() {
         <div class="hint">Defaults to the email address.</div></div>
       <div class="field"><label for="u-access">Access</label><select id="u-access" class="select">
         <option value="trial">Free trial, then subscribe</option><option value="comped">Complimentary — never billed</option></select></div>
-      <div class="field"><label for="u-role">Role</label><select id="u-role" class="select"><option value="user">User</option><option value="admin">Admin</option></select>
-        <div class="hint">Admins manage every account here and see all usage figures.</div></div>
       <button type="submit" hidden></button></form>`,
     actions: [{ label: 'Cancel' }, { label: 'Create', primary: true, onClick: async () => {
       const email = $('#u-email', m.el).value.trim();
@@ -617,13 +679,13 @@ function openAddUser() {
       if (!username) { ui.fieldError($('#u-email', m.el), 'Enter an email address or a username'); return false; }
       try {
         await api('/api/admin/users', { method: 'POST', body: { email: email || undefined, username, send_invite: invite,
-          password: invite ? undefined : $('#u-pass', m.el).value, access: $('#u-access', m.el).value, role: $('#u-role', m.el).value } });
+          password: invite ? undefined : $('#u-pass', m.el).value, access: $('#u-access', m.el).value } });
       } catch (err) {
         // A deleted user keeps their username reserved, so offer the action that actually helps.
         if (err.data && err.data.code === 'username_deleted') { m.close(); return offerRestore(err.data, username); }
         throw err;
       }
-      toast(invite ? `Invitation sent to ${email}` : 'User created', { type: 'success' });
+      toast(invite ? `Invitation sent to ${email}` : 'Customer added', { type: 'success' });
       afterChange();
       return undefined;
     } }],
@@ -651,7 +713,7 @@ function offerRestore(data, username) {
 async function onUsersAction(e) {
   if (e.target.closest('[data-select]')) return undefined;   // the select-all box sits in a sortable header
   const el = e.target.closest('[data-act]');
-  if (!el || AdminPanels.current() !== 'users') return undefined;
+  if (!el || AdminPanels.current() !== 'customers' || P360.open) return undefined;
   const f = uq();
   const u = AU.items.find((x) => x.id === Number(el.dataset.id));
   switch (el.dataset.act) {
@@ -659,7 +721,13 @@ async function onUsersAction(e) {
     case 'add-user': return openAddUser();
     case 'users-export': return adminDownload(`/api/admin/users${toQuery({ ...f, page: undefined, format: 'csv' })}`).catch((err) => { if (!err.cancelled) toast(err.message, { type: 'error' }); });
     case 'users-views': return openViews(el);
-    case 'user-open': return openUserDrawer(Number(el.dataset.id));
+    case 'view-tab': return applyView(el.dataset.query || '');
+    case 'f-more': return ui.menu(el, [
+      { label: AU.moreLabels.plan, icon: 'repeat', onClick: () => menuOf(el, PLAN_FILTERS, f.plan, (v) => setUq({ plan: v || undefined })) },
+      { label: AU.moreLabels.setup, icon: 'check-circle', onClick: () => openSetupFilter(el) },
+      { label: AU.moreLabels.source, icon: 'globe', onClick: () => openSourceFilter(el) },
+      { label: AU.moreLabels.signup, icon: 'calendar', onClick: () => openSignupFilter(el) },
+    ]);
     case 'user-menu': return u ? userRowMenu(el, u) : undefined;
     case 'sort': {
       const key = el.dataset.sort;
@@ -676,19 +744,16 @@ async function onUsersAction(e) {
     case 'f-seen': return ui.menu(el, SEEN_FILTERS.map(([k, l, p]) => ({ label: l,
       checked: (!k && !f.seen_within && !f.inactive_for) || (p.seen_within && String(p.seen_within) === f.seen_within) || (p.inactive_for && String(p.inactive_for) === f.inactive_for),
       onClick: () => setUq({ seen_within: p.seen_within, inactive_for: p.inactive_for }) })));
-    case 'f-setup': return ui.menu(el, [{ label: 'Anyone', checked: !f.confirmed && !f.activated, onClick: () => setUq({ confirmed: undefined, activated: undefined }) },
-      { divider: true },
-      ...SETUP_FILTERS.map(([k, v, l]) => ({ label: l, checked: f[k] === v, onClick: () => setUq({ [k]: f[k] === v ? undefined : v }) }))]);
-    case 'f-source': {
-      const sources = (AU.facets && AU.facets.sources) || [];
-      return ui.menu(el, [{ label: 'Any source', checked: !f.source, onClick: () => setUq({ source: undefined }) }, { divider: true },
-        ...sources.map((s) => ({ label: `${s.channel} (${fmtNumber(s.n)})`, checked: f.source === s.channel, onClick: () => setUq({ source: s.channel }) }))]);
-    }
     case 'f-tag': {
       const tags = (AU.facets && AU.facets.tags) || [];
-      if (!tags.length) return ui.menu(el, [{ label: 'No tags yet — add one from a person or the bulk bar', disabled: true }]);
-      return ui.multiFilter(el, { title: 'Tags', options: tags.map((t) => ({ value: String(t.id), label: `${t.name} (${fmtNumber(t.n)})` })),
-        selected: new Set((f.tag || '').split(',').filter(Boolean)), onChange: (sel) => setUq({ tag: Array.from(sel).join(',') }) });
+      if (!tags.length) return ui.menu(el, [{ label: 'No tags yet — add one from a customer or the bulk bar', disabled: true }]);
+      return ui.menu(el, [
+        { label: 'Filter by tag…', icon: 'filter', onClick: () => ui.multiFilter(el, { title: 'Tags', options: tags.map((t) => ({ value: String(t.id), label: `${t.name} (${fmtNumber(t.n)})` })),
+          selected: new Set((f.tag || '').split(',').filter(Boolean)), onChange: (sel) => setUq({ tag: Array.from(sel).join(',') }) }) },
+        ...(f.tag ? [{ label: 'Any tag', onClick: () => setUq({ tag: undefined }) }] : []),
+        { divider: true },
+        { label: 'Manage tags…', icon: 'pencil', onClick: manageTags },
+      ]);
     }
     case 'f-signup': return openSignupFilter(el);
     case 'bulk-all': AU.allMatching = true; return paintBulkBar();
@@ -710,4 +775,4 @@ async function onUsersAction(e) {
   }
 }
 
-window.addEventListener('ispend:admin-user-changed', () => { if (AdminPanels.current() === 'users') loadUsers(); });
+window.addEventListener('ispend:admin-user-changed', () => { if (AdminPanels.current() === 'customers' && !P360.open) loadUsers(); });

@@ -218,6 +218,30 @@ const ui = (() => {
     });
   }
 
+  /* For what cannot be undone: the confirm button stays disabled until `phrase` is typed. Resolves
+     true only when confirmed. */
+  function confirmTyped({ title, body = '', html = '', phrase, confirmText = 'Delete' } = {}) {
+    return new Promise((resolve) => {
+      let result = false;
+      const m = modal({
+        title,
+        html: `${html || `<p class="mb-4">${esc(body)}</p>`}
+          <div class="field"><label for="ct-phrase">Type <b>${esc(phrase)}</b> to confirm</label>
+          <input id="ct-phrase" class="input" autocomplete="off" spellcheck="false" autofocus></div>`,
+        onClose: () => resolve(result),
+        actions: [{ label: 'Cancel' }, { label: confirmText, danger: true, onClick: () => {
+          if (input.value.trim() !== phrase) { fieldError(input, 'That does not match'); return false; }
+          result = true;
+          return undefined;
+        } }],
+      });
+      const input = m.el.querySelector('#ct-phrase');
+      const btn = m.el.querySelector('.modal-foot .btn-danger-solid');
+      if (btn) btn.disabled = true;
+      input.addEventListener('input', () => { if (btn) btn.disabled = input.value.trim() !== phrase; });
+    });
+  }
+
   /* ---------- Drawer (one at a time) ---------- */
   let currentDrawer = null;
   function drawer({ title = '', html = '', foot = '', width, onClose } = {}) {
@@ -844,7 +868,7 @@ const ui = (() => {
     });
   }
 
-  return { modal, sheet, isPhone, edgeFade, isCoarse, longPress, swipe, dragToDismiss, confirm, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, sheet, isPhone, edgeFade, isCoarse, longPress, swipe, dragToDismiss, confirm, confirmTyped, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;

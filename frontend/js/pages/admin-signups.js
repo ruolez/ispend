@@ -1,12 +1,20 @@
-/* Who may create an account, whether they must confirm their address, and the SMTP settings every
-   email goes out through. Mounted into the Admin page; shares its config endpoint with Billing. */
+/* Admin › Settings › Sign-ups (who may create an account, and whether they confirm their address)
+   and › Email delivery (the SMTP server every email goes out through). Both read and write
+   /api/admin/billing/config, each sending only its own keys. */
 
 const ASU = { config: null, bar: null };
+const AED = { config: null, bar: null };
 
-AdminPanels.register('signups', {
-  label: 'Sign-ups & email', icon: 'mail',
-  sub: 'Who can create an account, and the email iSpend sends',
+AdminSettings.register('signups', {
+  label: 'Sign-ups', icon: 'user',
+  sub: 'Who can create an account, and whether they must confirm their email first',
   load: loadAdminSignups,
+});
+
+AdminSettings.register('email', {
+  label: 'Email delivery', icon: 'mail',
+  sub: 'The mail server iSpend sends confirmations, receipts and reminders through',
+  load: loadAdminEmail,
 });
 
 const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_security', 'smtp_user', 'smtp_password',
@@ -23,83 +31,106 @@ const SMTP_HINTS = {
   smtp_from_email: 'Must be an address your provider lets you send from.',
 };
 
-async function loadAdminSignups(host) {
-  ASU.host = host;
-  if (!ASU.wired) {
-    ASU.wired = true;
-    ASU.bar = adminDirtyBar('signups', { saveAct: 'save-admin-signups', discardAct: 'discard-admin-signups',
-                                         unsavedText: 'Sign-up settings were not saved' });
-    const onEdit = (e) => { if (!e.target.closest('#as-test-to')) ASU.bar.set(true); };
-    host.addEventListener('input', onEdit);
-    host.addEventListener('change', onEdit);
-  }
+async function loadConfigInto(state, host, retry) {
   host.innerHTML = ui.skeletonList(3);
   try {
-    ASU.config = await api('/api/admin/billing/config');
+    state.config = await api('/api/admin/billing/config');
+    return true;
   } catch (err) {
-    host.innerHTML = ui.errorBox(err.message, { retry: 'reload-admin-signups' });
-    return;
+    host.innerHTML = ui.errorBox(err.message, { retry });
+    return false;
   }
-  renderAdminSignups();
 }
 
-function renderAdminSignups() {
+/* ---------- Sign-ups ---------- */
+
+async function loadAdminSignups(host) {
+  ASU.host = host;
+  if (!ASU.bar) {
+    ASU.bar = adminDirtyBar('settings/signups', { save: saveAdminSignups, discard: () => loadAdminSignups(ASU.host) });
+    host.addEventListener('change', () => ASU.bar.set(true));
+  }
+  if (ASU.bar.dirty || !(await loadConfigInto(ASU, host, 'reload-admin-signups'))) return;
   const c = ASU.config;
   const requireOn = c.signup_require_verification.value;
   ASU.bar.set(false);
-  ASU.host.innerHTML = `
-    <section class="settings-section">
-      ${secHead('Sign-ups', requireOn && (c.email_configured ? ['Confirmation enforced', 'badge-success'] : ['Waiting for email', 'badge-warning']))}
+  host.innerHTML = `
+    <section class="settings-section card card-pad">
       <div class="setting-row"><div class="min-w-0"><div class="title">Accept new sign-ups</div>
-        <div class="desc">When off, /signup.html is closed and only an admin can create accounts.</div></div>
+        <div class="desc">When off, the sign-up page is closed and only you can add customers.</div></div>
         <label class="switch"><input type="checkbox" id="as-signup" ${c.signup_enabled.value ? 'checked' : ''}>
           <span class="switch-track"></span></label></div>
       <div class="setting-row"><div class="min-w-0"><div class="title">Require email confirmation</div>
-        <div class="desc">New accounts must open the link we email them before they can sign in.
-          Needs email set up below — until it is, the switch has no effect. Turning it off lets
-          accounts still waiting on a link sign in straight away.</div></div>
+        <div class="desc">New customers must open the link we email them before they can sign in.
+          ${c.email_configured ? '' : '<b>Email delivery is not set up yet, so this has no effect.</b>'}
+          Turning it off lets anyone still waiting on a link sign in straight away.</div></div>
         <label class="switch"><input type="checkbox" id="as-require-verify" ${requireOn ? 'checked' : ''}>
           <span class="switch-track"></span></label></div>
     </section>
+    ${c.email_configured ? '' : `<div class="notice notice-info">${icon('info')}<div class="grow">Set up email delivery so confirmation links and password resets reach people.</div>
+      <a class="btn btn-secondary btn-sm" href="#settings/email">Email delivery</a></div>`}`;
+}
 
-    <section class="settings-section">
-      ${secHead('Email', c.email_configured ? ['Configured', 'badge-success'] : ['Not configured', 'badge-neutral'])}
-      <div class="sub">Used for the sign-up confirmation, welcome, trial-ending, payment-failed and
-        password-reset messages. Leave empty to send nothing; Stripe still emails receipts.</div>
+async function saveAdminSignups() {
+  await api('/api/admin/billing/config', { method: 'PUT', body: {
+    signup_enabled: $('#as-signup').checked, signup_require_verification: $('#as-require-verify').checked } });
+  toast('Sign-up settings saved', { type: 'success' });
+  ASU.bar.set(false);
+  return loadAdminSignups(ASU.host);
+}
+
+/* ---------- Email delivery ---------- */
+
+async function loadAdminEmail(host) {
+  AED.host = host;
+  if (!AED.bar) {
+    AED.bar = adminDirtyBar('settings/email', { save: saveAdminEmail, discard: () => loadAdminEmail(AED.host) });
+    const onEdit = (e) => { if (!e.target.closest('#as-test-to')) AED.bar.set(true); };
+    host.addEventListener('input', onEdit);
+    host.addEventListener('change', onEdit);
+  }
+  if (AED.bar.dirty || !(await loadConfigInto(AED, host, 'reload-admin-email'))) return;
+  const c = AED.config;
+  AED.bar.set(false);
+  host.innerHTML = `
+    <section class="settings-section card card-pad">
+      ${secHead('Mail server', c.email_configured ? ['Working', 'badge-success'] : ['Not set up', 'badge-neutral'])}
+      <div class="sub">Used for sign-up confirmations, welcome, trial-ending, payment-failed and password-reset
+        messages, and anything you send from Messages. Leave empty to send nothing; Stripe still emails receipts.</div>
       ${SMTP_KEYS.map((k) => configField('as', k, c[k], SMTP_LABELS, SMTP_HINTS)).join('')}
-      <div class="setting-row"><div class="min-w-0"><div class="title">Send a test email</div>
-        <div class="desc">Uses the settings as they are saved on the server, not what is typed above.</div>
-        <div id="as-test-result" class="hint mt-2"></div></div>
-        <div class="row gap-2 adm-ctl">
-          <input id="as-test-to" class="input input-sm grow" type="email" placeholder="you@example.com" aria-label="Send a test email to">
-          <button type="button" class="btn btn-secondary btn-sm" data-act="send-test-email">Send</button>
-        </div></div>
+    </section>
+    <section class="settings-section card card-pad">
+      ${secHead('Send a test email')}
+      <div class="sub">Uses the settings as they are saved, not what is typed above.</div>
+      <div class="row gap-2">
+        <input id="as-test-to" class="input input-sm grow" type="email" placeholder="you@example.com" aria-label="Send a test email to" value="${esc((ADMIN.me || {}).email || '')}">
+        <button type="button" class="btn btn-secondary btn-sm" data-act="send-test-email">Send</button>
+      </div>
+      <div id="as-test-result" class="hint mt-2"></div>
     </section>`;
+}
+
+async function saveAdminEmail() {
+  await api('/api/admin/billing/config', { method: 'PUT', body: collectConfigFields('as', SMTP_KEYS) });
+  toast('Email settings saved', { type: 'success' });
+  AED.bar.set(false);
+  return loadAdminEmail(AED.host);
 }
 
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   switch (el.dataset.act) {
-    case 'reload-admin-signups': return loadAdminSignups(ASU.host);
-    case 'discard-admin-signups': return loadAdminSignups(ASU.host);
-    case 'save-admin-signups':
-      return ui.busy(el, async () => {
-        const body = { signup_enabled: $('#as-signup').checked,
-                       signup_require_verification: $('#as-require-verify').checked,
-                       ...collectConfigFields('as', SMTP_KEYS) };
-        await api('/api/admin/billing/config', { method: 'PUT', body });
-        ASU.bar.set(false);
-        toast('Sign-up settings saved', { type: 'success' });
-        loadAdminSignups(ASU.host);
-      });
+    case 'reload-admin-signups': loadAdminSignups(ASU.host); break;
+    case 'reload-admin-email': loadAdminEmail(AED.host); break;
     case 'send-test-email':
-      return ui.busy(el, async () => {
+      await ui.busy(el, async () => {
         const r = await api('/api/admin/billing/email/test', { method: 'POST', body: { to: $('#as-test-to').value.trim() } });
         $('#as-test-result').innerHTML = r.ok
           ? `<span class="chip chip-ok">${icon('check')}Sent</span>`
           : `<span class="chip chip-err">${icon('alert-circle')}${esc(r.error || 'Failed')}</span>`;
       });
-    default: return undefined;
+      break;
+    default: break;
   }
 });

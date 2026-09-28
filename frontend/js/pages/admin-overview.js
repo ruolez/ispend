@@ -4,7 +4,7 @@
 const AOV = { charts: {}, data: null };
 
 AdminPanels.register('overview', {
-  label: 'Overview', icon: 'layout-dashboard', group: 'insights', ranged: true,
+  label: 'Home', icon: 'home', group: 'home', ranged: true, compare: true,
   sub: 'Revenue, growth and use over the selected period',
   markup: `
     <div id="ov-alerts"></div>

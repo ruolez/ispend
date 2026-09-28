@@ -203,13 +203,14 @@ class TestShell:
         page.goto(f"{BASE}/admin?range=30d#overview")
         page.locator(".adm-kpi").first.wait_for()
         assert page.locator(".adm-kpi").count() == len(TILE_KEYS)
-        assert page.locator("#admin-title").inner_text() == "Overview"
+        assert page.locator("#admin-title").inner_text() == "Home"
         assert page.locator("#ch-ov-mrr").is_visible()
         assert page.errors == []
 
     def test_admin_navigation_replaces_the_app_s(self, page):
         nav = page.locator(".sb-nav")
-        assert nav.locator('a[data-page="users"]').is_visible()
+        assert nav.locator('a[data-page="customers"]').is_visible()
+        assert page.locator('.sb-foot a[data-page="settings"]').is_visible()
         assert nav.locator('a[data-page="transactions"]').count() == 0
         assert page.locator('a[href="/index.html"], .app-banner').count() == 0, "nothing of the customer app"
 
@@ -225,9 +226,9 @@ class TestShell:
         assert page.locator("#adm-compare").get_attribute("aria-pressed") == "true"
 
     def test_sections_switch_without_losing_the_period(self, page):
-        page.locator('.sb-nav a[data-page="users"]').click()
+        page.locator('.sb-nav a[data-page="customers"]').click()
         page.locator("#users-table tr[data-id]").first.wait_for()
-        assert page.locator("#adm-range-group").is_hidden(), "users has no period"
+        assert page.locator("#adm-range-group").is_hidden(), "customers have no period"
         page.locator('.sb-nav a[data-page="overview"]').click()
         page.locator(".adm-kpi").first.wait_for()
         assert "range=90d" in page.url
@@ -237,24 +238,53 @@ class TestShell:
         page.locator(".palette-input input").fill("qa_api1")
         page.locator(".palette-item", has_text="qa_api1").first.wait_for()
         page.keyboard.press("Enter")
-        page.locator(".drawer").wait_for()
-        assert page.url.endswith("#users")
-        page.keyboard.press("Escape")
+        page.locator(".cust-head h1", has_text="qa_api1").wait_for()
+        assert re.search(r"#customers/\d+$", page.url), page.url
         assert page.errors == []
 
-    def test_people_filters_live_in_the_url_and_rows_open_the_person(self, page):
-        page.goto(f"{BASE}/admin#users")
+    def test_customer_filters_live_in_the_url_and_rows_open_the_customer_page(self, page):
+        page.goto(f"{BASE}/admin#users")               # the old name still lands on the list
         page.locator("#users-table tr[data-id]").first.wait_for()
+        assert page.url.endswith("#customers")
         page.locator('[data-act="f-status"]').click()
         page.locator(".menu-item", has_text="Everyone").click()
         page.wait_for_function("location.search.includes('status=all')")
         page.locator("#users-table tr[data-id]").first.wait_for()
         page.locator("#users-table tr[data-id] td:nth-child(3)").first.click()
-        page.locator(".drawer .p360-tabs").wait_for()
-        for tab in ("billing", "history", "notes", "summary"):
-            page.locator(f'[data-p360-tab="{tab}"]').click()
+        page.locator(".cust-tabs").wait_for()
+        for tab in ("billing", "activity", "notes", "overview"):
+            page.locator(f'.cust-tabs a[href$="/{tab}"]').click()
+            page.wait_for_function(f"location.hash.endsWith('/{tab}')")
             assert page.locator("#p360-tab").inner_text().strip()
-        page.keyboard.press("Escape")
+        page.reload()
+        page.locator(".cust-tabs .tab.active", has_text="Overview").wait_for()
+        page.locator(".adm-crumb a").click()
+        page.locator("#users-table tr[data-id]").first.wait_for()
+        assert "status=all" in page.url, "the list comes back with its filters"
+        assert page.errors == []
+
+    def test_settings_pages_and_old_links(self, page):
+        for old, new in (("billing", "settings/billing"), ("signups", "settings/signups"), ("retention", "settings/retention")):
+            page.goto(f"{BASE}/admin#{old}")
+            page.locator(f'[data-spage="{new.split("/")[1]}"]:not([hidden]) .setting-row').first.wait_for()
+            assert page.url.endswith(f"#{new}")
+        for key in ("account", "email", "ai", "landing"):
+            page.goto(f"{BASE}/admin#settings/{key}")
+            page.locator(f'[data-spage="{key}"]:not([hidden]) .settings-section').first.wait_for()
+        assert page.errors == []
+
+    def test_leaving_unsaved_settings_asks_first(self, page):
+        page.goto(f"{BASE}/admin#settings/retention")
+        field = page.locator("#hk-audit")
+        field.fill("45")
+        page.locator(".floatbar").wait_for()
+        page.locator('.sb-nav a[data-page="overview"]').click()
+        page.locator(".modal", has_text="Save your changes?").wait_for()
+        assert page.url.endswith("#settings/retention")
+        page.locator(".modal-foot .btn", has_text="Stay here").click()
+        assert page.locator("#hk-audit").input_value() == "45"
+        page.locator('.floatbar [data-bar="discard"]').click()
+        assert page.locator(".floatbar").count() == 0
         assert page.errors == []
 
     @pytest.mark.parametrize("section,marker", [("revenue", "#ch-rv-bridge"), ("engagement", ".adm-funnel, #en-funnel .empty"),
@@ -271,5 +301,5 @@ class TestShell:
         page.goto(f"{BASE}/admin#overview")
         page.locator(".adm-kpi").first.wait_for()
         labels = [t.strip() for t in page.locator(".bottomnav .bn-label").all_inner_texts()]
-        assert labels[0] == "Overview" and labels[-1] == "More" and "Users" in labels
+        assert labels == ["Home", "Customers", "Revenue", "Activity", "More"]
         page.set_viewport_size({"width": 1440, "height": 900})

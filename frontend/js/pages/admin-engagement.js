@@ -5,7 +5,7 @@
 const AEN = { charts: {}, mode: 'weekly' };
 
 AdminPanels.register('engagement', {
-  label: 'Engagement', icon: 'activity', group: 'insights', ranged: true,
+  label: 'Engagement', icon: 'activity', group: 'business', ranged: true,
   sub: 'From sign-up to habit: activation, active people and who comes back',
   markup: `
     <div id="en-tiles"></div>
@@ -86,10 +86,10 @@ function renderFunnel(f) {
   const signup = { signup_from: r.start, signup_to: dayBefore(r.end) };
   $('#en-funnel').innerHTML = `<ol class="adm-funnel">${f.steps.map((s, i) => {
     const pct = s.pct_first == null ? 0 : Math.round(s.pct_first * 100);
-    const q = new URLSearchParams({ ...signup, ...FUNNEL_DRILL[s.key] }).toString();
+    const href = adminHref('customers', { params: { ...signup, ...FUNNEL_DRILL[s.key] } });
     return `<li>
       <div class="adm-funnel-head"><span class="grow">${esc(s.label)}</span>
-        <a class="row-link num" href="#users?${esc(q)}" data-drill-users>${fmtNumber(s.n)}</a></div>
+        <a class="row-link num" href="${esc(href)}">${fmtNumber(s.n)}</a></div>
       <div class="adm-funnel-bar" style="--p:${pct}%"><span></span></div>
       <div class="adm-funnel-foot text-3">${i === 0 ? 'Everyone' : `${esc(fmtPct(s.pct_prev || 0))} of the step before`}${s.median_hours != null ? ` · typically ${esc(fmtHours(s.median_hours))}` : ''}</div>
     </li>`;
@@ -101,7 +101,7 @@ function renderSources(rows) {
   if (!rows.length) { $('#en-sources').innerHTML = `<div class="card-body">${ui.emptyState({ icon: 'globe', title: 'No sign-ups yet', body: 'Where people came from shows here.' })}</div>`; return; }
   $('#en-sources').innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--list"><thead><tr><th>Source</th><th class="right">Sign-ups</th>
     <th class="right">Activated</th><th class="right">Paid</th></tr></thead><tbody>
-    ${rows.map((s) => `<tr><td><a class="row-link" href="#users?source=${encodeURIComponent(s.channel)}" data-drill-users>${esc(s.channel)}</a></td>
+    ${rows.map((s) => `<tr><td><a class="row-link" href="${esc(adminHref('customers', { params: { source: s.channel } }))}">${esc(s.channel)}</a></td>
       <td class="right num">${fmtNumber(s.signups)}</td>
       <td class="right num">${esc(fmtPct(s.activation_rate || 0, { decimals: 0 }))}</td>
       <td class="right num">${esc(fmtPct(s.paid_rate || 0, { decimals: 0 }))}</td></tr>`).join('')}</tbody></table></div>`;

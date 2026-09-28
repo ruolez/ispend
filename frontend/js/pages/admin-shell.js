@@ -1,28 +1,34 @@
-/* Admin console shell: its own navigation, section routing, the global date range and the KPI tile.
+/* Admin console shell: its own navigation, one router, the global date range and the KPI tile.
 
    Sections register themselves (one file each) and this file boots once every script has run:
-     AdminPanels.register('users', { label, icon, sub, group, ranged, actions, markup, load(host, ctx) })
-   group — 'insights' | 'operations' | 'settings'; ranged — shows the range picker, and ctx.range is
-   the query string for the API (range=30d&compare=1); markup — the panel's static HTML; actions —
-   HTML for the page-head buttons shown while the section is open.
+     AdminPanels.register('customers', { label, icon, sub, group, ranged, compare, params, actions,
+                                         markup, load(host, ctx) })
+   group — 'home' | 'customers' | 'business' | 'operations' | 'footer'; ranged — shows the range
+   picker, and ctx.range is the query string for the API (range=30d&compare=1); compare — the
+   section's numbers answer "compare with the period before"; params — the query keys the section
+   owns (dropped when another section opens); markup — the panel's static HTML; actions — HTML for
+   the page-head buttons shown while the section is open.
 
-   URL: the hash is the section (#users), the query holds filters and the range (?range=90d&cmp=1),
-   so a view can be bookmarked and survives a reload. */
+   URL: /admin?<range and the open section's filters>#<section>[/<id>[/<tab>]], so every view
+   bookmarks, survives a reload and opens the same in a new tab. adminHref() builds these; links
+   written the old way (#users?state=trialing) are rewritten on arrival. ctx.route is {section, id, tab}. */
 
-const ADMIN = { sections: {}, current: null, me: null, loadSeq: 0 };
-const ADMIN_GROUPS = [['insights', 'Insights'], ['operations', 'Operations'], ['settings', 'Settings']];
-const ADMIN_ORDER = ['overview', 'revenue', 'users', 'engagement', 'imports', 'system', 'activity',
-  'billing', 'signups', 'messages', 'landing', 'retention', 'backup'];
-const ADMIN_DEFAULT_GROUP = { billing: 'settings', signups: 'settings', backup: 'settings' };
-const ADMIN_BOTTOM = ['overview', 'revenue', 'users', 'activity'];
-const ADMIN_KEYS = { overview: 'o', revenue: 'v', users: 'u', engagement: 'e', activity: 'l', system: 'y' };
+const ADMIN = { sections: {}, current: null, route: null, me: null, loadSeq: 0, forms: {} };
+const ADMIN_GROUPS = [['home', ''], ['customers', 'Customers'], ['business', 'Business'], ['operations', 'Operations']];
+const ADMIN_ORDER = ['overview', 'customers', 'messages', 'revenue', 'engagement', 'imports', 'system',
+  'activity', 'backup', 'settings'];
+const ADMIN_BOTTOM = ['overview', 'customers', 'revenue', 'activity'];
+const ADMIN_KEYS = { overview: 'h', customers: 'c', revenue: 'r', engagement: 'e', activity: 'l', system: 'y', settings: 's' };
+/* Old section names, and settings that used to be sections of their own. */
+const ADMIN_ALIASES = { users: 'customers', billing: 'settings/billing', signups: 'settings/signups',
+  retention: 'settings/retention', landing: 'settings/landing' };
 const RANGE_CHOICES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'],
   ['12m', 'Last 12 months'], ['mtd', 'Month to date'], ['ytd', 'Year to date']];
 const RANGE_QS = ['range', 'from', 'to', 'cmp'];
 
 window.AdminPanels = {
   register(key, meta) {
-    ADMIN.sections[key] = { group: ADMIN_DEFAULT_GROUP[key] || 'operations', ...meta, key };
+    ADMIN.sections[key] = { group: 'operations', params: [], ...meta, key };
     const panels = document.getElementById('admin-panels');
     if (panels && !panels.querySelector(`[data-panel="${key}"]`)) {
       const panel = document.createElement('section');
@@ -43,6 +49,7 @@ window.AdminPanels = {
   },
   refresh: () => adminLoadCurrent({ force: true }),
   current: () => ADMIN.current,
+  route: () => ADMIN.route || adminRoute(),
   panel: (key) => document.querySelector(`[data-panel="${key || ADMIN.current}"]`),
 };
 
@@ -201,9 +208,56 @@ function adminSectionKeys() {
   return ADMIN_ORDER.filter((k) => keys.includes(k)).concat(keys.filter((k) => !ADMIN_ORDER.includes(k)));
 }
 
-function adminCurrentKey() {
-  const key = (location.hash || '').slice(1).split('?')[0];
-  return ADMIN.sections[key] ? key : 'overview';
+function adminParseHash(hash) {
+  const raw = decodeURIComponent((hash || '').replace(/^#/, ''));
+  const cut = raw.indexOf('?');
+  const path = cut < 0 ? raw : raw.slice(0, cut);
+  let parts = path.split('/').filter(Boolean);
+  if (parts.length && ADMIN_ALIASES[parts[0]]) parts = [...ADMIN_ALIASES[parts[0]].split('/'), ...parts.slice(1)];
+  return { parts, query: cut < 0 ? '' : raw.slice(cut + 1) };
+}
+
+function adminRoute() {
+  const { parts } = adminParseHash(location.hash);
+  const section = ADMIN.sections[parts[0]] ? parts[0] : 'overview';
+  return { section, id: section === parts[0] ? parts[1] || null : null, tab: section === parts[0] ? parts[2] || null : null };
+}
+
+/* The page a form belongs to: a section, or a settings page. Unsaved-changes checks compare these. */
+function adminPageKey(route) {
+  if (route.section !== 'settings') return route.section;
+  const keys = window.AdminSettings ? AdminSettings.keys() : [];
+  return `settings/${keys.includes(route.id) ? route.id : keys[0] || ''}`;
+}
+
+/* Filters written into the hash (older links, the server's alert links) move into the query, and old
+   section names become new ones. Returns true when the address changed. */
+function adminNormalizeUrl() {
+  const { parts, query } = adminParseHash(location.hash);
+  const canonical = `#${parts.join('/')}`;
+  if (!query && (canonical === location.hash || !location.hash)) return false;
+  const url = new URL(location.href);
+  new URLSearchParams(query).forEach((v, k) => url.searchParams.set(k, v));
+  url.hash = parts.length ? canonical : '';
+  history.replaceState(history.state, '', url);
+  return true;
+}
+
+/* A link into the console: the current period, the given filters, and the path. */
+function adminHref(section, { id, tab, params } = {}) {
+  const q = new URLSearchParams();
+  const cur = qs();
+  RANGE_QS.forEach((k) => { if (cur[k]) q.set(k, cur[k]); });
+  Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); });
+  const query = q.toString();
+  return `/admin${query ? `?${query}` : ''}#${[section, id, tab].filter((x) => x != null && x !== '').join('/')}`;
+}
+
+/* Leaving a section drops the filters it owned, so they do not ride along into the next one. */
+function adminDropForeignParams(key) {
+  const keep = new Set([...RANGE_QS, ...(ADMIN.sections[key].params || [])]);
+  const drop = Object.keys(qs()).filter((k) => !keep.has(k));
+  if (drop.length) setQs(Object.fromEntries(drop.map((k) => [k, undefined])), { merge: true, replace: true });
 }
 
 async function adminLoadCurrent({ force = false } = {}) {
@@ -211,19 +265,36 @@ async function adminLoadCurrent({ force = false } = {}) {
   const meta = ADMIN.sections[key];
   if (!meta || !meta.load) return undefined;
   const seq = ++ADMIN.loadSeq;
-  const ctx = { force, range: adminRangeQuery(), isCurrent: () => seq === ADMIN.loadSeq && ADMIN.current === key };
+  const ctx = { force, range: adminRangeQuery(), route: ADMIN.route,
+    isCurrent: () => seq === ADMIN.loadSeq && ADMIN.current === key };
   return meta.load(AdminPanels.panel(key), ctx);
+}
+
+/* The page head belongs to the shell; a section showing one record (a customer) replaces it with
+   its own header and calls this with null. Every navigation puts the shell's back. */
+function adminSetHead(head) {
+  const el = $('#main .page-head');
+  el.hidden = !head;
+  if (!head) return;
+  $('#admin-title').textContent = head.title;
+  $('#tb-title').textContent = head.title;
+  $('#admin-sub').textContent = head.sub || '';
 }
 
 function adminShow() {
   // Section switches are same-document hash changes; a menu or drawer opened on the previous
   // section would otherwise stay on screen. Bounded: a drawer may decline to close.
   for (let i = 0; ui.layers.length && i < 8; i++) ui.closeTop();
-  const key = adminCurrentKey();
+  adminNormalizeUrl();
+  const route = adminRoute();
+  const key = route.section;
   const meta = ADMIN.sections[key];
   const changed = ADMIN.current !== key;
+  if (changed) adminDropForeignParams(key);
   ADMIN.current = key;
-  $$('.sb-nav .nav-item[data-page], .bottomnav .bn-item[data-page]').forEach((a) => {
+  ADMIN.route = route;
+  ADMIN.lastUrl = location.href;
+  $$('.sb-nav .nav-item[data-page], .sb-foot .nav-item[data-page], .bottomnav .bn-item[data-page]').forEach((a) => {
     if (a.dataset.page === key) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   const more = $('#bn-more');
@@ -232,33 +303,83 @@ function adminShow() {
   const groups = $$('#admin-actions .adm-actions');
   groups.forEach((g) => { g.hidden = g.dataset.actions !== key; });
   $('#adm-range-group').hidden = !meta.ranged;
+  $('#adm-compare').hidden = !meta.compare;
   $('#admin-actions').hidden = !meta.ranged && !groups.some((g) => g.dataset.actions === key);
-  $('#admin-title').textContent = meta.label;
-  $('#tb-title').textContent = meta.label;
-  $('#admin-sub').textContent = meta.sub || '';
+  adminSetHead({ title: meta.label, sub: meta.sub });
   setPageTitle(meta.label);
   if (changed) window.scrollTo(0, 0);
   window.dispatchEvent(new CustomEvent('ispend:admin-tab', { detail: key }));
   return adminLoadCurrent();
 }
 
+/* ---------- unsaved changes ---------- */
+
+/* Settings pages register their form here (adminDirtyBar does it); leaving a page with unsaved
+   edits asks first instead of dropping them. */
+function adminDirtyForm() {
+  const f = ADMIN.forms[adminPageKey(ADMIN.route || adminRoute())];
+  return f && f.dirty ? f : null;
+}
+
+function adminAskToLeave(form) {
+  return new Promise((resolve) => {
+    let choice = 'stay';
+    ui.modal({
+      title: 'Save your changes?',
+      width: 420,
+      html: '<p>This page has changes that have not been saved yet.</p>',
+      actions: [
+        { label: 'Stay here' },
+        { label: 'Discard', onClick: () => { choice = 'discard'; } },
+        { label: 'Save', primary: true, onClick: async () => { await form.save(); choice = 'save'; } },
+      ],
+      onClose: () => resolve(choice),
+    });
+  });
+}
+
+async function adminOnHashChange() {
+  const form = adminDirtyForm();
+  const next = adminRoute();
+  if (form && ADMIN.lastUrl && adminPageKey(next) !== adminPageKey(ADMIN.route)) {
+    const target = location.href;
+    history.replaceState(history.state, '', ADMIN.lastUrl);
+    const choice = await adminAskToLeave(form);
+    if (choice === 'stay') return undefined;
+    if (choice === 'discard') form.discard();
+    history.replaceState(history.state, '', target);
+  }
+  return adminShow();
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (adminDirtyForm()) { e.preventDefault(); e.returnValue = ''; }
+});
+
 /* ---------- palette ---------- */
 
 function adminPalette() {
   const sections = adminSectionKeys().map((k) => ADMIN.sections[k]);
+  const go = (section, opts) => () => { location.href = adminHref(section, opts); };
   window.PALETTE = {
-    placeholder: 'Search people by email, name or #id, or jump to a page…',
-    pages: sections.map((s) => ({ group: 'Pages', label: `Go to ${s.label}`, icon: s.icon, run: () => { location.hash = `#${s.key}`; } })),
+    placeholder: 'Search customers by email, name or #id, or jump to a page…',
+    pages: [
+      ...sections.map((s) => ({ group: 'Pages', label: `Go to ${s.label}`, icon: s.icon, run: go(s.key) })),
+      ...(window.AdminSettings ? AdminSettings.keys().map((k) => ({ group: 'Settings', label: `Settings › ${AdminSettings.meta(k).label}`,
+        icon: AdminSettings.meta(k).icon, run: go('settings', { id: k }) })) : []),
+    ],
     actions: [
       { group: 'Actions', label: 'Refresh this page', icon: 'refresh', run: () => AdminPanels.refresh() },
-      ...(ADMIN.sections.users ? [{ group: 'Actions', label: 'Add a user', icon: 'plus', run: () => { location.hash = '#users'; setTimeout(() => window.openAddUser && openAddUser(), 50); } }] : []),
-      ...(ADMIN.sections.billing ? [{ group: 'Actions', label: 'Compare revenue records with Stripe', icon: 'refresh', run: () => { location.hash = '#billing'; } }] : []),
+      { group: 'Actions', label: 'Add a customer', icon: 'plus', run: () => { location.href = adminHref('customers', { params: { add: 1 } }); } },
+      { group: 'Actions', label: 'Email customers', icon: 'send', run: go('messages') },
+      { group: 'Actions', label: 'Compare revenue records with Stripe', icon: 'refresh', run: go('revenue', { params: { reconcile: 1 } }) },
+      { group: 'Actions', label: 'Make a backup', icon: 'database', run: go('backup') },
       { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: toggleThemePersisted },
     ],
     async search(q) {
       const res = await api(`/api/admin/search?q=${encodeURIComponent(q)}`);
       return (res.users || []).map((u) => ({
-        group: 'People', label: u.email || u.username, icon: 'user',
+        group: 'Customers', label: u.email || u.username, icon: 'user',
         sub: [u.email && u.username !== u.email ? u.username : null, u.status !== 'active' ? u.status : null,
           u.ent_state ? u.ent_state.replace('_', ' ') : null, `#${u.id}`].filter(Boolean).join(' · '),
         run: () => adminOpenUser(u.id),
@@ -267,11 +388,8 @@ function adminPalette() {
   };
 }
 
-/* Users owns the person view; until it has loaded, go there and let it open. */
-function adminOpenUser(id) {
-  setQs({ user: id }, { merge: true, replace: true });
-  if (location.hash !== '#users') location.hash = '#users';
-  else if (window.openUserDrawer) openUserDrawer(id);
+function adminOpenUser(id, tab) {
+  location.href = adminHref('customers', { id, tab });
 }
 
 /* ---------- boot ---------- */
@@ -288,7 +406,7 @@ function paintEnvBadge(mode) {
   if (!el) {
     el = document.createElement('a');
     el.id = 'adm-env';
-    el.href = '#billing';
+    el.href = '#settings/billing';
     $('.tb-actions').prepend(el);
   }
   el.className = `badge ${cls} adm-env`;
@@ -302,25 +420,33 @@ function adminNavItem(key) {
   return { page: key, href: `#${key}`, label: s.label, short: s.short, icon: s.icon, key: ADMIN_KEYS[key] };
 }
 
+/* The account menu: the admin's own account lives in Settings, like everything else here. */
+const ADMIN_MENU = [
+  { label: 'My account', icon: 'user', href: '#settings/account' },
+  { label: 'Settings', icon: 'settings', href: '#settings' },
+];
+
 document.addEventListener('DOMContentLoaded', () => {
   const keys = adminSectionKeys();
+  adminNormalizeUrl();
   const groups = ADMIN_GROUPS.map(([g, label]) => ({ label, items: keys.filter((k) => ADMIN.sections[k].group === g).map(adminNavItem) }))
     .filter((g) => g.items.length);
+  const footer = keys.filter((k) => ADMIN.sections[k].group === 'footer').map(adminNavItem);
   adminPalette();
   $('#adm-range').addEventListener('click', (e) => openRangePicker(e.currentTarget));
   $('#adm-compare').addEventListener('click', () => setAdminRange({ compare: !adminRange().compare }));
   $('#adm-compare').innerHTML = `${icon('arrow-left-right')}<span class="label">Compare</span>`;
   paintRangeControl();
   // initNav sends anyone who is not an admin back to the app before this resolves.
-  initNav(adminCurrentKey(), {
-    shell: 'admin', groups, footer: [], bottom: ADMIN_BOTTOM.filter((k) => ADMIN.sections[k]),
-    more: keys.filter((k) => !ADMIN_BOTTOM.includes(k)).map(adminNavItem),
+  initNav(adminRoute().section, {
+    shell: 'admin', groups, footer, bottom: ADMIN_BOTTOM.filter((k) => ADMIN.sections[k]),
+    more: keys.filter((k) => !ADMIN_BOTTOM.includes(k)).map(adminNavItem), menu: ADMIN_MENU,
     brandBadge: 'Admin', searchLabel: 'Search customers, pages and actions…', title: 'Admin',
   }).then((me) => {
     ADMIN.me = me;
     $('#admin-layout').hidden = false;
     api('/api/admin/shell').then((sh) => paintEnvBadge(sh.stripe_mode)).catch(() => {});
-    window.addEventListener('hashchange', adminShow);
+    window.addEventListener('hashchange', adminOnHashChange);
     ui.shortcuts.register('r', () => AdminPanels.refresh(), { description: 'Admin: refresh this page' });
     window.PAGE_SHORTCUTS = [{ title: 'Admin', items: [['r', 'Refresh this page'],
       ...keys.filter((k) => ADMIN_KEYS[k]).map((k) => [`g ${ADMIN_KEYS[k]}`, ADMIN.sections[k].label])] }];
