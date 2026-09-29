@@ -6,6 +6,7 @@ Uses the smoke fixtures (one context per test, API-cookie login). Admin is used 
 populated pages; qa_tester for anything that mutates. Tests that document a known defect are
 marked xfail(strict=True) until the phase that fixes them lands, so a fix shows up as XPASS.
 """
+import pathlib
 import time
 
 import pytest
@@ -13,6 +14,8 @@ import pytest
 from helpers import PAGES, wait_loaded
 from smoke_fixtures import _data_user, base_url, browser, data_persona_for, make_context, pw  # noqa: F401  (pytest fixtures)
 from playwright.sync_api import TimeoutError as PWTimeout
+
+FIXTURES = pathlib.Path(__file__).resolve().parents[2] / "backend" / "tests" / "fixtures"
 
 # Elements that legitimately scroll sideways on a phone (chip rows, tab strips, mapping tables, charts).
 ALLOW_HSCROLL = [".tbl-toolbar .seg", ".tabs", ".file-tabs", ".settings-nav", ".filter-row", ".mapping-table",
@@ -291,7 +294,7 @@ def test_card_mode_tables_390(make_context):
         assert st, f"{key}: {table} not rendered"
         assert st["thead"] == "none" and st["sw"] <= st["cw"] + 1, f"{key} {table}: {st}"
     ctx, page, _ = make_context("qa_tester", "light", "390")
-    fixture = open("/Users/ruolez/Desktop/Dev/ispend/backend/tests/fixtures/chase_card.csv", "rb").read()
+    fixture = (FIXTURES / "chase_card.csv").read_bytes()
     r = ctx.request.post("/api/statements", multipart={"file": {"name": "chase_card.csv", "mimeType": "text/csv", "buffer": fixture}})
     assert r.ok, r.text()
     sid = r.json()["id"]
