@@ -69,6 +69,14 @@ EXPORTED = {
     "signup_attribution": "SELECT * FROM signup_attribution WHERE user_id = %(u)s",
     "audit_log": "SELECT action, detail, created_at FROM audit_log WHERE user_id = %(u)s ORDER BY id",
     "admin_notes": "SELECT body, created_at FROM admin_notes WHERE user_id = %(u)s ORDER BY id",
+    "support_reports": """SELECT id, kind, subject, status, impact, context, created_at, updated_at, resolved_at
+                            FROM support_reports WHERE user_id = %(u)s ORDER BY id""",
+    "support_messages": """SELECT m.report_id, m.author_role, m.body, m.created_at FROM support_messages m
+                             JOIN support_reports r ON r.id = m.report_id
+                            WHERE r.user_id = %(u)s AND NOT m.internal ORDER BY m.id""",
+    "support_attachments": """SELECT a.report_id, a.mime, a.bytes, a.width, a.height, a.created_at
+                                FROM support_attachments a JOIN support_messages m ON m.id = a.message_id
+                               WHERE a.user_id = %(u)s AND NOT m.internal ORDER BY a.id""",
     "user_admin_tags": """SELECT t.name FROM user_admin_tags ut JOIN admin_tags t ON t.id = ut.tag_id WHERE ut.user_id = %(u)s""",
 }
 
@@ -268,6 +276,9 @@ KEPT_ON_WIPE = {
     "user_activity_days": "usage counts",
     "signup_attribution": "where the account came from",
     "admin_notes": "the operator's notes",
+    "support_reports": "the person's correspondence with the operator",
+    "support_messages": "the person's correspondence with the operator",
+    "support_attachments": "the person's correspondence with the operator",
     "admin_tags": "the operator's labels",
     "user_admin_tags": "the operator's labels",
     "email_campaigns": "the operator's messages",

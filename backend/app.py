@@ -1,4 +1,5 @@
 import logging
+import secrets
 import time
 
 import psycopg2
@@ -49,12 +50,14 @@ def create_app():
     import rules_api
     import settings_api
     import statements_api
+    import support_api
     import tags_api
     import transactions_api
 
     for module in (
         auth, settings_api, accounts_api, categories_api, statements_api,
         transactions_api, review_api, rules_api, merchants_api, import_layouts_api, reports_api, ai_api, budgets_api, tags_api,
+        support_api,
         admin_api, admin_users, admin_backup, admin_billing, admin_email, admin_metrics, admin_system, billing_api, public_api,
     ):
         app.register_blueprint(module.bp)
@@ -62,6 +65,8 @@ def create_app():
     @app.before_request
     def _start_timer():
         g.t0 = time.perf_counter()
+        # Quoted by a customer ("Report" on an error toast) to find the matching server error.
+        g.request_id = secrets.token_hex(6)
 
     app.before_request(auth.refresh_session_user)
     app.before_request(auth.admin_scope_guard)
@@ -108,6 +113,8 @@ def create_app():
         t0 = g.get("t0")
         if t0 is not None:
             response.headers["Server-Timing"] = f"db;dur={g.get('db_ms', 0.0):.1f}, app;dur={(time.perf_counter() - t0) * 1000:.1f}"
+        if g.get("request_id"):
+            response.headers["X-Request-Id"] = g.request_id
         return response
 
     @app.after_request
@@ -151,8 +158,9 @@ def create_app():
         from flask import session
         rule = request.url_rule.rule if request.url_rule else request.path
         errors.record("request", e, location=f"{request.method} {rule}", status=500,
-                      user_id=session.get("user_id"))
-        return jsonify({"error": "Something went wrong on the server. The details were logged."}), 500
+                      user_id=session.get("user_id"), request_id=g.get("request_id"))
+        return jsonify({"error": "Something went wrong on the server. The details were logged.",
+                        "request_id": g.get("request_id")}), 500
 
     @app.get("/api/health")
     def health():

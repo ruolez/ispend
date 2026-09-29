@@ -13,6 +13,13 @@ limit_req_zone $binary_remote_addr zone=signup:10m rate=5r/m;
 limit_req_zone $binary_remote_addr zone=reset:10m rate=5r/m;
 limit_req_zone $binary_remote_addr zone=billing:10m rate=60r/m;
 limit_req_zone $binary_remote_addr zone=public:10m rate=60r/m;
+# Problem reports and replies: only writes count (an empty key is not limited), so reading a
+# thread is never throttled. The backend has its own per-account daily and hourly caps.
+map $request_method $ispend_support_write {
+    POST     $binary_remote_addr;
+    default  "";
+}
+limit_req_zone $ispend_support_write zone=support:10m rate=10r/m;
 
 # Port 80 answers ACME challenges and redirects everything else to HTTPS.
 server {
@@ -184,6 +191,12 @@ server {
     # step-up prompt cannot be used to guess a password faster than the login form.
     location = /api/admin/step-up {
         limit_req zone=login burst=5 nodelay;
+        proxy_pass http://backend:5000;
+    }
+
+    location ^~ /api/support/ {
+        limit_req zone=support burst=10 nodelay;
+        error_page 429 = @rate_limited_generic;
         proxy_pass http://backend:5000;
     }
 

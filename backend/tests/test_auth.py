@@ -96,6 +96,16 @@ class SessionEnforcementTest(unittest.TestCase):
         self.assertEqual({k: body[k] for k in ("id", "username", "email", "role", "preferences")},
                          {"id": 7, "username": "ann", "email": "a@x.io", "role": "user", "preferences": {"theme": "dark"}})
 
+    def test_me_counts_unread_support_replies_for_customers_only(self):
+        row = {"id": 7, "username": "ann", "email": None, "email_verified_at": None, "role": "user",
+               "status": "active", "preferences": {}}
+        self.q.routes += [("FROM users u", row), ("FROM support_reports", {"n": 2})]
+        self.assertEqual(self._get(self._client(), "/api/auth/me").get_json()["support_unread"], 2)
+        self.assertEqual(self.q.sql("FROM support_reports")[0][1], (7,))
+        self.q = _stubs.Router([("FROM users u", {**row, "role": "admin"})])
+        body = self._get(self._client(role="admin"), "/api/auth/me").get_json()
+        self.assertEqual(("support_unread" in body, self.q.sql("FROM support_reports")), (False, []))
+
     def test_anonymous_request_does_not_query_the_database(self):
         res = self._get(self.app.test_client(), "/protected")
         self.assertEqual(res.status_code, 401)

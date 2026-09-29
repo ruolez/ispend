@@ -106,6 +106,28 @@ TEMPLATES = {
                  "categories and rules — has been deleted, and any subscription was cancelled.\n\n"
                  "If you did not ask for this, reply to this email.\n"),
     },
+    "support_received": {
+        "subject": "We received your report {ref}",
+        "text": ("Hi {username},\n\nThanks for letting us know. Your report {ref}, \"{subject}\", has reached "
+                 "the iSpend team. We will answer in iSpend and let you know by email.\n\n"
+                 "Follow it or add details here:\n{link}\n"),
+    },
+    "support_admin_new": {
+        "subject": "{ref}: {subject}",
+        "text": ("{username} {event}.\n\nType: {kind}\nImpact: {impact}\n\n{message}\n\n"
+                 "Open it in the console:\n{link}\n"),
+    },
+    "support_reply": {
+        "subject": "Re: {subject} [{ref}]",
+        "text": ("Hi {username},\n\nThere is a new reply on your report {ref}:\n\n{message}\n\n"
+                 "See the whole conversation or answer here:\n{link}\n\n"
+                 "Please answer in iSpend rather than replying to this email, so everything stays in one place.\n"),
+    },
+    "support_resolved": {
+        "subject": "Resolved: {subject} [{ref}]",
+        "text": ("Hi {username},\n\nYour report {ref} has been marked as resolved.\n\n{message}\n\n"
+                 "If something still is not right, answer within {days} days and the report reopens:\n{link}\n"),
+    },
     "test": {
         "subject": "iSpend test email",
         "text": "This is a test message from iSpend. If it arrived, email is working.\n",
@@ -113,7 +135,8 @@ TEMPLATES = {
 }
 
 DEFAULTS = {"username": "there", "link": "", "trial_end": "", "days": "", "until": "",
-            "when": "", "device": "", "ip": ""}
+            "when": "", "device": "", "ip": "", "ref": "", "subject": "", "message": "", "event": "",
+            "kind": "", "impact": ""}
 
 
 def render(template, **ctx):
@@ -121,10 +144,11 @@ def render(template, **ctx):
     if spec is None:
         raise KeyError(f"unknown email template {template!r}")
     values = {**DEFAULTS, **{k: ("" if v is None else v) for k, v in ctx.items()}}
-    text = spec["text"].format(**values)
+    # An optional value left empty (a resolve with no message) must not leave a gap behind.
+    text = re.sub(r"\n{3,}", "\n\n", spec["text"].format(**values))
     body = "".join(
         f"<p>{html_mod.escape(p).replace(chr(10), '<br>')}</p>"
-        for p in text.strip().split("\n\n"))
+        for p in text.strip().split("\n\n") if p.strip())
     html = (f"<html><body style=\"font-family:system-ui,sans-serif;line-height:1.5;color:#202124\">"
             f"{body}<p style=\"color:#5f6368;font-size:13px\">{APP}</p></body></html>")
     return spec["subject"], text, html

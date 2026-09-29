@@ -38,6 +38,9 @@ TABLE_ORDER = [
     "email_log",             # user_id, sent_by, campaign_id nullable
     "signup_attribution",
     "admin_notes",
+    "support_reports",
+    "support_messages",      # author_id nullable
+    "support_attachments",   # support_messages + support_reports
     "user_admin_tags",       # users + admin_tags
     "data_exports",
     # level 2 - depend on users + accounts/categories

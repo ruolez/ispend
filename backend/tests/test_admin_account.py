@@ -33,13 +33,14 @@ import review_api  # noqa: E402
 import rules_api  # noqa: E402
 import settings_api  # noqa: E402
 import statements_api  # noqa: E402
+import support_api  # noqa: E402
 import tags_api  # noqa: E402
 import transactions_api  # noqa: E402
 import util  # noqa: E402
 from backup import tables  # noqa: E402
 
 CUSTOMER_APP = (accounts_api, ai_api, billing_api, budgets_api, categories_api, import_layouts_api, merchants_api,
-                reports_api, review_api, rules_api, settings_api, statements_api, tags_api, transactions_api)
+                reports_api, review_api, rules_api, settings_api, statements_api, support_api, tags_api, transactions_api)
 
 # One request per customer-app area, plus the customer's own data rights in the auth blueprint.
 CLOSED_TO_ADMINS = [
@@ -49,6 +50,7 @@ CLOSED_TO_ADMINS = [
     ("put", "/api/settings"), ("get", "/api/insights"), ("post", "/api/billing/checkout"),
     ("post", "/api/billing/portal"), ("get", "/api/billing/status"),
     ("post", "/api/auth/me/exports"), ("get", "/api/auth/me/exports"), ("delete", "/api/auth/me"),
+    ("get", "/api/support/reports"), ("post", "/api/support/reports"),
 ]
 OPEN_TO_ADMINS = [
     ("get", "/api/auth/me"), ("put", "/api/auth/me/preferences"), ("put", "/api/auth/me/password"),

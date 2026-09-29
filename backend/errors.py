@@ -55,7 +55,7 @@ def _should_store(fp, now=None):
         return True
 
 
-def record(source, exc, location=None, status=None, user_id=None):
+def record(source, exc, location=None, status=None, user_id=None, request_id=None):
     """Store one error. location: the route rule or job name that was running."""
     try:
         fp, where = fingerprint(exc)
@@ -68,10 +68,10 @@ def record(source, exc, location=None, status=None, user_id=None):
             with conn.cursor() as cur:
                 cur.execute(
                     """INSERT INTO app_errors (source, fingerprint, error_type, message, location, status,
-                                               user_id, traceback)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                                               user_id, traceback, request_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (source if source in SOURCES else "request", fp, type(exc).__name__,
-                     str(exc)[:MAX_MESSAGE], (location or where)[:200], status, user_id, trace))
+                     str(exc)[:MAX_MESSAGE], (location or where)[:200], status, user_id, trace, request_id))
         finally:
             conn.close()
         return True

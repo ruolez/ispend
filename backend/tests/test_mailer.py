@@ -89,6 +89,19 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("<script>", html)              # the HTML alternative is escaped
         self.assertIn("&amp;b=2", html)
 
+    def test_support_messages_carry_user_text_verbatim(self):
+        """A customer's text can hold braces and markup; neither may break or inject into the email."""
+        _, text, html = email_templates.render("support_reply", username="amy", ref="R-1042", subject="Import {x}",
+                                               message="Try {this} <b>now</b>", link="https://x/help.html?report=42")
+        self.assertIn("Try {this} <b>now</b>", text)
+        self.assertIn("Try {this} &lt;b&gt;now&lt;/b&gt;", html)
+
+    def test_an_empty_optional_message_leaves_no_gap(self):
+        _, text, html = email_templates.render("support_resolved", username="amy", ref="R-1042", subject="s",
+                                               message="", days=30, link="https://x")
+        self.assertNotIn("\n\n\n", text)
+        self.assertNotIn("<p></p>", html)
+
     def test_an_unknown_template_raises(self):
         with self.assertRaises(KeyError):
             email_templates.render("nope")

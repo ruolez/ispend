@@ -125,6 +125,13 @@ class EnforceTest(unittest.TestCase):
         self.assertFalse(entitlement.write_allowed("/api/transactions/7/splits"))
         self.assertFalse(entitlement.write_allowed("/api/transactions/rule-draft"))
 
+    def test_a_lapsed_customer_can_still_report_a_problem_but_nothing_else_under_support(self):
+        for path in ("/api/support/reports", "/api/support/reports/7/messages", "/api/support/reports/7/resolve"):
+            self.assertTrue(entitlement.write_allowed(path), path)
+        for path in ("/api/support/reports/7", "/api/support/reports/x/messages", "/api/support/meta",
+                     "/api/support/reports/7/messages/extra"):
+            self.assertFalse(entitlement.write_allowed(path), path)
+
     def test_admin_paths_are_delegated_to_admin_required(self):
         self.assertTrue(entitlement.write_allowed("/api/admin/users/5/lock"))
         self.assertTrue(entitlement.write_allowed("/api/admin/backup"))
@@ -159,6 +166,13 @@ class AllowlistMatchesRealRoutesTest(unittest.TestCase):
                 self.assertTrue(any(r == path or r == path + "/" for r in self.rules)
                                 or adapter.test(path, "POST") or adapter.test(path, "PUT"),
                                 f"{path} is allowlisted but no route serves it")
+
+    def test_the_support_pattern_matches_real_routes(self):
+        adapter = self.app.url_map.bind("localhost")
+        for path in ("/api/support/reports", "/api/support/reports/7/messages", "/api/support/reports/7/resolve"):
+            with self.subTest(path=path):
+                self.assertTrue(entitlement.write_allowed(path))
+                self.assertTrue(adapter.test(path, "POST"), f"{path} is allowlisted but no route serves it")
 
     def test_the_gate_is_registered_after_the_entitlement_loader(self):
         names = [f.__name__ for f in self.app.before_request_funcs[None]]

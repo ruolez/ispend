@@ -252,6 +252,14 @@ class BackupRoundTripTest(unittest.TestCase):
         db.execute("INSERT INTO user_admin_tags (user_id, tag_id, created_by) VALUES (%s, %s, %s)", (uid, vip, admin_id))
         db.execute("INSERT INTO admin_notes (user_id, author_id, body, pinned) VALUES (%s, %s, 'asked about CSV', true)",
                    (uid, admin_id))
+        report = db.execute("""INSERT INTO support_reports (user_id, kind, subject, context)
+                               VALUES (%s, 'bug', 'Import stuck', '{"page": "/import.html"}') RETURNING id""",
+                            (uid,), returning=True)["id"]
+        message = db.execute("""INSERT INTO support_messages (report_id, author_id, author_role, body)
+                                VALUES (%s, %s, 'user', 'The import spins forever') RETURNING id""",
+                             (report, uid), returning=True)["id"]
+        db.execute("""INSERT INTO support_attachments (message_id, report_id, user_id, stored_path, mime, bytes, width, height)
+                      VALUES (%s, %s, %s, %s, 'image/png', 10, 2, 1)""", (message, report, uid, f"{uid}/support/rt.png"))
         db.execute("INSERT INTO erasures (erased_user_id, requested_by, counts) VALUES (9999, 'self', '{\"transactions\": 3}')")
         db.execute("INSERT INTO email_suppressions (email_sha256, reason) VALUES (%s, 'unsubscribed')", ("d" * 64,))
         db.execute("""INSERT INTO login_events (user_id, kind, ok, ip, device) VALUES (%s, 'password', true, '203.0.113.9', 'desktop')""",

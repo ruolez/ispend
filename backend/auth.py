@@ -529,7 +529,7 @@ def logout():
 def me():
     # The session hook has already loaded (and vetted) this user with their subscription.
     if g.get("user_row") is not None:
-        return jsonify(_me_payload(g.user_row, g.get("entitlement")))
+        return jsonify(_with_support_unread(_me_payload(g.user_row, g.get("entitlement"))))
     user = db.query(
         """SELECT u.*, s.status AS sub_status, s.plan, s.trial_end, s.current_period_end,
                   s.cancel_at_period_end, s.lapsed_at, s.grace_until, s.comped_until,
@@ -539,7 +539,18 @@ def me():
     if not user_state.can_sign_in(user):
         session.clear()
         return api_error("Not authenticated", 401)
-    return jsonify(_me_payload(user))
+    return jsonify(_with_support_unread(_me_payload(user)))
+
+
+def _with_support_unread(payload):
+    """Replies from the operator the customer has not opened yet: the badge on Help."""
+    if payload["role"] != "admin":
+        row = db.query(
+            """SELECT COUNT(*) AS n FROM support_reports
+                WHERE user_id = %s AND last_admin_at > COALESCE(user_seen_at, '-infinity'::timestamptz)""",
+            (payload["id"],), one=True)
+        payload["support_unread"] = int((row or {}).get("n") or 0)
+    return payload
 
 
 @bp.put("/me/preferences")

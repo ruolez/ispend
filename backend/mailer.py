@@ -113,6 +113,8 @@ CATEGORIES = {
     "campaign": "campaign", "admin_new_login": "admin",
     "trial_ending": "lifecycle", "trial_ended": "lifecycle", "grace_ending": "lifecycle", "read_only": "lifecycle",
     "payment_failed": "billing", "subscription_started": "billing", "subscription_canceled": "billing",
+    "support_received": "support", "support_admin_new": "support", "support_reply": "support",
+    "support_resolved": "support",
     "test": "test",
 }
 

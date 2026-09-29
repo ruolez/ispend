@@ -169,13 +169,16 @@ WRITE_ALLOWLIST = frozenset({
 # admin_required owns these, and the acting admin is admin_exempt anyway.
 WRITE_ALLOWLIST_PREFIXES = ("/api/admin/",)
 _READ_ONLY_POST = re.compile(r"^/api/transactions/\d+/rule-draft$")
+# A lapsed customer can still tell us something is wrong — billing trouble is exactly when.
+_SUPPORT_WRITE = re.compile(r"^/api/support/reports(/\d+/(messages|resolve))?$")
 
 
 def write_allowed(path):
     path = (path or "/").rstrip("/") or "/"
     return (path in WRITE_ALLOWLIST
             or path.startswith(WRITE_ALLOWLIST_PREFIXES)
-            or bool(_READ_ONLY_POST.match(path)))
+            or bool(_READ_ONLY_POST.match(path))
+            or bool(_SUPPORT_WRITE.match(path)))
 
 
 def enforce_write_access():

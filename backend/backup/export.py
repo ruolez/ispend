@@ -57,7 +57,9 @@ def _statement_files(cur):
         SELECT DISTINCT rel FROM (
             SELECT stored_path AS rel FROM statements WHERE stored_path IS NOT NULL
             UNION
-            SELECT ocr_path FROM statements WHERE ocr_path IS NOT NULL) s
+            SELECT ocr_path FROM statements WHERE ocr_path IS NOT NULL
+            UNION
+            SELECT stored_path FROM support_attachments) s
         ORDER BY rel""")
     return [r[0] for r in cur.fetchall()]
 
