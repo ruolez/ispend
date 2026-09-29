@@ -1,5 +1,53 @@
 /* API client + tiny DOM/URL helpers shared by every page. */
 
+/* The last few failed requests and script errors in this tab, which a problem report can include
+   (report.js shows the customer exactly what). Only the method, the path's shape, the status, the
+   request id and the message are kept, masked like the server masks them — never a body or a
+   query string. sessionStorage: it follows the tab across pages and ends with it. */
+const diag = (() => {
+  const KEY = 'ispend.diag';
+  const MAX = 10;
+  const empty = () => ({ errors: [], requests: [] });
+  function read() {
+    try { return { ...empty(), ...(JSON.parse(sessionStorage.getItem(KEY)) || {}) }; } catch { return empty(); }
+  }
+  function push(kind, item) {
+    try {
+      const d = read();
+      d[kind] = [...d[kind], { ...item, at: new Date().toISOString() }].slice(-MAX);
+      sessionStorage.setItem(KEY, JSON.stringify(d));
+    } catch { /* storage unavailable: a report just carries less */ }
+  }
+  /* Mirrors backend/support.py redact(): the server masks again, this keeps it off the disk too. */
+  function redact(text) {
+    return String(text || '')
+      .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
+      .replace(/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g, '[number]')
+      .replace(/[-+]?[$€£]?\s?\d{1,3}(?:,\d{3})+(?:\.\d{2})?|[-+]?[$€£]\s?\d+(?:\.\d{2})?|[-+]?\d+\.\d{2}\b/g, '[amount]')
+      .replace(/\d{4,}/g, '[number]');
+  }
+  function pathShape(url) {
+    let p = String(url || '');
+    try { p = new URL(p, location.origin).pathname; } catch { p = p.split(/[?#]/)[0]; }
+    return p.split('/').map((seg) => (/^\d+$/.test(seg) ? ':id' : seg)).join('/').slice(0, 200);
+  }
+  return {
+    request({ method = 'GET', path, status, requestId, message }) {
+      push('requests', { method: String(method).toUpperCase(), path: pathShape(path), status: status || 0,
+        request_id: requestId || undefined, message: redact(message).slice(0, 200) });
+    },
+    error(err) {
+      const stack = (err && err.stack) || '';
+      const m = stack.match(/(https?:\/\/[^\s)]+):(\d+):\d+/);
+      push('errors', { message: redact((err && err.message) || err).slice(0, 300),
+        source: m ? `${pathShape(m[1])}:${m[2]}` : undefined });
+    },
+    snapshot: read,
+    redact,
+    pathShape,
+  };
+})();
+
 async function api(path, options = {}) {
   const opts = { credentials: 'same-origin', headers: {}, ...options };
   const isForm = typeof FormData !== 'undefined' && opts.body instanceof FormData;
@@ -9,7 +57,10 @@ async function api(path, options = {}) {
   try {
     res = await fetch(path, opts);
   } catch (err) {
-    throw new Error(navigator.onLine === false ? 'You’re offline — iSpend needs a connection for this. Try again once you’re back online.' : 'Couldn’t reach the server — check your connection and try again.');
+    const offline = new Error(navigator.onLine === false ? 'You’re offline — iSpend needs a connection for this. Try again once you’re back online.' : 'Couldn’t reach the server — check your connection and try again.');
+    offline.network = true;
+    diag.request({ method: opts.method, path, status: 0, message: 'network error' });
+    throw offline;
   }
   if (res.status === 401 && !location.pathname.endsWith('/login.html')) {
     loginRedirect();
@@ -40,6 +91,8 @@ async function api(path, options = {}) {
     const err = new Error((data && data.error) || httpFallback(res.status));
     err.status = res.status;
     err.data = data;
+    err.requestId = res.headers.get('X-Request-Id') || (data && data.request_id) || null;
+    diag.request({ method: opts.method, path, status: res.status, requestId: err.requestId, message: err.message });
     throw err;
   }
   if (opts.method && opts.method !== 'GET' && typeof store !== 'undefined') store.afterWrite(path);
@@ -179,9 +232,14 @@ function apiUpload(path, formData, { onProgress } = {}) {
       if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
       const err = new Error((data && data.error) || httpFallback(xhr.status, 'Upload failed'));
       err.status = xhr.status;
+      err.requestId = xhr.getResponseHeader('X-Request-Id') || (data && data.request_id) || null;
+      diag.request({ method: 'POST', path, status: xhr.status, requestId: err.requestId, message: err.message });
       return reject(err);
     });
-    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('error', () => {
+      diag.request({ method: 'POST', path, status: 0, message: 'network error' });
+      reject(Object.assign(new Error('Network error during upload'), { network: true }));
+    });
     xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
     xhr.send(formData);
   });
@@ -269,7 +327,7 @@ function setQs(obj, { merge = true } = {}) {
    Filters, sorts and tabs live in the URL; remember each page's last query so returning
    through the sidebar restores it. Keys that open a specific thing are not remembered. */
 const PERIOD_QS = ['range', 'from', 'to', 'month'];
-const TRANSIENT_QS = { '/transactions.html': ['open'], '/import.html': ['statement'], '/rules.html': ['cat', 'new'], '/statements.html': ['open'] };
+const TRANSIENT_QS = { '/transactions.html': ['open'], '/help.html': ['report', 'new'], '/import.html': ['statement'], '/rules.html': ['cat', 'new'], '/statements.html': ['open'] };
 function _qsKey(path) { return `ispend.q:${path}`; }
 function rememberQuery() {
   try {

@@ -41,7 +41,7 @@ initNav('transactions').then(async (me) => { /* read qs(), hydrate, load() */ })
 
 `initNav(page)` builds sidebar/topbar/bottom-nav around `#main`, resolves with the user (`window.currentUser`; from the session cache at once when this tab has seen it, revalidated in the background — a changed id/role/billing state reloads the page), never resolves when not authenticated (api() already redirected to `/login.html?next=…`), reveals `[data-admin-only]` elements for admins and removes them for everyone else (admin markup ships with `hidden` so it never flashes before `/api/auth/me` resolves), applies `preferences.theme/density` when the browser has no stored choice, and refreshes the Review count pill on `window` event `ispend:transactions-changed` (dispatch it after any categorization change: `window.dispatchEvent(new Event('ispend:transactions-changed'))`).
 
-Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings, admin (admins only). Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|b|a|s` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
+Pages known to nav: dashboard (`/index.html`), transactions, review, import, statements, categories, rules, reports, budgets, insights, settings, help (sidebar footer, More, account menu; `data-support-pill` shows `me.support_unread`, `refreshSupportPill()` re-reads it). Keyboard: `⌘K` / `/` palette, `g d|t|r|i|c|p|b|s|h` go-to, `[`/`]` sidebar, `?` shortcuts sheet (set `window.PAGE_SHORTCUTS = [{title, items:[[keys, desc], …]}]` to add page rows).
 
 ## theme.js — `window.Theme`
 | Call | Purpose |
@@ -68,6 +68,7 @@ Safe areas: `--safe-top` / `--safe-bottom` in `tokens.css` wrap `env(safe-area-i
 | `await apiUpload(path, formData, {onProgress(0..1)})` | XHR multipart upload with progress |
 | `await adminDownload(url)` | Admin-only downloads (activity CSV, backup archives): asks for the password first if the step-up window is closed, then lets the browser fetch the file. Links opt in with `data-admin-download` |
 | `esc(s)` | HTML-escape (use on EVERY interpolation) |
+| `diag.snapshot()` → `{errors, requests}` | the tab's last 10 failed requests (method, path shape, status, `request_id`, masked message) and script errors, kept in sessionStorage for problem reports; `diag.redact(text)` mirrors the server's masking. Failed `api()`/`apiUpload()` errors carry `.requestId` (the `X-Request-Id` header) and network failures `.network = true` |
 | `qs()` → `{k:v}`, `setQs({k:v}, {replace, merge})`, `toQuery(obj)` → `?a=1&b=2` | URL state helpers; empty/null/false keys are dropped, arrays joined with `,` |
 | `$(sel, root)`, `$$(sel, root)`, `debounce(fn, ms)`, `uid()` | DOM/util |
 
@@ -122,7 +123,9 @@ ui.shortcutsSheet(extraGroups) · ui.trapFocus(el) → untrap · ui.focusFirst(e
 ```
 Segmented controls accept `allowNone: true` (clicking the active button clears it, `onChange(null, -1)`); calling `ui.tabs`/`ui.segmented` again on the same container replaces the old listeners.
 
-Unhandled errors and rejected promises surface as an error toast (deduped for 5 s) and stay in the console. A 401 sends the browser to `/login.html?next=…&reason=expired` when this browser had signed in before.
+Unhandled errors and rejected promises surface as an error toast (deduped for 5 s) and stay in the console. `ui.errorToast(err)` (also used by `ui.busy`) adds a **Report** action for failures that are ours to fix — a 5xx or a script error, never a 4xx or offline — which opens the report form with the error attached.
+
+**Problem reports.** `openReport({ kind, subject, error })` (nav.js) lazy-loads `help-content.js` + `report.js` and opens `ReportForm` — kinds `bug|data|question|idea|billing`, optional impact, up to 3 screenshots (paste/drop/pick, previews as data: URLs because the CSP blocks blob:), and an opt-out "Include technical details" block that shows the exact JSON sent. `ReportForm.shotsHtml()` + `ReportForm.mountShots(scope)` are the screenshot picker on its own; `ReportForm.statusBadge(status)` the status pill. Help answers and release notes live in `js/help-content.js` (`HELP_FAQ`, `HELP_RELEASES`) — update them with the feature they describe. A 401 sends the browser to `/login.html?next=…&reason=expired` when this browser had signed in before.
 
 Layers (modal/drawer/popover/palette) trap focus, close on Esc, and restore focus to the opener. Set `handle.allowShortcuts = true` on a layer if page shortcuts should keep working while it is open.
 

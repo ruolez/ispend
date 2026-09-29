@@ -22,10 +22,11 @@ const NAV_GROUPS = [
 ];
 const NAV_BILLING = { page: 'billing', href: '/billing.html', label: 'Billing', icon: 'credit-card' };
 const NAV_SETTINGS = { page: 'settings', href: '/settings.html', label: 'Settings', icon: 'settings', key: 's' };
-const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_BILLING, NAV_SETTINGS];
+const NAV_HELP = { page: 'help', href: '/help.html', label: 'Help', icon: 'help', key: 'h', pill: 'support' };
+const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), NAV_BILLING, NAV_SETTINGS, NAV_HELP];
 const BOTTOM_NAV = ['dashboard', 'transactions', 'review', 'budgets'];
 const BOTTOM_LABELS = { dashboard: 'Home' };
-const MORE_ORDER = ['reports', 'insights', 'import', 'statements', 'categories', 'rules', 'settings', 'billing'];
+const MORE_ORDER = ['reports', 'insights', 'import', 'statements', 'categories', 'rules', 'settings', 'billing', 'help'];
 const SIDEBAR_KEY = 'ispend.sidebar';
 const UID_KEY = 'ispend.uid';
 const ROOT_LABELS = { 'popover-root': 'Menus', 'modal-root': 'Dialogs', 'drawer-root': 'Panels', 'toast-root': 'Notifications' };
@@ -69,9 +70,14 @@ function itemHref(i) {
   // Hash links (the admin's sections) keep the page's current query instead of a remembered one.
   return i.href.startsWith('#') ? i.href : `${i.href}${savedQuery(i.href)}`;
 }
+/* pill: true is the Review count; 'support' is replies to the customer's problem reports. */
+function pillHtml(i) {
+  if (i.pill === 'support') return '<span class="pill" data-support-pill hidden>0</span>';
+  return i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : '';
+}
 function navItemHtml(i, activePage) {
   return `<a href="${esc(itemHref(i))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
-    ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</a>`;
+    ${icon(i.icon)}<span class="label">${esc(i.label)}</span>${pillHtml(i)}</a>`;
 }
 
 /* opts (the admin console uses these to reuse the whole shell with its own destinations):
@@ -110,7 +116,7 @@ async function initNav(activePage, opts = {}) {
       <div class="sb-foot">
         <button type="button" class="sb-expand" id="sb-expand" data-tip="Expand sidebar (])" aria-label="Expand sidebar">${icon('chevrons-right')}</button>
         ${opts.footer ? opts.footer.map((i) => navItemHtml(i, activePage)).join('')
-    : `${navItemHtml({ ...NAV_BILLING, billingOnly: true }, activePage)}${navItemHtml(NAV_SETTINGS, activePage)}`}
+    : `${navItemHtml({ ...NAV_BILLING, billingOnly: true }, activePage)}${navItemHtml(NAV_SETTINGS, activePage)}${navItemHtml(NAV_HELP, activePage)}`}
       </div>
     </aside>`;
   Array.from(sb.children).forEach((c) => document.body.prepend(c));
@@ -135,8 +141,8 @@ async function initNav(activePage, opts = {}) {
   // Mobile bottom nav
   const bn = document.createElement('nav'); bn.className = 'bottomnav'; bn.setAttribute('aria-label', 'Primary');
   const bottom = opts.bottom || BOTTOM_NAV;
-  bn.innerHTML = bottom.map((p) => navItems.find((i) => i.page === p)).filter(Boolean).map((i) => `<a href="${esc(itemHref(i))}" class="bn-item" data-page="${i.page}" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : ''}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.short || i.label)}</span></a>`).join('')
-    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${bottom.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}</span><span class="bn-label">More</span></button>`;
+  bn.innerHTML = bottom.map((p) => navItems.find((i) => i.page === p)).filter(Boolean).map((i) => `<a href="${esc(itemHref(i))}" class="bn-item" data-page="${i.page}" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${pillHtml(i)}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.short || i.label)}</span></a>`).join('')
+    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${bottom.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}${opts.groups ? '' : '<span class="pill pill-dot" data-support-pill data-dot hidden></span>'}</span><span class="bn-label">More</span></button>`;
   document.body.appendChild(bn);
   // The tapped tab takes the highlight at once, while the next screen loads; a back/forward restore
   // brings this page back as it was, so the highlight is handed back too.
@@ -245,6 +251,7 @@ async function initNav(activePage, opts = {}) {
   if (!opts.groups) {
     refreshReviewPill();
     window.addEventListener('ispend:transactions-changed', () => refreshReviewPill(true));
+    paintSupportPill(me);
   }
   // Back/forward restores the page as it was left: refresh the shared bits, and tell the page
   // (ispend:resume) so it can refetch data that may have changed elsewhere meanwhile.
@@ -275,7 +282,7 @@ function applyFreshMe(cached, fresh) {
   window.currentUser = fresh;
   $('#tb-avatar').textContent = initials(fresh.username);
   $('#tb-username').textContent = fresh.username;
-  if (!window.NAV_ADMIN_SHELL) paintPinnedViews(fresh);
+  if (!window.NAV_ADMIN_SHELL) { paintPinnedViews(fresh); paintSupportPill(fresh); }
 }
 
 /* Trial / grace / read-only notices, built from the existing .notice vocabulary rather than a
@@ -372,6 +379,47 @@ async function refreshReviewPill(force = false) {
   } catch { /* endpoint may not exist yet */ }
 }
 
+/* Replies from the iSpend team the customer hasn't opened yet, on Help (and on More, which holds
+   Help on phones). /me carries the count; Help refreshes it after a thread is read. */
+function paintSupportPill(me) {
+  const n = (me && me.support_unread) || 0;
+  $$('[data-support-pill]').forEach((el) => {
+    if (!el.hasAttribute('data-dot')) el.textContent = n > 99 ? '99+' : String(n);
+    el.hidden = !n;
+  });
+  $$('.more-tile[data-page="help"] .pill').forEach((el) => { el.textContent = String(n); el.hidden = !n; });
+}
+async function refreshSupportPill() {
+  try {
+    const me = await store.get('me', '/api/auth/me', { force: true });
+    window.currentUser = me;
+    paintSupportPill(me);
+  } catch { /* the badge is a nicety */ }
+}
+
+/* The problem-report form loads on first use, so any page (and any error toast) can offer it
+   without every page shipping it. prefill: { kind, error, subject }. */
+const _scriptLoads = new Map();
+function loadScriptOnce(src) {
+  if (!_scriptLoads.has(src)) {
+    _scriptLoads.set(src, new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+      const el = document.createElement('script');
+      el.src = src;
+      el.onload = () => resolve();
+      el.onerror = () => { _scriptLoads.delete(src); reject(new Error('Couldn’t open the report form — check your connection and try again.')); };
+      document.body.appendChild(el);
+    }));
+  }
+  return _scriptLoads.get(src);
+}
+async function openReport(prefill = {}) {
+  await loadScriptOnce('/js/help-content.js');
+  await loadScriptOnce('/js/report.js');
+  return ReportForm.open(prefill);
+}
+window.openReport = openReport;
+
 /* ---------- Phone chrome ---------- */
 /* The page's main action ([data-primary-action] in its header) is mirrored as a "+" in the phone
    topbar, which takes the header button's place there. The mirror just clicks the original, so
@@ -430,13 +478,14 @@ function openMoreSheet(activePage) {
   const views = window.NAV_ADMIN_SHELL ? [] : (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
   const mode = Theme.get();
   const html = `
-    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span></a>`).join('')}</nav>
+    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" data-page="${esc(i.page)}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill === 'support' && me.support_unread ? `<span class="pill">${esc(String(me.support_unread))}</span>` : ''}</a>`).join('')}</nav>
     ${views.length ? `<div class="section-label mt-4">Saved views</div><div class="more-list">${views.map((v) => `<a class="more-row" href="/transactions.html${esc(v.query)}&view=${encodeURIComponent(v.id)}">${icon('star', 'ico-sm')}<span class="grow truncate">${esc(v.name)}</span>${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}</div>` : ''}
     <div class="section-label mt-4">Appearance</div>
     <div class="seg more-theme" role="radiogroup" aria-label="Theme">${[['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="seg-btn${mode === k ? ' active' : ''}" role="radio" aria-checked="${mode === k}" data-theme-set="${k}">${icon(ic, 'ico-sm')}${l}</button>`).join('')}</div>
     <div class="more-list mt-4">
       <div class="more-row more-me"><span class="avatar">${esc(initials(me.username || ''))}</span><span class="grow truncate"><b>${esc(me.username || '')}</b>${window.NAV_ADMIN_SHELL ? '<span class="text-3"> · Admin</span>' : ''}</span></div>
       ${window.PWA && PWA.canInstall() ? `<button type="button" class="more-row" data-more="install">${icon('download', 'ico-sm')}<span class="grow">Install app</span></button>` : ''}
+      ${window.NAV_ADMIN_SHELL ? '' : `<button type="button" class="more-row" data-more="report">${icon('alert-circle', 'ico-sm')}<span class="grow">Report a problem</span></button>`}
       <button type="button" class="more-row" data-more="password">${icon('lock', 'ico-sm')}<span class="grow">Change password</span></button>
       <button type="button" class="more-row danger" data-more="signout">${icon('log-out', 'ico-sm')}<span class="grow">Sign out</span></button>
     </div>`;
@@ -448,6 +497,7 @@ function openMoreSheet(activePage) {
     if (!b) return;
     if (b.dataset.more === 'install') { sh.close(); PWA.install(); }
     if (b.dataset.more === 'password') { sh.close(); openChangePassword(); }
+    if (b.dataset.more === 'report') { sh.close(); openReport(); }
     if (b.dataset.more === 'signout') await signOut();
   });
 }
@@ -474,6 +524,9 @@ function openUserMenu(anchor) {
     ...(window.NAV_ADMIN_SHELL ? (window.NAV_SHELL.menu || []) : [
       ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
       { label: 'Settings', icon: 'settings', href: '/settings.html' },
+      { divider: true },
+      { label: 'Help & support', icon: 'help', href: '/help.html' },
+      { label: 'Report a problem', icon: 'alert-circle', onClick: () => openReport() },
     ]),
     { divider: true },
     { label: 'Sign out', icon: 'log-out', onClick: signOut },
@@ -537,6 +590,7 @@ function openPalette() {
     { group: 'Actions', label: 'Toggle theme', icon: 'moon', run: toggleThemePersisted },
     { group: 'Actions', label: 'Review uncategorized charges', icon: 'inbox', run: () => { location.href = '/review.html?mode=merchant'; } },
     { group: 'Actions', label: 'Show split transactions', icon: 'split', run: () => { location.href = '/transactions.html?split=1&range=all'; } },
+    { group: 'Actions', label: 'Report a problem', icon: 'alert-circle', run: () => openReport() },
   ];
   const me = window.currentUser || {};
   const pages = NAV_ITEMS

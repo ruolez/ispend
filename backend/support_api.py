@@ -198,6 +198,7 @@ def _context(fields):
             return {}
     context = support.clean_context(raw)
     if context:
+        context["app_version"] = app_version()
         context.update({k: v for k, v in useragent.parse(user_agent() or "").items() if v})
     return context
 

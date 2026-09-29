@@ -598,11 +598,26 @@ const ui = (() => {
     } } });
   }
   /* Run fn while the button is disabled and spinning; errors toast (unless silent) and resolve undefined. */
+  /* A failure that is ours to fix (a server error or a script error, not "that name is taken")
+     offers Report, which opens the problem form with the failure attached (nav.js openReport). */
+  const BUG_ERRORS = ['TypeError', 'ReferenceError', 'SyntaxError', 'RangeError'];
+  function reportable(err) {
+    if (!err || err.cancelled || err.network) return false;
+    if (err.status) return err.status >= 500;
+    return err instanceof Error && BUG_ERRORS.includes(err.name);
+  }
+  function errorToast(err, message) {
+    const msg = message || (err && err.message) || String(err);
+    const canReport = reportable(err) && typeof window.openReport === 'function' && !window.NAV_ADMIN_SHELL;
+    return toastFn(msg, { type: 'error',
+      action: canReport ? { label: 'Report', fn: () => window.openReport({ kind: 'bug', error: err }) } : undefined });
+  }
+
   async function busy(btn, fn, { silent = false, rethrow = false } = {}) {
     if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.classList.add('is-loading'); }
     try { return await fn(); }
     catch (err) {
-      if (!silent && !(err && err.cancelled)) toastFn(err.message || String(err), { type: 'error' });
+      if (!silent && !(err && err.cancelled)) errorToast(err);
       if (rethrow) throw err;
       return undefined;
     } finally {
@@ -868,7 +883,7 @@ const ui = (() => {
     });
   }
 
-  return { modal, sheet, isPhone, edgeFade, isCoarse, longPress, swipe, dragToDismiss, confirm, confirmTyped, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
+  return { modal, sheet, isPhone, edgeFade, isCoarse, longPress, swipe, dragToDismiss, confirm, confirmTyped, drawer, popover, menu, multiFilter, tabs, segmented, toast: toastFn, errorToast, undoable, busy, fieldError, validate, linkHints, tooltip, skeleton, skeletonRows, skeletonList, emptyState, errorBox, shortcuts, shortcutsSheet, trapFocus, focusFirst, focusKey, refocus, layers, pushLayer, popLayer, closeTop: () => layers[0] && layers[0].close() };
 })();
 const toast = ui.toast;
 window.toast = toast;
@@ -882,10 +897,12 @@ window.toast = toast;
     if (err && err.cancelled) return;
     const msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || 'Something went wrong';
     if (IGNORE.has(msg)) return;
+    // api() already logged its own failures; this keeps script errors for a problem report
+    if (err && !err.status && !err.network) diag.error(err);
     const now = Date.now();
     if ((recent.get(msg) || 0) > now - 5000) return;
     recent.set(msg, now);
-    toast(msg.length > 200 ? `${msg.slice(0, 200)}…` : msg, { type: 'error' });
+    ui.errorToast(err, msg.length > 200 ? `${msg.slice(0, 200)}…` : msg);
   }
   window.addEventListener('unhandledrejection', (e) => report(e.reason));
   window.addEventListener('error', (e) => { if (e.error || e.message) report(e.error || e.message); });

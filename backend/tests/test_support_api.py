@@ -101,7 +101,7 @@ class SupportApiTest(unittest.TestCase):
         self.assertEqual(res.get_json()["ref"], "R-1042")
         params = self.x.sql("INSERT INTO support_reports")[0][1]
         self.assertEqual(params[:4], (UID, "bug", support.subject_from(BODY), "blocking"))
-        self.assertEqual(json.loads(params[4]), {"page": "/import.html", "theme": "dark",
+        self.assertEqual(json.loads(params[4]), {"page": "/import.html", "theme": "dark", "app_version": support_api.app_version(),
                                                  "browser": "Safari 18", "os": "iOS", "device": "mobile"})
         self.assertEqual(self.x.sql("INSERT INTO support_messages")[0][1], (42, UID, "user", False, BODY))
         att = self.x.sql("INSERT INTO support_attachments")[0][1]

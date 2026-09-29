@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Help · iSpend</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/img/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="iSpend">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/pages/help.css">
+  <script src="/js/theme.js"></script>
+  <script src="/js/pwa.js"></script>
+</head>
+<body>
+  <main id="main" class="main">
+    <div id="help-home">
+      <div class="page-head">
+        <div><h1>Help</h1><div class="page-sub">Answers to common questions, and a direct line to the iSpend team.</div></div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-primary" data-act="report" data-primary-action>Report a problem</button>
+        </div>
+      </div>
+      <div class="help-grid">
+        <section class="help-answers" aria-labelledby="faq-title">
+          <h2 class="sr-only" id="faq-title">Answers</h2>
+          <div class="input-group help-search"><span class="ico-wrap" id="help-search-ico"></span>
+            <input id="help-q" class="input" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search answers…" aria-label="Search answers" aria-controls="faq-list"></div>
+          <div class="help-topics" id="help-topics" role="group" aria-label="Topics"></div>
+          <div class="sr-only" id="faq-live" aria-live="polite"></div>
+          <div id="faq-list" class="faq-list"></div>
+        </section>
+        <aside class="help-side" aria-label="Contact and your reports">
+          <div class="card help-contact">
+            <div class="card-body">
+              <h2>Still stuck?</h2>
+              <p class="text-2">Tell us what’s wrong or what you’re trying to do. A person reads every report and answers here and by email.</p>
+              <div class="help-contact-actions">
+                <button type="button" class="btn btn-primary" data-act="report" data-kind="bug">Report a problem</button>
+                <button type="button" class="btn btn-secondary" data-act="report" data-kind="question">Ask a question</button>
+                <button type="button" class="btn btn-ghost" data-act="report" data-kind="idea">Suggest an idea</button>
+              </div>
+              <p class="hint mt-3" id="help-email" hidden></p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Your reports</h2><span class="text-3 fs-sm" id="reports-count"></span></div>
+            <div id="reports-list" class="help-reports"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>What’s new</h2></div>
+            <div class="card-body"><ol class="help-releases" id="help-releases"></ol></div>
+          </div>
+          <p class="help-version text-3 fs-sm" id="help-version"></p>
+        </aside>
+      </div>
+    </div>
+    <div id="help-thread" hidden></div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script src="/js/format.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/pickers.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/help-content.js"></script>
+  <script src="/js/report.js"></script>
+  <script src="/js/pages/help.js"></script>
+</body>
+</html>
