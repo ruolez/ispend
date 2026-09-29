@@ -5,7 +5,7 @@
    from adminDirtyBar(`settings/${key}`, …), and the shell asks before its unsaved edits are left. */
 
 const ASET = { pages: {}, hosts: {} };
-const SETTINGS_ORDER = ['account', 'billing', 'signups', 'email', 'ai', 'landing', 'retention'];
+const SETTINGS_ORDER = ['account', 'billing', 'signups', 'email', 'support', 'ai', 'landing', 'retention'];
 
 window.AdminSettings = {
   register(key, meta) { ASET.pages[key] = { key, ...meta }; },

@@ -15,10 +15,10 @@
 
 const ADMIN = { sections: {}, current: null, route: null, me: null, loadSeq: 0, forms: {} };
 const ADMIN_GROUPS = [['home', ''], ['customers', 'Customers'], ['business', 'Business'], ['operations', 'Operations']];
-const ADMIN_ORDER = ['overview', 'customers', 'messages', 'revenue', 'engagement', 'imports', 'system',
+const ADMIN_ORDER = ['overview', 'customers', 'support', 'messages', 'revenue', 'engagement', 'imports', 'system',
   'activity', 'backup', 'settings'];
 const ADMIN_BOTTOM = ['overview', 'customers', 'revenue', 'activity'];
-const ADMIN_KEYS = { overview: 'h', customers: 'c', revenue: 'r', engagement: 'e', activity: 'l', system: 'y', settings: 's' };
+const ADMIN_KEYS = { overview: 'h', customers: 'c', support: 'u', revenue: 'r', engagement: 'e', activity: 'l', system: 'y', settings: 's' };
 /* Old section names, and settings that used to be sections of their own. */
 const ADMIN_ALIASES = { users: 'customers', billing: 'settings/billing', signups: 'settings/signups',
   retention: 'settings/retention', landing: 'settings/landing' };
@@ -389,6 +389,7 @@ function adminPalette() {
     actions: [
       { group: 'Actions', label: 'Refresh this page', icon: 'refresh', run: () => AdminPanels.refresh() },
       { group: 'Actions', label: 'Add a customer', icon: 'plus', run: () => { location.href = adminHref('customers', { params: { add: 1 } }); } },
+      { group: 'Actions', label: 'Answer support reports', icon: 'help', run: go('support') },
       { group: 'Actions', label: 'Email customers', icon: 'send', run: go('messages') },
       { group: 'Actions', label: 'Compare revenue records with Stripe', icon: 'refresh', run: go('revenue', { params: { reconcile: 1 } }) },
       { group: 'Actions', label: 'Make a backup', icon: 'database', run: go('backup') },
@@ -436,7 +437,7 @@ function paintEnvBadge(mode) {
 
 function adminNavItem(key) {
   const s = ADMIN.sections[key];
-  return { page: key, href: `#${key}`, label: s.label, short: s.short, icon: s.icon, key: ADMIN_KEYS[key] };
+  return { page: key, href: `#${key}`, label: s.label, short: s.short, icon: s.icon, key: ADMIN_KEYS[key], pill: s.pill };
 }
 
 /* The account menu: the admin's own account lives in Settings, like everything else here. */
@@ -468,6 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sh = await api('/api/admin/shell').catch(() => ({ stripe_mode: 'off' }));
     ADMIN.stripeMode = sh.stripe_mode;
     paintEnvBadge(sh.stripe_mode);
+    setNavPill('admin-support', sh.support_needs_reply);
     window.addEventListener('hashchange', adminOnHashChange);
     window.addEventListener('popstate', adminOnHashChange);
     ui.shortcuts.register('r', () => AdminPanels.refresh(), { description: 'Admin: refresh this page' });

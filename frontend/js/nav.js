@@ -70,10 +70,21 @@ function itemHref(i) {
   // Hash links (the admin's sections) keep the page's current query instead of a remembered one.
   return i.href.startsWith('#') ? i.href : `${i.href}${savedQuery(i.href)}`;
 }
-/* pill: true is the Review count; 'support' is replies to the customer's problem reports. */
+/* pill: true is the Review count; a string names a count set with setNavPill (support: replies
+   to the customer's reports; admin-support: reports waiting for the operator). */
 function pillHtml(i) {
-  if (i.pill === 'support') return '<span class="pill" data-support-pill hidden>0</span>';
+  if (typeof i.pill === 'string') return `<span class="pill" data-pill="${esc(i.pill)}" hidden>0</span>`;
   return i.pill ? '<span class="pill" data-review-pill hidden>0</span>' : '';
+}
+const NAV_PILLS = {};
+function setNavPill(key, n) {
+  NAV_PILLS[key] = Number(n) || 0;
+  $$(`[data-pill="${key}"]`).forEach((el) => { el.textContent = NAV_PILLS[key] > 99 ? '99+' : String(NAV_PILLS[key]); el.hidden = !NAV_PILLS[key]; });
+  // A count on a page that lives behind More (phones) puts a dot on More itself.
+  const bottom = new Set($$('.bottomnav a.bn-item[data-page]').map((a) => a.dataset.page));
+  const hidden = (window.NAV_SHELL ? window.NAV_SHELL.items : NAV_ITEMS)
+    .some((i) => typeof i.pill === 'string' && !bottom.has(i.page) && NAV_PILLS[i.pill]);
+  $$('[data-more-dot]').forEach((el) => { el.hidden = !hidden; });
 }
 function navItemHtml(i, activePage) {
   return `<a href="${esc(itemHref(i))}" class="nav-item" data-page="${i.page}" data-label="${esc(i.label)}" ${i.billingOnly ? 'data-billing-only hidden' : ''} ${i.page === activePage ? 'aria-current="page"' : ''}>
@@ -142,7 +153,7 @@ async function initNav(activePage, opts = {}) {
   const bn = document.createElement('nav'); bn.className = 'bottomnav'; bn.setAttribute('aria-label', 'Primary');
   const bottom = opts.bottom || BOTTOM_NAV;
   bn.innerHTML = bottom.map((p) => navItems.find((i) => i.page === p)).filter(Boolean).map((i) => `<a href="${esc(itemHref(i))}" class="bn-item" data-page="${i.page}" ${i.page === activePage ? 'aria-current="page"' : ''}><span class="bn-ico">${icon(i.icon)}${pillHtml(i)}</span><span class="bn-label">${esc(BOTTOM_LABELS[i.page] || i.short || i.label)}</span></a>`).join('')
-    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${bottom.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}${opts.groups ? '' : '<span class="pill pill-dot" data-support-pill data-dot hidden></span>'}</span><span class="bn-label">More</span></button>`;
+    + `<button type="button" class="bn-item" id="bn-more" aria-haspopup="dialog" ${bottom.includes(activePage) ? '' : 'aria-current="page"'}><span class="bn-ico">${icon('more-horizontal')}<span class="pill pill-dot" data-more-dot hidden></span></span><span class="bn-label">More</span></button>`;
   document.body.appendChild(bn);
   // The tapped tab takes the highlight at once, while the next screen loads; a back/forward restore
   // brings this page back as it was, so the highlight is handed back too.
@@ -382,12 +393,7 @@ async function refreshReviewPill(force = false) {
 /* Replies from the iSpend team the customer hasn't opened yet, on Help (and on More, which holds
    Help on phones). /me carries the count; Help refreshes it after a thread is read. */
 function paintSupportPill(me) {
-  const n = (me && me.support_unread) || 0;
-  $$('[data-support-pill]').forEach((el) => {
-    if (!el.hasAttribute('data-dot')) el.textContent = n > 99 ? '99+' : String(n);
-    el.hidden = !n;
-  });
-  $$('.more-tile[data-page="help"] .pill').forEach((el) => { el.textContent = String(n); el.hidden = !n; });
+  setNavPill('support', (me && me.support_unread) || 0);
 }
 async function refreshSupportPill() {
   try {
@@ -478,7 +484,7 @@ function openMoreSheet(activePage) {
   const views = window.NAV_ADMIN_SHELL ? [] : (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
   const mode = Theme.get();
   const html = `
-    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" data-page="${esc(i.page)}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${i.pill === 'support' && me.support_unread ? `<span class="pill">${esc(String(me.support_unread))}</span>` : ''}</a>`).join('')}</nav>
+    <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" data-page="${esc(i.page)}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${typeof i.pill === 'string' && NAV_PILLS[i.pill] ? `<span class="pill">${esc(String(NAV_PILLS[i.pill]))}</span>` : ''}</a>`).join('')}</nav>
     ${views.length ? `<div class="section-label mt-4">Saved views</div><div class="more-list">${views.map((v) => `<a class="more-row" href="/transactions.html${esc(v.query)}&view=${encodeURIComponent(v.id)}">${icon('star', 'ico-sm')}<span class="grow truncate">${esc(v.name)}</span>${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}</div>` : ''}
     <div class="section-label mt-4">Appearance</div>
     <div class="seg more-theme" role="radiogroup" aria-label="Theme">${[['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="seg-btn${mode === k ? ' active' : ''}" role="radio" aria-checked="${mode === k}" data-theme-set="${k}">${icon(ic, 'ico-sm')}${l}</button>`).join('')}</div>

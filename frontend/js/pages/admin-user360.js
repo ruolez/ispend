@@ -3,7 +3,7 @@
    action an operator can take on them. Everything comes from GET /api/admin/users/<id>. */
 
 const P360 = { id: null, data: null, open: false, tab: 'overview', feed: 'all', seq: 0 };
-const P360_TABS = [['overview', 'Overview'], ['billing', 'Billing'], ['activity', 'Activity'], ['notes', 'Notes']];
+const P360_TABS = [['overview', 'Overview'], ['billing', 'Billing'], ['activity', 'Activity'], ['notes', 'Notes'], ['support', 'Support']];
 
 function p360Host() { return $('#cust-person'); }
 
@@ -46,6 +46,8 @@ async function refreshPerson() {
   renderPerson();
 }
 window.addEventListener('ispend:admin-user-changed', () => { if (P360.open) refreshPerson(); });
+
+function p360OpenReports() { return (P360.data.reports || []).filter((r) => r.status !== 'resolved').length; }
 
 function personLabel(u) { return u.email || u.username; }
 
@@ -96,7 +98,7 @@ function renderPerson() {
       </div>
     </header>
     <nav class="tabs cust-tabs" role="tablist" aria-label="About this customer">${P360_TABS.map(([k, l]) =>
-      `<a role="tab" class="tab ${P360.tab === k ? 'active' : ''}" aria-selected="${P360.tab === k}" href="#customers/${u.id}/${k}">${esc(l)}${k === 'notes' && P360.data.notes.length ? ` <span class="pill">${P360.data.notes.length}</span>` : ''}</a>`).join('')}</nav>
+      `<a role="tab" class="tab ${P360.tab === k ? 'active' : ''}" aria-selected="${P360.tab === k}" href="#customers/${u.id}/${k}">${esc(l)}${k === 'notes' && P360.data.notes.length ? ` <span class="pill">${P360.data.notes.length}</span>` : ''}${k === 'support' && p360OpenReports() ? ` <span class="pill">${p360OpenReports()}</span>` : ''}</a>`).join('')}</nav>
     <div class="cust-grid">
       <div class="cust-main" id="p360-tab" role="tabpanel">${tabHtml(P360.tab)}</div>
       <aside class="cust-side" aria-label="Facts">${factsCard()}</aside>
@@ -140,6 +142,7 @@ function tabHtml(tab) {
   if (tab === 'billing') return billingTab();
   if (tab === 'activity') return activityTab();
   if (tab === 'notes') return notesTab();
+  if (tab === 'support') return supCustomerTab(P360.data.reports || []);
   return summaryTab();
 }
 

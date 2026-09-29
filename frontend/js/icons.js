@@ -67,6 +67,7 @@ const ICONS = (() => {
     'play': '<path d="m6 4 14 8-14 8z"/>',
     'zap-off': '<path d="M12.4 2 10 9h4l-1 3"/><path d="M6.5 12H3l7-10"/><path d="M11 13H5l7 9 1-4"/><path d="m2 2 20 20"/>',
     'help': '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    'paperclip': '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     'keyboard': '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
     'split': '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.2-2.8L3 3"/><path d="m15 9 6-6"/>',
     'circle': '<circle cx="12" cy="12" r="10"/>',
