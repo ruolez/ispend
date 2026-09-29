@@ -57,7 +57,7 @@ jobs:
         run: pytest qa/e2e/test_api.py -q -p no:cacheprovider
       - name: logs on failure
         if: failure()
-        run: docker compose logs --tail 200
+        run: docker compose logs --tail 1000
 
   browser-e2e:
     name: Nightly Playwright suites
@@ -99,4 +99,4 @@ jobs:
         run: python qa/e2e/a11y_scan.py --quick
       - name: logs on failure
         if: failure()
-        run: docker compose logs --tail 200
+        run: docker compose logs --tail 1000

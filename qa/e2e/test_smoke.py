@@ -528,6 +528,7 @@ def test_auth_logout_back_and_storage_residue(make_context, base_url):
     page.fill("#username", PERSONAS["qa_data"][0])
     page.fill("#password", PERSONAS["qa_data"][1])
     submit_login(page)
+    wait_loaded(page)          # let the landing page finish before leaving it
     page.goto("/transactions.html?range=all", wait_until="domcontentloaded")
     wait_loaded(page)
     rows_admin = page.locator("#tx-body tr[data-id]").count()

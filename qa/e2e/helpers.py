@@ -236,7 +236,14 @@ def wait_loaded(page: Page, authenticated=True, timeout=12000):
     loading shimmer in #main to clear. Returns timing + anything still stuck."""
     t0 = time.monotonic()
     if authenticated:
-        page.wait_for_function("() => !!window.currentUser", timeout=timeout)
+        try:
+            page.wait_for_function("() => !!window.currentUser", timeout=timeout)
+        except PwTimeout:
+            # Say where the page ended up: a bounce to login, an error box or a blank shell read
+            # very differently in a CI log.
+            where = page.evaluate("() => ({ url: location.href, h1: (document.querySelector('h1') || {}).textContent || '', "
+                                  "error: (document.querySelector('.error-box, #login-error.show') || {}).textContent || '' })")
+            raise AssertionError(f"signed-in page never loaded: {where}") from None
     settle(page, 150)
     stuck = None
     try:
