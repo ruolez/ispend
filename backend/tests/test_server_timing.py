@@ -1,7 +1,6 @@
 """Every response carries Server-Timing (app and database milliseconds), so slow endpoints show up in
 the browser's network panel and in the probe without any extra logging."""
 import os
-import re
 import sys
 import unittest
 from unittest import mock

@@ -147,6 +147,24 @@ class DatabaseIntegrationTest(unittest.TestCase):
         self.assertEqual(db.query("SELECT COUNT(*) AS n FROM subscription_events WHERE user_id = %s "
                                   "AND kind = 'baseline'", (uid,), one=True)["n"], 0)
 
+    def test_sign_in_refreshes_a_stale_subscription_against_the_real_schema(self):
+        """The query swallows its own errors (billing must never break a login), so a wrong column
+        once made it a silent no-op; only the real schema shows it."""
+        from unittest import mock
+
+        import auth
+        import billing_api
+        db = self.db
+        uid = db.execute("INSERT INTO users (username, password_hash) VALUES ('it_refresh', 'x') RETURNING id",
+                         returning=True)["id"]
+        db.execute("""INSERT INTO subscriptions (user_id, status, stripe_subscription_id, synced_at)
+                      VALUES (%s, 'active', 'sub_it_refresh', now() - interval '2 days')""", (uid,))
+        with mock.patch.object(billing_api, "maybe_refresh") as refresh:
+            auth._maybe_refresh_subscription(uid)
+        self.assertEqual(refresh.call_count, 1)
+        row = refresh.call_args.args[0]
+        self.assertEqual((row["id"], row["stripe_subscription_id"]), (uid, "sub_it_refresh"))
+
     def test_activity_days_and_email_log(self):
         import activity
         import mailer

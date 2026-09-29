@@ -287,7 +287,7 @@ class ListEndpointTest(unittest.TestCase):
                      "/api/transactions?q=coffee&limit=8&summary=0"):
             seen = []
 
-            def handler(sql, params, one):
+            def handler(sql, params, one, seen=seen):
                 seen.append(sql)
                 return {} if one else []
             with patch_db(FakeDB(handler)):

@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 import re
+import tempfile
 import time
 
 import pytest
@@ -66,7 +67,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIX = ROOT / "backend" / "tests" / "fixtures"
 SHOTS = ROOT / "qa" / "reports" / "screenshots"
 NOTES = ROOT / "qa" / "reports" / "flows-e2e-notes.json"
-SCRATCH = pathlib.Path(os.environ.get("QA_SCRATCH", "/private/tmp/claude-501/-Users-ruolez-Desktop-Dev-ispend/272cd059-cdbc-40ed-a58b-b1f0ef765b8f/scratchpad"))
+# Where the suite writes throwaway files (the junk uploads); a fresh temporary folder unless given.
+SCRATCH = pathlib.Path(os.environ.get("QA_SCRATCH") or tempfile.mkdtemp(prefix="ispend-qa-"))
 
 ADMIN = ("admin", "admin")
 QA = ("qa_flows", "qa-flows-pass1")

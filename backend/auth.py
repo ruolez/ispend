@@ -392,12 +392,18 @@ def email_problem(email):
 def _maybe_refresh_subscription(user_id):
     try:
         import billing_api
-        row = db.query("SELECT id, stripe_subscription_id, synced_at FROM subscriptions "
+        # subscriptions is keyed by user_id; it has no id column.
+        row = db.query("SELECT stripe_subscription_id, synced_at FROM subscriptions "
                        "WHERE user_id = %s", (user_id,), one=True)
         if row:
             billing_api.maybe_refresh({**row, "id": user_id})
     except Exception:
-        pass   # billing is optional; never let it break a login
+        # Billing is optional and must never break a login; a failed statement would otherwise
+        # leave the connection unusable for the rest of the request.
+        try:
+            db.get_db().rollback()
+        except Exception:
+            pass
 
 
 def _issue_token(user_id, kind, ttl):

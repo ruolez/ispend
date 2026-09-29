@@ -2,12 +2,12 @@
 
 No snapshot is committed: `test_flows.py` deletes and re-creates qa_flows on every run, so its
 account and category ids (and therefore the payloads) differ from run to run. Capture and verify
-around a change instead — `report_snapshot.py capture --user admin --dir <path outside the repo>`
+around a change instead — `report_snapshot.py capture --user qa_data --dir <path outside the repo>`
 before a migration, `verify` after — and point this test at that directory when you want it in a
 pytest run. It skips when the directory is missing.
 
     <venv>/bin/pytest qa/e2e/test_report_snapshot.py -q -p no:cacheprovider
-Set REPORT_SNAPSHOT_DIR / REPORT_SNAPSHOT_USER to verify another capture (e.g. admin's, kept outside the repo).
+Set REPORT_SNAPSHOT_DIR / REPORT_SNAPSHOT_USER to verify another capture (e.g. qa_data's, kept outside the repo).
 """
 import os
 import pathlib
