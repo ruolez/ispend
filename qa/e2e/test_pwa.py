@@ -30,7 +30,7 @@ FRONTEND = ROOT / "frontend"
 MANIFEST = FRONTEND / "manifest.json"
 ADMIN_MANIFEST = FRONTEND / "manifest-admin.json"
 SHELL_PAGES = {"index", "transactions", "review", "import", "statements", "categories", "rules",
-               "reports", "budgets", "insights", "settings", "billing", "admin"}
+               "reports", "budgets", "insights", "settings", "billing", "admin", "help"}
 NO_SW_PAGES = {"landing", "privacy", "terms", "offline"}
 HEAD_LINKS = ('<link rel="manifest" href="/manifest.json">',
               '<link rel="apple-touch-icon" href="/img/icons/apple-touch-icon.png">',

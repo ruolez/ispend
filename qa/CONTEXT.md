@@ -144,3 +144,16 @@ Severity: P0 = data loss/security/crash on main path; P1 = broken feature or wro
   in-flight refresh, errors say whether a copy is on screen). Responses carry `Server-Timing: db;dur=…, app;dur=…`.
 - WebKit for Playwright is installed (`playwright install webkit`) for Safari-engine checks (view transitions,
   first paint); no suite depends on it yet.
+
+## Added 2026-09-29 (Help centre and problem reports)
+- Customer API `/api/support/*` (blueprint `support`, closed to admins; POSTs allowed for read-only accounts by
+  `entitlement._SUPPORT_WRITE`), admin API `/api/admin/support/*`. Reports are `support_reports` +
+  `support_messages` (`internal` = operator notes, never returned to the customer) + `support_attachments`
+  (re-encoded PNG/JPEG/WebP under `STATEMENTS_DIR/<uid>/support/`). Reference numbers are `R-<id+1000>`.
+- Every response carries `X-Request-Id`; `app_errors.request_id` stores it for 500s. The frontend keeps the tab's
+  last failures in `sessionStorage['ispend.diag']` (api.js `diag`) and a report can include them.
+- `test_flows.py::test_f16_help_report` (runs alone with `-k f16`: it copies the flows user's cookie into the page),
+  `test_admin.py::TestShell::test_support_inbox_thread_and_note`, the route lists in `test_api.py`, and `help` in
+  `helpers.PAGES`, `a11y_scan.PAGES`, `test_pwa.SHELL_PAGES`. Backend: `tests/test_support*.py`,
+  `tests/test_admin_support.py`, and `tests.test_support_integration` (ISPEND_TEST_DSN) for the whole thread.
+- Dev has no admin or qa_tester email, so no support emails are queued there; `email_log.category = 'support'`.

@@ -926,6 +926,7 @@ html { -webkit-tap-highlight-color: transparent; }
 .rp-suggest .section-label { margin-bottom: 4px; }
 .rp-answer summary { cursor: pointer; padding: 4px 0; font-weight: 500; color: var(--text-1); }
 .rp-answer p { margin: 2px 0 8px; color: var(--text-2); font-size: var(--fs-sm); }
+.rp-answer:not([open]) > p { display: none; }
 .rp-files { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .rp-files:empty { display: none; }
 .rp-thumb { position: relative; width: 96px; height: 72px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); }

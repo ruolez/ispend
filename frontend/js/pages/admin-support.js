@@ -254,7 +254,7 @@ function supRenderThread(r) {
           </div>
         </form>
       </div>
-      <aside class="cust-side sup-side" aria-label="About this report">
+      <section class="cust-side sup-side" aria-label="About this report">
         <section class="card card-pad">
           <div class="section-label mb-2">Customer</div>
           <a class="sup-customer" href="${esc(adminHref('customers', { id: c.id }))}">
@@ -266,7 +266,7 @@ function supRenderThread(r) {
         </section>
         <section class="card card-pad mt-4"><div class="section-label mb-2">Technical details</div>${supContextHtml(r.context || {})}</section>
         <section class="card card-pad mt-4"><div class="section-label mb-2">Server errors</div>${supErrorsHtml(r.server_errors || [])}</section>
-      </aside>
+      </section>
     </div>
   </div>`;
   const form = $('#sup-compose');
@@ -403,7 +403,7 @@ async function supLoadSettings(host) {
       <div class="setting-row"><div class="min-w-0"><div class="title">Email me about new reports and replies</div>
         <div class="desc">${d.notify_to.length ? `Sent to ${d.notify_to.map(esc).join(', ')}.` : 'Your admin account has no email address yet, so nothing can be sent. Add one in <a href="#settings/account">My account</a>.'}
           Reports always appear here and on Home either way.</div></div>
-        <label class="switch"><input type="checkbox" id="asp-notify" ${d.notify ? 'checked' : ''}><span class="switch-track"></span></label></div>
+        <label class="switch"><input type="checkbox" id="asp-notify" aria-label="Email me about new reports and replies" ${d.notify ? 'checked' : ''}><span class="switch-track"></span></label></div>
     </section>
     <section class="settings-section card card-pad">
       ${secHead('Saved replies')}

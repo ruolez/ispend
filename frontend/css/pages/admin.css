@@ -379,6 +379,7 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .sup-log li { padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); overflow-wrap: anywhere; }
 .sup-log li.is-match { background: var(--danger-soft); }
 .asp-email { width: 260px; }
+.setting-row .desc a { text-decoration: underline; }
 .asp-saved { padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); }
 .asp-saved:last-child { border-bottom: 0; }
 

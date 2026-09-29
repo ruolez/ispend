@@ -51,6 +51,8 @@ GET_ROUTES = [
     "/api/reports/dashboard", "/api/reports/summary", "/api/reports/by-category", "/api/reports/monthly",
     "/api/reports/trends", "/api/reports/top-merchants", "/api/reports/month-over-month", "/api/reports/recurring",
     "/api/ai/status", "/api/insights", "/api/budgets", "/api/budgets/progress", "/api/tags", "/api/import-layouts",
+    "/api/support/meta", "/api/support/reports", "/api/support/reports/1", "/api/support/attachments/1",
+    "/api/admin/support/reports", "/api/admin/support/reports/1", "/api/admin/support/settings",
 ]
 MUTATING_ROUTES = [
     ("PUT", "/api/auth/me/preferences"), ("PUT", "/api/auth/me/password"), ("PUT", "/api/settings"),
@@ -63,6 +65,9 @@ MUTATING_ROUTES = [
     ("POST", "/api/statements/1/commit"), ("POST", "/api/statements/1/reparse"), ("DELETE", "/api/statements/1"),
     ("POST", "/api/statements/1/flip-signs"), ("POST", "/api/statements/1/ai-extract"),
     ("DELETE", "/api/import-layouts/1"),
+    ("POST", "/api/support/reports"), ("POST", "/api/support/reports/1/messages"), ("POST", "/api/support/reports/1/resolve"),
+    ("POST", "/api/admin/support/reports/1/messages"), ("PATCH", "/api/admin/support/reports/1"),
+    ("PUT", "/api/admin/support/settings"),
     ("POST", "/api/transactions"), ("PUT", "/api/transactions/1"), ("DELETE", "/api/transactions/1"),
     ("POST", "/api/transactions/1/rule-draft"), ("POST", "/api/transactions/1/unpair"),
     ("POST", "/api/transactions/pair"), ("POST", "/api/transactions/auto-pair"), ("POST", "/api/transactions/bulk"),
@@ -139,6 +144,8 @@ class TestAuth:
         ("DELETE", "/api/admin/users/1"), ("PUT", "/api/admin/users/1/password"),
         ("POST", "/api/admin/users/1/lock"), ("POST", "/api/admin/users/1/unlock"),
         ("POST", "/api/admin/users/1/restore"), ("GET", "/api/admin/system/health"), ("GET", "/api/admin/audit"),
+        ("GET", "/api/admin/support/reports"), ("POST", "/api/admin/support/reports/1/messages"),
+        ("PATCH", "/api/admin/support/reports/1"), ("GET", "/api/admin/support/settings"),
     ])
     def test_non_admin_user_routes_403(self, u1, method, route):
         r = u1.request(method, route, json={"username": "x", "password": "yyyyyy"})

@@ -20,6 +20,7 @@ PAGES = {
     "settings": "/settings.html",
     "admin": "/admin",
     "billing": "/billing.html",
+    "help": "/help.html",
 }
 CHART_PAGES = {"index", "categories", "reports", "admin"}
 SLOW_MS = 1500

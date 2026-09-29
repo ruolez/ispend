@@ -279,7 +279,7 @@ class TestShell:
             page.goto(f"{BASE}/admin#{old}")
             page.locator(f'[data-spage="{new.split("/")[1]}"]:not([hidden]) .setting-row').first.wait_for()
             assert page.url.endswith(f"#{new}")
-        for key in ("account", "email", "ai", "landing"):
+        for key in ("account", "email", "support", "ai", "landing"):
             page.goto(f"{BASE}/admin#settings/{key}")
             page.locator(f'[data-spage="{key}"]:not([hidden]) .settings-section').first.wait_for()
         assert page.errors == []
@@ -306,6 +306,29 @@ class TestShell:
         panel = page.locator(f'[data-panel="{section}"]')
         panel.locator(marker).first.wait_for()
         assert page.errors == []
+
+    def test_support_inbox_thread_and_note(self, page, u1, admin_api):
+        r = u1.post("/api/support/reports", json={"kind": "question", "body": "QA admin suite: how do budgets roll over?"})
+        assert r.status_code == 201, r.text
+        rid = r.json()["id"]
+        try:
+            page.goto(f"{BASE}/admin#support?view=all")
+            page.locator(f'.sup-row[href="#support/{rid}"]').click()
+            page.locator(".sup-msg").first.wait_for()
+            assert "QA admin suite" in page.locator(".sup-msgs").inner_text()
+            page.locator('#sup-mode [data-mode="note"]').click()
+            page.fill("#sup-reply", "QA note from the admin suite")
+            page.locator("#sup-send").click()
+            page.locator(".sup-msg--note").wait_for()
+            assert page.locator("#sup-status").input_value() == "open", "a note leaves the status alone"
+            seen = u1.get(f"/api/support/reports/{rid}").json()
+            assert [m["body"] for m in seen["messages"]] == ["QA admin suite: how do budgets roll over?"]
+            page.select_option("#sup-status", "resolved")
+            page.locator(".toast", has_text="Marked as resolved").wait_for()
+            assert u1.get(f"/api/support/reports/{rid}").json()["status"] == "resolved"
+            assert page.errors == []
+        finally:
+            admin_api.patch(f"/api/admin/support/reports/{rid}", json={"status": "resolved"})
 
     def test_phone_has_the_admin_bottom_bar(self, page):
         page.set_viewport_size({"width": 390, "height": 844})

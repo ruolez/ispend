@@ -11,6 +11,7 @@ Each flow uses soft assertions (Soft.check) so a single defect does not stop the
 the test fails at the end listing every failed check. Observations that are not failures are
 recorded with Soft.note and written (with all failures) to qa/reports/flows-e2e-notes.json.
 """
+import base64
 import csv
 import io
 import json
@@ -2668,6 +2669,80 @@ def no_hscroll(p, F, label):
     F.check(r["sw"] <= r["W"] + 1, f"{label}: page scrolls horizontally on a 390px viewport (scrollWidth {r['sw']}); widest elements: {r['offenders'][:4]}")
     if r["offenders"]:
         F.note(f"{label}: elements wider than the viewport (inside scroll containers unless the page scrollWidth is > 390): {r['offenders'][:4]}")
+
+
+# ---------------------------------------------------------------------------------------------
+# F16 — Help: file a report with a screenshot, the operator answers, the customer replies
+# ---------------------------------------------------------------------------------------------
+PNG_1PX = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+def test_f16_help_report(page, qapi):
+    F = Soft("F16", page, S["rec"])
+    admin = Api(ADMIN)
+    # signed in as the flows user even when this flow runs on its own (-k f16)
+    page.context.add_cookies([{"name": c.name, "value": c.value, "url": BASE} for c in qapi.s.cookies])
+    goto(page, "/help.html", wait_sel="#faq-list .faq-item", soft=F, label="help")
+    # answers: search narrows, a topic chip filters
+    page.fill("#help-q", "bank")
+    page.wait_for_timeout(300)
+    F.check(page.locator("#faq-banks").count() == 1 and page.locator(".faq-item").count() <= 3, "search finds the banks answer")
+    page.fill("#help-q", "")
+    page.wait_for_timeout(300)
+    page.locator('#help-topics [data-topic="billing"]').click()
+    F.check(page.locator(".faq-item").count() == 2, "billing topic shows its answers")
+    # the form: a short description is refused, a real one is sent with a screenshot
+    page.locator(".help-contact [data-kind='bug']").click()
+    page.wait_for_selector(".rp-modal #rp-body", timeout=5000)
+    page.fill("#rp-body", "broken")
+    page.locator(".rp-modal .modal-foot .btn-primary").click()
+    F.check("at least 10 characters" in page.locator(".rp-modal .field-error").inner_text(), "too-short description is explained inline")
+    page.fill("#rp-body", "QA F16: the budgets page shows the wrong month after I switch accounts")
+    page.locator(".rp-modal .rp-file").set_input_files({"name": "shot.png", "mimeType": "image/png", "buffer": PNG_1PX})
+    page.wait_for_selector(".rp-thumb img", timeout=4000)
+    page.wait_for_function("document.querySelector('#rp-json').textContent.includes('viewport')")
+    F.check('"page"' in page.locator("#rp-json").text_content(), "technical details preview shows what is sent")
+    page.locator(".rp-modal .modal-foot .btn-primary").click()
+    page.wait_for_selector(".rp-sent", timeout=10000)
+    ref = page.locator(".rp-ref b").inner_text()
+    mine = qapi.get("/api/support/reports")
+    report = next((r for r in mine if r["ref"] == ref), None)
+    F.check(report is not None and report["status"] == "open", "the report is stored as open")
+    if report is None:
+        F.finish()
+        return
+    rid = report["id"]
+    detail = qapi.get(f"/api/support/reports/{rid}")
+    F.eq(len(detail["messages"][0]["attachments"]), 1, "screenshot attached")
+    page.locator(".rp-modal [data-act='rp-done']").click()
+    # the operator sees it waiting and answers; the internal note never reaches the customer
+    inbox = admin.get("/api/admin/support/reports?view=needs_reply")
+    F.check(any(r["id"] == rid for r in inbox["reports"]), "operator inbox lists it under Needs reply")
+    F.check(any(a["kind"] == "support_reports" for a in admin.get("/api/admin/metrics/alerts")), "Home inbox counts it")
+    admin.post(f"/api/admin/support/reports/{rid}/messages", {"body": "QA note: check budgets month", "internal": True})
+    admin.post(f"/api/admin/support/reports/{rid}/messages", {"body": "Which account were you switching to?"})
+    goto(page, "/help.html", wait_sel="#reports-list .help-report", soft=F, label="help after reply")
+    F.check(page.locator(f".help-report[data-id='{rid}'].is-unread").count() == 1, "the reply shows as new")
+    F.check(page.locator('.sb-foot [data-pill="support"]').is_visible(), "Help carries an unread badge")
+    page.locator(f".help-report[data-id='{rid}']").click()
+    page.wait_for_selector(".msgs .msg--team", timeout=6000)
+    F.check("waiting for you" in page.locator(".help-thread-sub").inner_text().lower(), "status reads Waiting for you")
+    F.check("QA note" not in page.locator(".msgs").inner_text(), "internal note is hidden from the customer")
+    page.wait_for_timeout(400)
+    F.check(page.locator('.sb-foot [data-pill="support"]').is_hidden(), "reading the thread clears the badge")
+    # the customer answers, which puts it back in the operator's queue; the operator resolves it
+    page.fill("#reply-body", "The joint chequing account")
+    page.locator("#reply-send").click()
+    toast(page, "Reply sent")
+    F.eq(qapi.get(f"/api/support/reports/{rid}")["status"], "open", "customer reply reopens the queue")
+    admin.post(f"/api/admin/support/reports/{rid}/messages", {"body": "Fixed, thank you", "resolve": True})
+    page.reload()
+    page.wait_for_selector(".help-thread-sub .badge", timeout=6000)
+    F.check("resolved" in page.locator(".help-thread-sub").inner_text().lower() and page.locator("#reply-send").inner_text() == "Send and reopen",
+            "resolved report offers to reopen")
+    page.locator("[data-act='back']").click()
+    page.wait_for_selector("#help-home:not([hidden])", timeout=4000)
+    F.finish()
 
 
 def test_f12_mobile(browser, qapi):
