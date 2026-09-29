@@ -209,12 +209,13 @@ class ShellTest(_Api):
         import billing
         cases = [(False, "", "off"), (True, "sk_test_abc", "test"), (True, "rk_test_abc", "test"),
                  (True, "sk_live_abc", "live")]
+        self.q.routes.append(("FROM support_reports r WHERE r.status IN", {"n": 2}))
         for enabled, key, mode in cases:
             with self.subTest(key=key):
                 with mock.patch.object(billing, "enabled", return_value=enabled), \
                         mock.patch.object(billing, "secret_key", return_value=key):
                     body = self._call("get", "/api/admin/shell").get_json()
-                self.assertEqual(body, {"stripe_mode": mode})
+                self.assertEqual(body, {"stripe_mode": mode, "support_needs_reply": 2})
 
 
 class AiConfigTest(_Api):

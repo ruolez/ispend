@@ -16,6 +16,7 @@ import admin_privacy
 import auth
 import config
 import db
+import support
 import user_state
 from auth import admin_required, step_up_missing, step_up_required
 from util import api_error, audit, csv_response, iso, json_body, rows_json, to_int
@@ -479,6 +480,9 @@ def person_extras(row):
     attr = db.query(
         """SELECT channel, utm_source, utm_medium, utm_campaign, referrer_host, landing_path, first_seen_at
              FROM signup_attribution WHERE user_id = %s""", (uid,), one=True)
+    reports = db.query(
+        """SELECT id, kind, subject, status, priority, created_at, updated_at FROM support_reports
+            WHERE user_id = %s ORDER BY updated_at DESC LIMIT 50""", (uid,)) or []
     events = db.query(
         """SELECT kind, status_to, plan_to, mrr_from_cents, mrr_to_cents, currency, occurred_at
              FROM subscription_events WHERE user_id = %s AND kind <> 'baseline'
@@ -503,6 +507,7 @@ def person_extras(row):
         "tags": rows_json(tags),
         "admin_actions": rows_json(admin_actions),
         "emails": rows_json(emails),
+        "reports": [{**r, "ref": support.ref(r["id"])} for r in rows_json(reports)],
     }
 
 

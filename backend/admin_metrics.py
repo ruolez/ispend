@@ -361,7 +361,8 @@ def alerts(admin_id=None):
                   AND received_at > {window['webhook_failures']}) AS webhook_failures,
                (SELECT COUNT(*) FROM email_log WHERE status = 'failed'
                   AND created_at > {window['email_failures']}) AS email_failures,
-               (SELECT COUNT(*) FROM app_errors WHERE created_at > {window['errors']}) AS errors
+               (SELECT COUNT(*) FROM app_errors WHERE created_at > {window['errors']}) AS errors,
+               (SELECT COUNT(*) FROM support_reports WHERE status IN ('open', 'in_progress')) AS support_reports
         """, since, one=True) or {}
     out = []
 
@@ -377,6 +378,8 @@ def alerts(admin_id=None):
     add("payment_due", "error", lambda n: f"{people(n)} could not be charged and are in their grace period.",
         "#customers?state=grace")
     add("webhook_failures", "error", lambda n: "Stripe could not reach iSpend in the last day.", "#system")
+    add("support_reports", "warn",
+        lambda n: f"{n} problem report{'s are' if n != 1 else ' is'} waiting for your reply.", "#support")
     add("trials_not_started", "warn",
         lambda n: f"{people(n)} end their trial within 3 days without having imported a statement.",
         "#customers?state=trialing&trial_ending=3&activated=0")

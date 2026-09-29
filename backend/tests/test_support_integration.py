@@ -28,8 +28,10 @@ class SupportLifecycleTest(_pg.PgTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        import admin_support
         import support_api
         cls.app.register_blueprint(support_api.bp)
+        cls.app.register_blueprint(admin_support.bp)
         cls.amy = cls.db.execute("INSERT INTO users (username, email, password_hash) VALUES ('amy', 'amy@example.com', 'x') RETURNING id",
                                  returning=True)["id"]
         cls.bob = cls.db.execute("INSERT INTO users (username, password_hash) VALUES ('bob', 'x') RETURNING id",
@@ -77,12 +79,29 @@ class SupportLifecycleTest(_pg.PgTestCase):
                           bob.get(report["messages"][0]["attachments"][0]["url"]).status_code,
                           len(bob.get("/api/support/reports").get_json())], [404, 404, 0])
 
-        # the operator answers and leaves a note; the note never reaches the customer
-        self.db.execute("""INSERT INTO support_messages (report_id, author_id, author_role, internal, body)
-                           VALUES (%s, %s, 'admin', true, 'Looks like the OCR timeout'),
-                                  (%s, %s, 'admin', false, 'Could you try again now?')""",
-                        (rid, self.root, rid, self.root))
-        self.db.execute("UPDATE support_reports SET status = 'waiting', last_admin_at = now() WHERE id = %s", (rid,))
+        # the operator's inbox, Home and nav badge all count it
+        import admin_metrics
+        import admin_support
+        op = self._client(self.root, role="admin")
+        inbox = op.get("/api/admin/support/reports").get_json()
+        self.assertEqual(([r["id"] for r in inbox["reports"]], inbox["counts"]["needs_reply"]), ([rid], 1))
+        with self.app.test_request_context():
+            self.assertEqual(admin_support.needs_reply_count(), 1)
+            self.assertIn("support_reports", [a["kind"] for a in admin_metrics.alerts()])
+        # ...with the server error behind the customer's request id next to it
+        self.db.execute("""INSERT INTO app_errors (source, fingerprint, error_type, message, request_id)
+                           VALUES ('request', 'fp', 'KeyError', 'boom', 'abcdef012345')""")
+        seen = op.get(f"/api/admin/support/reports/{rid}").get_json()
+        self.assertEqual([(e["error_type"], e["matches_report"]) for e in seen["server_errors"]], [("KeyError", True)])
+
+        # the operator leaves a note and answers; the note never reaches the customer
+        self.sent.clear()
+        op.post(f"/api/admin/support/reports/{rid}/messages", json={"body": "Looks like the OCR timeout", "internal": True})
+        answered = op.post(f"/api/admin/support/reports/{rid}/messages", json={"body": "Could you try again now?"}).get_json()
+        self.assertEqual((answered["status"], [m["internal"] for m in answered["messages"]]), ("waiting", [False, True, False]))
+        self.assertEqual(self.sent, [("support_reply", "amy@example.com")])
+        with self.app.test_request_context():
+            self.assertEqual(admin_support.needs_reply_count(), 0)
         listed = amy.get("/api/support/reports").get_json()
         self.assertEqual([(r["id"], r["unread"], r["message_count"]) for r in listed], [(rid, True, 2)])
         thread = amy.get(f"/api/support/reports/{rid}").get_json()

@@ -188,7 +188,7 @@ class PersonTest(_Api):
             body = self._call("get", "/api/admin/users/5").get_json()
         self.assertEqual(set(body), {"user", "counts", "data_range", "storage", "categorization", "ai",
                                      "recent_activity", "billing", "subscription", "activation", "attribution",
-                                     "timeline", "logins", "notes", "tags", "admin_actions", "emails"})
+                                     "timeline", "logins", "notes", "tags", "admin_actions", "emails", "reports"})
         self.assertEqual(set(body["counts"]), {"accounts"})
         text = json.dumps(body)
         for word in ("description", "merchant_key", "amount\"", "balance", "filename", "password"):

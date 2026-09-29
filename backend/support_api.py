@@ -130,8 +130,13 @@ def send_attachment(row):
 
 
 def admin_recipients():
+    """Who hears about new reports and replies: nobody when the operator turned it off."""
     if (db.get_setting("support_notify") or "1") != "1":
         return []
+    return admin_emails()
+
+
+def admin_emails():
     return db.query(
         """SELECT id, username, email FROM users
             WHERE role = 'admin' AND status = 'active' AND email IS NOT NULL AND email <> ''

@@ -536,4 +536,5 @@ def stripe_mode():
 @bp.get("/shell")
 @admin_required
 def shell():
-    return jsonify({"stripe_mode": stripe_mode()})
+    import admin_support
+    return jsonify({"stripe_mode": stripe_mode(), "support_needs_reply": admin_support.needs_reply_count()})
