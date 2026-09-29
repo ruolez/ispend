@@ -12,8 +12,6 @@ const CACHING = !BUILD.startsWith('__') && BUILD !== 'dev' && PRECACHE.length > 
 const CACHE = `ispend-shell-${CACHING ? BUILD : 'dev'}`;
 const OFFLINE_URL = '/offline.html';
 const SHELL = new Set(PRECACHE);
-// Clean URLs nginx serves from a shell file.
-const ALIASES = { '/admin': '/admin.html' };
 
 self.addEventListener('install', (event) => {
   const urls = Array.from(new Set([...PRECACHE, OFFLINE_URL]));
@@ -46,7 +44,7 @@ self.addEventListener('fetch', (event) => {
   // Before the navigation test: CSV exports, backup downloads and the Stripe hand-off are
   // navigations to /api/ and must reach nginx untouched (and never land on the offline page).
   if (url.pathname.startsWith('/api/')) return;
-  const path = ALIASES[url.pathname] || url.pathname;
+  const path = url.pathname;
   const cached = CACHING && SHELL.has(path);
   if (req.mode !== 'navigate') {
     if (cached) event.respondWith(fromShell(path).then((hit) => hit || fetch(req)));

@@ -200,11 +200,14 @@ def test_stamp_precaches_every_file_the_app_pages_reference(stamp, anon):
     assert re.fullmatch(r"[0-9a-f]{12}", build)
     referenced = set()
     for p in APP_HTML:
-        referenced.add(f"/{p.name}")
+        referenced.add("/admin" if p.stem == "admin" else f"/{p.name}")   # the console lives at /admin
         referenced.update(re.findall(r'(?:src|href)="(/[^"?#]+\.(?:js|css|svg|png|json))"', p.read_text()))
     referenced.update({"/fonts/InterVariable-latin-v2.woff2", "/vendor/chart.umd.js"})
     assert sorted(referenced - set(precache)) == []
-    assert {u: anon.get(f"{BASE_URL}{u}").status_code for u in precache if anon.get(f"{BASE_URL}{u}").status_code != 200} == {}
+    # Without following redirects: a cached redirect cannot answer a navigation, so every entry must
+    # be the page itself (this is how /admin.html once slipped in and broke the console).
+    status = {u: anon.get(f"{BASE_URL}{u}", allow_redirects=False).status_code for u in precache}
+    assert {u: code for u, code in status.items() if code != 200} == {}
     assert [u for u in precache if u.startswith("/api/") or u in ("/sw.js", "/landing.html")] == []
 
 
@@ -252,6 +255,27 @@ def test_worker_registers_and_controls_the_app(sw_context):
         page.goto(path)
         page.wait_for_selector(".sidebar, .bottomnav")
     assert (rec.console, rec.pageerrors, rec.failed, rec.http_errors, sw_console) == ([], [], [], [], [])
+
+
+def test_the_console_loads_under_the_production_worker(browser, stamp):
+    """The production stamp precaches the console; a reload served from that cache must work."""
+    stamp("on")
+    ctx = browser.new_context(viewport={"width": 1366, "height": 900}, base_url=BASE_URL)
+    try:
+        api_login(ctx, "admin")
+        page = ctx.new_page()
+        rec = Recorder(page)
+        page.goto("/admin")
+        page.evaluate(READY_JS)
+        page.reload()
+        page.wait_for_selector("#admin-title")
+        assert page.evaluate("() => !!navigator.serviceWorker.controller")
+        page.goto("/admin?range=90d#customers")
+        page.reload()
+        page.wait_for_selector(".sb-nav a[data-page='customers'][aria-current='page']")
+        assert (rec.pageerrors, rec.failed) == ([], [])
+    finally:
+        ctx.close()
 
 
 def test_offline_navigation_lands_on_the_offline_page(sw_context, stamp):

@@ -34,7 +34,10 @@ else
         list="[]"
     else
         build=$(cd "$HTML" && { for f in $files; do cat ".$f"; done; cat sw.js; } | sha1sum | cut -c1-12)
-        list="[$(printf '%s\n' $files | sed 's|.*|"&"|' | paste -sd, -)]"
+        # The console is served at /admin; /admin.html is only a redirect there, and a cached
+        # redirect cannot answer a navigation. Precache the address the page really lives at.
+        paths=$(printf '%s\n' $files | sed 's|^/admin[.]html$|/admin|')
+        list="[$(printf '%s\n' $paths | sed 's|.*|"&"|' | paste -sd, -)]"
     fi
 fi
 
