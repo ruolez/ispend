@@ -257,6 +257,20 @@ def test_worker_registers_and_controls_the_app(sw_context):
     assert (rec.console, rec.pageerrors, rec.failed, rec.http_errors, sw_console) == ([], [], [], [], [])
 
 
+def test_a_skipped_screen_transition_is_not_an_error(sw_context):
+    """Chrome rejects a cross-document view transition it had to skip; that is not the person's
+    problem, so no page error and no toast — while a real failure still gets one."""
+    ctx, page, rec, _ = sw_context
+    page.goto("/index.html")
+    page.wait_for_function("() => !!window.currentUser")
+    page.evaluate("""() => { Promise.reject(new DOMException(
+        'Transition was aborted because of invalid state. Page already revealed', 'InvalidStateError')); }""")
+    page.wait_for_timeout(400)
+    assert (rec.pageerrors, page.locator("#toast-root .toast").count()) == ([], 0)
+    page.evaluate("() => { Promise.reject(new Error('a real failure')); }")
+    page.locator("#toast-root .toast", has_text="a real failure").wait_for()
+
+
 def test_the_console_loads_under_the_production_worker(browser, stamp):
     """The production stamp precaches the console; a reload served from that cache must work."""
     stamp("on")

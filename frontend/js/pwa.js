@@ -27,6 +27,18 @@
   }
   window.addEventListener('pagereveal', quiet);
   window.addEventListener('pageswap', quiet);
+  /* Some are rejected before pagereveal hands them over (a fast screen change on a slow device).
+     This listener is registered before ui.js's error net, so a skipped transition stops here
+     instead of showing the person an error about an animation. */
+  function isSkippedTransition(err) {
+    return !!err && typeof err.message === 'string' && /transition/i.test(err.message)
+      && (err.name === 'InvalidStateError' || err.name === 'AbortError');
+  }
+  window.addEventListener('unhandledrejection', function (e) {
+    if (!isSkippedTransition(e.reason)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  });
 
   window.addEventListener('appinstalled', function () {
     prompt = null;
