@@ -39,7 +39,7 @@ async function loadAdminOverview(host, ctx) {
   }
   if (!ctx.isCurrent()) return;
   AOV.data = d;
-  renderOverviewAlerts(d.alerts || [], AOV.leftover);
+  renderOverviewAlerts(d.alerts || []);
   loadOverviewExtras(ctx);
   $('#ov-tiles').innerHTML = adminTiles(d.tiles);
   renderOverviewCharts(d);
@@ -52,28 +52,32 @@ const ALERT_ICON = { error: 'alert-circle', warn: 'alert-triangle', info: 'info'
 const ALERT_TONE = { error: 'danger', warn: 'warning', info: 'info' };
 
 /* The inbox: one compact list, most urgent first, each row going where it can be dealt with. On a
-   healthy day it says so in one line. */
-function renderOverviewAlerts(alerts, leftover) {
-  const rows = [...alerts];
-  if (leftover) rows.push({ level: 'info', count: 0, href: '#settings/account',
-    text: 'Your admin account still holds finance data from before. Delete it in Settings › My account.' });
+   healthy day it says so in one line. It is always checked live (the numbers below may be up to
+   five minutes old); alerts about something that already happened can be marked seen. */
+function renderOverviewAlerts(rows) {
   $('#ov-alerts').innerHTML = `<section class="card adm-alerts mb-4" aria-labelledby="ov-inbox-h">
     <header class="adm-inbox-head"><h2 id="ov-inbox-h">Needs attention</h2>${rows.length ? `<span class="badge badge-neutral">${fmtNumber(rows.length)}</span>` : ''}</header>
-    ${rows.length ? rows.map((a) => `<a class="adm-alert adm-alert--${ALERT_TONE[a.level] || 'info'}" href="${esc(a.href)}">
+    ${rows.length ? rows.map((a) => `<div class="adm-alert-row">
+        <a class="adm-alert adm-alert--${ALERT_TONE[a.level] || 'info'}" href="${esc(a.href)}">
         ${icon(ALERT_ICON[a.level] || 'info', 'ico-sm')}<span class="grow">${esc(a.text)}</span>
-        ${a.count > 1 ? `<span class="badge badge-neutral">${fmtNumber(a.count)}</span>` : ''}${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')
+        ${a.count > 1 ? `<span class="badge badge-neutral">${fmtNumber(a.count)}</span>` : ''}${icon('chevron-right', 'ico-sm text-4')}</a>
+        ${a.dismissible ? `<button type="button" class="btn btn-icon btn-ghost btn-sm adm-alert-seen" data-act="alert-seen" data-kind="${esc(a.kind)}"
+          aria-label="Mark as seen: ${esc(a.text)}" data-tip="Mark as seen — only new ones will show">${icon('x', 'ico-sm')}</button>` : ''}</div>`).join('')
     : `<div class="adm-alert adm-alert--clear">${icon('check-circle', 'ico-sm')}<span class="grow">All clear — nothing needs you right now.</span></div>`}
   </section>`;
 }
 
-/* The status strip and the leftover-data reminder load beside the numbers, never in their way. */
+/* Back from fixing something in another tab: check the inbox again without recomputing the numbers. */
+async function recheckAlerts() {
+  if (AdminPanels.current() !== 'overview' || !AOV.data) return;
+  try { renderOverviewAlerts(await api('/api/admin/metrics/alerts')); } catch { /* keep what is shown */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckAlerts(); });
+
+/* The status strip loads beside the numbers, never in their way. */
 async function loadOverviewExtras(ctx) {
-  const [health, leftover] = await Promise.all([
-    api(`/api/admin/system/health${ctx.force ? '?refresh=1' : ''}`).catch(() => null),
-    AOV.leftover === undefined ? api('/api/admin/me/leftover-data').then((r) => r.any).catch(() => false) : AOV.leftover,
-  ]);
+  const health = await api(`/api/admin/system/health${ctx.force ? '?refresh=1' : ''}`).catch(() => null);
   if (!ctx.isCurrent()) return;
-  if (leftover !== AOV.leftover) { AOV.leftover = leftover; renderOverviewAlerts(AOV.data.alerts || [], leftover); }
   $('#ov-status').innerHTML = health ? SYS_PARTS.filter(([k]) => k !== 'storage').map(([key, label]) => {
     const off = key === 'stripe' && !health.stripe.enabled;
     const st = health[key].status;
@@ -82,7 +86,7 @@ async function loadOverviewExtras(ctx) {
       <span class="sr-only">: ${esc(off ? 'off' : SYS_WORD[st])}, ${esc(chipSummary(key, health[key]))}</span></a>`;
   }).join('') : '';
 }
-window.addEventListener('ispend:admin-leftover-cleared', () => { AOV.leftover = false; });
+
 
 function ovLabels(d) {
   return d.series.labels.map((l) => (d.range.bucket === 'month' ? fmtMonth(l.slice(0, 7)) : fmtDate(l)));
@@ -124,6 +128,12 @@ function renderOverviewCharts(d) {
 
 }
 
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
+  const seen = e.target.closest('[data-act="alert-seen"]');
+  if (seen) {
+    const rows = await ui.busy(seen, () => api(`/api/admin/metrics/alerts/${encodeURIComponent(seen.dataset.kind)}/dismiss`, { method: 'POST' }));
+    if (rows) { renderOverviewAlerts(rows); toast('Marked as seen — new ones will still show'); }
+    return;
+  }
   if (e.target.closest('[data-act="reload-overview"]')) AdminPanels.refresh();
 });

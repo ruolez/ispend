@@ -17,6 +17,7 @@ from flask import Flask  # noqa: E402
 
 import accounts_api  # noqa: E402
 import admin_api  # noqa: E402
+import admin_metrics  # noqa: E402
 import ai_api  # noqa: E402
 import auth  # noqa: E402
 import billing_api  # noqa: E402
@@ -59,7 +60,7 @@ OPEN_TO_ADMINS = [
 def build_app():
     app = Flask(__name__)
     app.secret_key = "test"
-    for module in (auth, admin_api, public_api, *CUSTOMER_APP):
+    for module in (auth, admin_api, admin_metrics, public_api, *CUSTOMER_APP):
         app.register_blueprint(module.bp)
     app.add_url_rule("/api/health", "health", lambda: {"status": "ok"})
     app.before_request(auth.admin_scope_guard)
@@ -183,6 +184,22 @@ class OwnAccountTest(_Api):
     def test_sign_ins_are_only_your_own(self):
         self._call("get", "/api/admin/me/logins")
         self.assertEqual(self.q.sql("FROM login_events")[0][1], (1,))
+
+
+class InboxTest(_Api):
+    def test_only_past_events_can_be_marked_seen(self):
+        with mock.patch.object(admin_metrics, "alerts", return_value=[]) as live:
+            ok = self._call("post", "/api/admin/metrics/alerts/errors/dismiss")
+            refused = self._call("post", "/api/admin/metrics/alerts/payment_due/dismiss")
+        self.assertEqual((ok.status_code, ok.get_json(), refused.status_code), (200, [], 400))
+        self.assertIn("alert_seen:errors", FAKE.settings)
+        self.assertNotIn("alert_seen:payment_due", FAKE.settings)
+        self.assertEqual(live.call_args.args, (1,), "the inbox that comes back is this admin's")
+
+    def test_customers_cannot_see_or_dismiss_the_inbox(self):
+        for method, path in (("get", "/api/admin/metrics/alerts"), ("post", "/api/admin/metrics/alerts/errors/dismiss")):
+            with self.subTest(path=path):
+                self.assertEqual(self._call(method, path, uid=2, role="user").status_code, 403)
 
 
 class ShellTest(_Api):

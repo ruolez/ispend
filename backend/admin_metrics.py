@@ -16,13 +16,13 @@ of every people count: they are the operator, not customers.
 import json
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 import activity
 import admin_range
 import db
 from auth import admin_required
-from util import api_error, rows_json
+from util import api_error, audit, rows_json
 
 bp = Blueprint("admin_metrics", __name__, url_prefix="/api/admin/metrics")
 
@@ -308,7 +308,7 @@ def overview(rng):
             "mrr": [m for m, _ in mrr_at([admin_range.at(e + timedelta(days=1), tz) for e in _ends(pbkts)], cur)[0]],
         }
     return {"range": _range_json(rng), "currency": cur, "other_currencies": others, "tiles": tiles,
-            "series": series, "alerts": alerts()}
+            "series": series}
 
 
 def _range_json(rng):
@@ -319,35 +319,57 @@ def _range_json(rng):
 _NOT_ACTIVATED = "NOT (u.first_commit_at IS NOT NULL AND u.first_commit_at < u.created_at + interval '7 days')"
 
 ALERT_ORDER = {"error": 0, "warn": 1, "info": 2}
+# Alerts about things that happened (a failure yesterday) rather than a state that is still true
+# (a customer still in their grace period). Fixing the cause cannot clear them, so the admin can
+# mark them seen: only events after that moment count again.
+DISMISSIBLE = {
+    "new_network": "7 days", "webhook_failures": "24 hours", "email_failures": "24 hours",
+    "errors": "24 hours", "failed_imports": "24 hours",
+}
 
 
-def alerts():
+def _seen_at(kind):
+    return db.get_setting(f"alert_seen:{kind}") or None
+
+
+def dismiss_alert(kind):
+    db.set_setting(f"alert_seen:{kind}", datetime.now(timezone.utc).isoformat())
+
+
+def alerts(admin_id=None):
     """The Home inbox: things that need a person, the most urgent first. Each links to the list or
-    page where it can be dealt with; hash queries are turned into filters by the console's router."""
+    page where it can be dealt with; hash queries are turned into filters by the console's router.
+
+    Never cached: it is what the admin checks after fixing something, so it must say so at once.
+    Backups, email and errors use the System page's own checks, so the two can never disagree."""
+    import admin_system
+    since = {k: _seen_at(k) for k in DISMISSIBLE}
+    window = {k: f"GREATEST(now() - interval '{v}', COALESCE(%({k})s::timestamptz, '-infinity'))"
+              for k, v in DISMISSIBLE.items()}
     row = db.query(f"""
-        SELECT (SELECT COUNT(*) FROM login_events WHERE new_network AND created_at > now() - interval '7 days') AS new_network,
+        SELECT (SELECT COUNT(*) FROM login_events WHERE new_network AND created_at > {window['new_network']}) AS new_network,
                (SELECT COUNT(*) FROM subscriptions s JOIN users u ON u.id = s.user_id
                  WHERE s.ent_state = 'grace' AND u.role = 'user' AND u.status <> 'deleted') AS payment_due,
                (SELECT COUNT(*) FROM subscriptions s JOIN users u ON u.id = s.user_id
                  WHERE s.ent_state = 'trialing' AND s.trial_end < now() + interval '3 days'
                    AND u.role = 'user' AND u.status = 'active' AND {_NOT_ACTIVATED}) AS trials_not_started,
                (SELECT COUNT(*) FROM statements st JOIN users u ON u.id = st.user_id
-                 WHERE st.status = 'error' AND st.created_at > now() - interval '24 hours' AND u.role = 'user') AS failed_imports,
+                 WHERE st.status = 'error' AND st.created_at > {window['failed_imports']} AND u.role = 'user') AS failed_imports,
                (SELECT COUNT(*) FROM statements WHERE status IN ('parsing', 'committing')
                   AND updated_at < now() - interval '15 minutes') AS stuck_imports,
                (SELECT COUNT(*) FROM stripe_events WHERE status = 'failed'
-                  AND received_at > now() - interval '24 hours') AS webhook_failures,
+                  AND received_at > {window['webhook_failures']}) AS webhook_failures,
                (SELECT COUNT(*) FROM email_log WHERE status = 'failed'
-                  AND created_at > now() - interval '24 hours') AS email_failures,
-               (SELECT COUNT(*) FROM app_errors WHERE created_at > now() - interval '24 hours') AS errors,
-               (SELECT MAX(finished_at) FROM backup_jobs WHERE kind = 'backup' AND status = 'done') AS last_backup
-        """, one=True) or {}
+                  AND created_at > {window['email_failures']}) AS email_failures,
+               (SELECT COUNT(*) FROM app_errors WHERE created_at > {window['errors']}) AS errors
+        """, since, one=True) or {}
     out = []
 
     def add(kind, level, text, href):
         n = int(row.get(kind) or 0)
         if n:
-            out.append({"kind": kind, "level": level, "count": n, "text": text(n), "href": href})
+            out.append({"kind": kind, "level": level, "count": n, "text": text(n), "href": href,
+                        "dismissible": kind in DISMISSIBLE})
 
     def people(n):
         return "1 customer" if n == 1 else f"{n} customers"
@@ -364,11 +386,20 @@ def alerts():
     add("email_failures", "warn", lambda n: "Emails failed to send in the last day.", "#system")
     add("errors", "warn", lambda n: "Server errors were recorded in the last day.", "#system")
     add("new_network", "warn", lambda n: "You signed in from a new network this week.", "#activity?admin=1")
-    last = row.get("last_backup")
-    if last is None or last < datetime.now(timezone.utc) - timedelta(days=7):
-        out.append({"kind": "backup_stale", "level": "info", "count": 0,
-                    "text": "No backup in the last 7 days." if last else "No backup has been made yet.",
-                    "href": "#backup"})
+
+    backup = admin_system.backup_health()
+    if backup["status"] == admin_system.ERROR:
+        out.append({"kind": "backup_failed", "level": "error", "count": 0, "href": "#backup",
+                    "text": "The last backup failed. Make one again from Backups."})
+    elif backup["status"] == admin_system.WARN:
+        out.append({"kind": "backup_stale", "level": "info", "count": 0, "href": "#backup",
+                    "text": (f"No backup in the last {admin_system.BACKUP_STALE_DAYS} days."
+                             if backup["last_success_at"] else "No backup has been made yet.")})
+    if admin_id is not None:
+        import privacy
+        if any(privacy.owned_data_counts(admin_id).values()):
+            out.append({"kind": "leftover_data", "level": "info", "count": 0, "href": "#settings/account",
+                        "text": "Your admin account still holds finance data from before. Delete it in Settings › My account."})
     out.sort(key=lambda a: ALERT_ORDER[a["level"]])
     return out
 
@@ -415,8 +446,26 @@ def overview_route():
     rng, err = _range_or_400()
     if err:
         return err
-    return jsonify(cached(f"overview:{admin_range.cache_key(rng)}", lambda: overview(rng),
-                          refresh=request.args.get("refresh") == "1"))
+    payload = cached(f"overview:{admin_range.cache_key(rng)}", lambda: overview(rng),
+                     refresh=request.args.get("refresh") == "1")
+    return jsonify({**payload, "alerts": alerts(session.get("user_id"))})
+
+
+@bp.get("/alerts")
+@admin_required
+def alerts_route():
+    """The inbox alone, for re-checking it without the numbers."""
+    return jsonify(alerts(session.get("user_id")))
+
+
+@bp.post("/alerts/<kind>/dismiss")
+@admin_required
+def dismiss_route(kind):
+    if kind not in DISMISSIBLE:
+        return api_error("That alert clears itself once the cause is fixed", 400)
+    dismiss_alert(kind)
+    audit("admin.alert.dismiss", {"kind": kind})
+    return jsonify(alerts(session.get("user_id")))
 
 
 # ---------- revenue ----------

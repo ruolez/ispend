@@ -81,7 +81,6 @@ async function wipeLeftover() {
   const r = await api('/api/admin/me/leftover-data/wipe', { method: 'POST', body: { confirm: 'delete' } });
   toast(`Deleted ${plural(r.removed.transactions || 0, 'transaction')} and everything with them`, { type: 'success' });
   loadAdminAccount(AAC.host);
-  window.dispatchEvent(new CustomEvent('ispend:admin-leftover-cleared'));
 }
 
 document.addEventListener('click', async (e) => {

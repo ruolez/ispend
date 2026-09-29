@@ -101,12 +101,60 @@ class OverviewTest(_pg.PgTestCase):
         prev = self._overview(range="7d", compare="1")["series"]["prev"]
         self.assertEqual({k: len(v) for k, v in prev.items()}, {"signups": 7, "wau": 7, "mrr": 7})
 
+    def _alerts(self, admin_id=None):
+        import admin_metrics
+        return admin_metrics.alerts(admin_id)
+
+    def test_the_inbox_is_not_part_of_the_cached_numbers(self):
+        self.assertNotIn("alerts", self._overview())
+
     def test_alerts_include_a_missing_backup(self):
-        kinds = [a["kind"] for a in self._overview()["alerts"]]
+        kinds = [a["kind"] for a in self._alerts()]
         self.assertIn("backup_stale", kinds)
 
+    def test_a_backup_clears_the_backup_alert_at_once_and_a_later_failure_raises_one(self):
+        db = self.db
+        job = db.execute("""INSERT INTO backup_jobs (kind, status, finished_at) VALUES ('backup', 'done', now())
+                            RETURNING id""", returning=True)["id"]
+        try:
+            self.assertEqual([a for a in self._alerts() if a["kind"].startswith("backup")], [])
+            bad = db.execute("""INSERT INTO backup_jobs (kind, status, finished_at, error_message)
+                                VALUES ('backup', 'error', now() + interval '1 second', 'disk full') RETURNING id""",
+                             returning=True)["id"]
+            try:
+                self.assertEqual([(a["kind"], a["level"]) for a in self._alerts() if a["kind"].startswith("backup")],
+                                 [("backup_failed", "error")])
+            finally:
+                db.execute("DELETE FROM backup_jobs WHERE id = %s", (bad,))
+        finally:
+            db.execute("DELETE FROM backup_jobs WHERE id = %s", (job,))
+
+    def test_a_past_event_can_be_marked_seen_and_only_new_ones_count_again(self):
+        import admin_metrics
+        db = self.db
+        db.execute("INSERT INTO app_errors (source, fingerprint, error_type, message) VALUES ('request', 'fp1', 'E', 'boom')")
+        self.assertIn("errors", [a["kind"] for a in self._alerts()])
+        admin_metrics.dismiss_alert("errors")
+        self.assertNotIn("errors", [a["kind"] for a in self._alerts()])
+        db.execute("""INSERT INTO app_errors (source, fingerprint, error_type, message, created_at)
+                      VALUES ('request', 'fp2', 'E', 'again', now() + interval '1 second')""")
+        again = next(a for a in self._alerts() if a["kind"] == "errors")
+        self.assertEqual((again["count"], again["dismissible"]), (1, True))
+        db.execute("DELETE FROM app_errors")
+        db.execute("DELETE FROM settings WHERE key = 'alert_seen:errors'")
+
+    def test_leftover_admin_data_shows_for_that_admin_only(self):
+        admin = self.db.query("SELECT id FROM users WHERE username = 'admin'", one=True)["id"]
+        acct = self.db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Old', 'checking', 'USD') RETURNING id",
+                               (admin,), returning=True)["id"]
+        try:
+            self.assertIn("leftover_data", [a["kind"] for a in self._alerts(admin)])
+            self.assertNotIn("leftover_data", [a["kind"] for a in self._alerts()])
+        finally:
+            self.db.execute("DELETE FROM accounts WHERE id = %s", (acct,))
+
     def test_alerts_come_most_urgent_first_and_each_links_somewhere(self):
-        found = self._overview()["alerts"]
+        found = self._alerts()
         levels = [a["level"] for a in found]
         self.assertEqual(levels, sorted(levels, key=lambda lv: {"error": 0, "warn": 1, "info": 2}[lv]))
         self.assertTrue(all(a["href"].startswith("#") for a in found))

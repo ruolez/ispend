@@ -146,7 +146,9 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .adm-asof { color: var(--text-4); font-size: var(--fs-xs); }
 .adm-alerts { padding: 0 0 var(--sp-1); overflow: hidden; }
 .adm-alert { display: flex; align-items: center; gap: var(--sp-3); padding: 10px var(--sp-4); color: var(--text-1); text-decoration: none; font-size: var(--fs-sm); }
-.adm-alert + .adm-alert { border-top: 1px solid var(--border); }
+.adm-alert-row { display: flex; align-items: center; border-top: 1px solid var(--border); }
+.adm-alert-row > .adm-alert { flex: 1 1 auto; min-width: 0; }
+.adm-alert-seen { flex: 0 0 auto; margin-right: var(--sp-2); color: var(--text-4); }
 @media (hover: hover) { .adm-alert:hover { background: var(--surface-2); text-decoration: none; } }
 .adm-alert--danger > .ico:first-child { color: var(--danger-text); }
 .adm-alert--warning > .ico:first-child { color: var(--warning); }
@@ -155,7 +157,7 @@ a.adm-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .adm-alert--clear > .ico:first-child { color: var(--success); }
 .adm-inbox-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4) var(--sp-2); }
 .adm-inbox-head h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
-.adm-inbox-head + .adm-alert { border-top: 1px solid var(--border); }
+.adm-inbox-head + .adm-alert--clear { border-top: 1px solid var(--border); }
 
 /* Home's one-line status strip: a dot per moving part, the details on System. */
 .adm-status { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin: 0 0 var(--sp-4); font-size: var(--fs-sm); }
