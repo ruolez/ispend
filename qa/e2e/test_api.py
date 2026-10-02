@@ -1966,7 +1966,7 @@ class TestReports:
 
     def test_monthly(self, u1, manual):
         y = manual["year"]
-        r = u1.get("/api/reports/monthly", params={"account_id": manual["acct"], "months": 12}).json()
+        r = u1.get("/api/reports/monthly", params={"account_id": manual["acct"], "months": 12, "end": f"{y}-09"}).json()
         assert len(r["months"]) == 12 and r["flow"] == "spending" and r["parent_id"] is None
         idx = {m: i for i, m in enumerate(r["months"])}
         assert f"{y}-08" in idx and f"{y}-07" in idx
@@ -1977,7 +1977,8 @@ class TestReports:
         assert unc["values"][idx[f"{y}-08"]] == 7.25 and unc["category_id"] is None
         assert r["totals"][idx[f"{y}-08"]] == 322.75 and r["totals"][idx[f"{y}-07"]] == 50.0
         assert a["category_id"] == manual["cat_a"]["id"] and a["color"] == "c1"
-        sub = u1.get("/api/reports/monthly", params={"account_id": manual["acct"], "months": 3, "parent_id": manual["cat_a"]["id"]}).json()
+        sub = u1.get("/api/reports/monthly", params={"account_id": manual["acct"], "months": 3, "end": f"{y}-09",
+                                                     "parent_id": manual["cat_a"]["id"]}).json()
         assert [s["name"] for s in sub["series"]] == ["Directly in QA Cat A"] and sub["series"][0]["total"] == 120.0
         r = u1.get("/api/reports/monthly", params={"account_id": manual["acct"], "months": 999}).json()
         assert len(r["months"]) == 60
@@ -1989,8 +1990,9 @@ class TestReports:
 
     def test_trends(self, u1, manual):
         y = manual["year"]
-        rows = u1.get("/api/reports/trends", params={"account_id": manual["acct"], "months": 12}).json()
-        assert len(rows) == 12
+        # trends takes no `end`; 24 months always spans the fixture's Jul-Aug, whatever today is
+        rows = u1.get("/api/reports/trends", params={"account_id": manual["acct"], "months": 24}).json()
+        assert len(rows) == 24
         by = {r["month"]: r for r in rows}
         assert by[f"{y}-08"] == {"month": f"{y}-08", "income": 1000.0, "expenses": 322.75, "net": 677.25, "count": 5}
         assert by[f"{y}-07"] == {"month": f"{y}-07", "income": 900.0, "expenses": 50.0, "net": 850.0, "count": 3}
