@@ -47,7 +47,7 @@ def ctx(**kw):
                 ai_enabled=False, memory_keys=[])
     base.update(kw)
     c = categorizer.Context(**base)
-    c.memory_keys = list(c.memory.keys())
+    c.memory_keys = {d: list(keys) for d, keys in c.memory.items()}
     return c
 
 
@@ -62,7 +62,7 @@ class CascadeTest(unittest.TestCase):
     def test_rule_beats_memory(self):
         rule = rules.compile_rule({"id": 11, "match_type": "contains", "match_field": "description_clean",
                                    "pattern": "starbucks", "category_id": 9, "is_active": True})
-        c = ctx(rules=[rule], memory={"STARBUCKS": {"category_id": 5, "is_transfer": False}})
+        c = ctx(rules=[rule], memory={"out": {"STARBUCKS": {"category_id": 5, "is_transfer": False}}})
         d = categorizer.categorize(txn(), c)
         self.assertEqual((d.category_id, d.status, d.source, d.rule_id, d.confidence), (9, "confirmed", "rule", 11, 1.0))
 
@@ -73,17 +73,17 @@ class CascadeTest(unittest.TestCase):
         self.assertEqual((d.category_id, d.is_transfer, d.is_excluded, d.status), (3, True, True, "confirmed"))
 
     def test_exact_memory(self):
-        d = categorizer.categorize(txn(), ctx(memory={"STARBUCKS": {"category_id": 5, "is_transfer": False}}))
+        d = categorizer.categorize(txn(), ctx(memory={"out": {"STARBUCKS": {"category_id": 5, "is_transfer": False}}}))
         self.assertEqual((d.category_id, d.status, d.source, d.confidence), (5, "confirmed", "merchant", 0.95))
 
     def test_fuzzy_memory_is_only_a_suggestion(self):
         d = categorizer.categorize(txn(merchant_key="STARBUCKS COFFEE"),
-                                   ctx(memory={"STARBUCKS COFFEE CO": {"category_id": 5, "is_transfer": False}}))
+                                   ctx(memory={"out": {"STARBUCKS COFFEE CO": {"category_id": 5, "is_transfer": False}}}))
         self.assertEqual((d.category_id, d.status, d.source, d.confidence), (5, "suggested", "merchant", 0.8))
 
     def test_fuzzy_does_not_match_unrelated(self):
         d = categorizer.categorize(txn(merchant_key="WALGREENS PHARMACY"),
-                                   ctx(memory={"STARBUCKS COFFEE": {"category_id": 5, "is_transfer": False}}))
+                                   ctx(memory={"out": {"STARBUCKS COFFEE": {"category_id": 5, "is_transfer": False}}}))
         self.assertNotEqual(d.source, "merchant")
 
     def test_builtin_hint(self):
@@ -101,12 +101,62 @@ class CascadeTest(unittest.TestCase):
         self.assertEqual(d, categorizer.Decision())
 
 
+class DirectionTest(unittest.TestCase):
+    def test_only_money_coming_in_is_in(self):
+        cases = [(Decimal("-0.01"), "out"), (Decimal("0"), "out"), (None, "out"), (Decimal("0.01"), "in"),
+                 (Decimal("1500.00"), "in")]
+        self.assertEqual([(a, categorizer.direction(a)) for a, _ in cases], cases)
+
+
+class MemoryDirectionTest(unittest.TestCase):
+    PAYROLL = {"merchant_key": "ACME PAYROLL", "description_clean": "ACME PAYROLL", "description_raw": "ACME PAYROLL"}
+
+    def test_each_direction_recalls_its_own_category(self):
+        c = ctx(memory={"in": {"ACME PAYROLL": {"category_id": 40, "is_transfer": False}},
+                        "out": {"ACME PAYROLL": {"category_id": 41, "is_transfer": False}}})
+        got = [categorizer.categorize(txn(**self.PAYROLL, amount=Decimal(a)), c).category_id for a in ("1500", "-25")]
+        self.assertEqual(got, [40, 41])
+
+    def test_memory_from_money_in_is_not_applied_to_money_out(self):
+        c = ctx(memory={"in": {"ACME PAYROLL": {"category_id": 40, "is_transfer": False}}})
+        d = categorizer.categorize(txn(**self.PAYROLL, amount=Decimal("-25")), c)
+        self.assertEqual(d, categorizer.Decision())
+
+    def test_fuzzy_memory_stays_within_its_direction(self):
+        c = ctx(memory={"in": {"ACME PAYROLL INC": {"category_id": 40, "is_transfer": False}}})
+        d = categorizer.categorize(txn(**self.PAYROLL, amount=Decimal("-25")), c)
+        self.assertEqual(d, categorizer.Decision())
+
+    def test_load_context_groups_memory_by_direction(self):
+        rows = [{"merchant_key": "ACME", "direction": "in", "category_id": 40, "is_transfer": False, "display_name": None},
+                {"merchant_key": "ACME", "direction": "out", "category_id": 41, "is_transfer": False, "display_name": None}]
+        fake = FakeDB(lambda sql, params: rows if "FROM merchant_memory" in sql else [])
+        with patch_db(fake), mock.patch.dict("sys.modules", {"openrouter": None}):
+            c = categorizer.load_context(1)
+        self.assertEqual(({d: {k: m["category_id"] for k, m in keys.items()} for d, keys in c.memory.items()}, c.memory_keys),
+                         ({"in": {"ACME": 40}, "out": {"ACME": 41}}, {"in": ["ACME"], "out": ["ACME"]}))
+
+    def test_learn_writes_the_direction(self):
+        fake = FakeDB()
+        with patch_db(fake):
+            categorizer.learn(1, "ACME", 40, "in", display_name="Acme")
+        (_kind, sql, params), = fake.calls
+        self.assertEqual((params, "ON CONFLICT (user_id, merchant_key, direction)" in sql), ((1, "ACME", "in", "Acme", 40, False), True))
+
+    def test_forget_one_direction_or_both(self):
+        fake = FakeDB()
+        with patch_db(fake):
+            categorizer.forget(1, "ACME", "in")
+            categorizer.forget(1, "ACME")
+        self.assertEqual([c[2] for c in fake.calls], [(1, "ACME", "in"), (1, "ACME")])
+
+
 class ApplyManualTest(unittest.TestCase):
     def test_updates_records_events_and_learns(self):
         fake = FakeDB(lambda sql, params: [
-            {"id": 1, "merchant_key": "STARBUCKS", "merchant_name": "Starbucks"},
-            {"id": 2, "merchant_key": "STARBUCKS", "merchant_name": "Starbucks"},
-            {"id": 3, "merchant_key": "TIMS", "merchant_name": "Tim Hortons"},
+            {"id": 1, "merchant_key": "STARBUCKS", "merchant_name": "Starbucks", "amount": Decimal("-5")},
+            {"id": 2, "merchant_key": "STARBUCKS", "merchant_name": "Starbucks", "amount": Decimal("-6")},
+            {"id": 3, "merchant_key": "TIMS", "merchant_name": "Tim Hortons", "amount": Decimal("-2")},
         ] if sql.strip().startswith("SELECT") else None)
         with patch_db(fake):
             n = categorizer.apply_manual(1, [1, 2, 3], 5)
@@ -117,7 +167,17 @@ class ApplyManualTest(unittest.TestCase):
         events = [c for c in fake.calls if c[0] == "execute_values"]
         self.assertEqual(len(events[0][2]), 3)
         learns = [c for c in fake.calls if c[0] == "execute" and "merchant_memory" in c[1]]
-        self.assertEqual([c[2][1] for c in learns], ["STARBUCKS", "TIMS"])
+        self.assertEqual([c[2][1:3] for c in learns], [("STARBUCKS", "out"), ("TIMS", "out")])
+
+    def test_a_merchant_seen_both_ways_is_learned_both_ways(self):
+        fake = FakeDB(lambda sql, params: [
+            {"id": 1, "merchant_key": "ACME", "merchant_name": "Acme", "amount": Decimal("1500")},
+            {"id": 2, "merchant_key": "ACME", "merchant_name": "Acme", "amount": Decimal("-25")},
+        ] if sql.strip().startswith("SELECT") else None)
+        with patch_db(fake):
+            categorizer.apply_manual(1, [1, 2], 5)
+        learns = [c[2][1:3] for c in fake.calls if c[0] == "execute" and "merchant_memory" in c[1]]
+        self.assertEqual(learns, [("ACME", "in"), ("ACME", "out")])
 
     def test_clearing_category_does_not_learn(self):
         fake = FakeDB(lambda sql, params: [{"id": 1, "merchant_key": "X", "merchant_name": "X"}]
@@ -148,15 +208,15 @@ if __name__ == "__main__":
 class FuzzyMemoryBoundsTest(unittest.TestCase):
     def test_token_subsets_are_not_matches(self):
         for key, remembered in (("UBER", "UBER EATS"), ("AMAZON", "AMAZON PRIME"), ("AMZN MKTP US", "AMZN MKTP CA")):
-            d = categorizer.categorize(txn(merchant_key=key), ctx(memory={remembered: {"category_id": 5, "is_transfer": False}}))
+            d = categorizer.categorize(txn(merchant_key=key), ctx(memory={"out": {remembered: {"category_id": 5, "is_transfer": False}}}))
             self.assertNotEqual(d.source, "merchant", (key, remembered))
 
     def test_near_identical_keys_still_match(self):
         d = categorizer.categorize(txn(merchant_key="STARBUCKS COFFEE"),
-                                   ctx(memory={"STARBUCKS COFFEE CO": {"category_id": 5, "is_transfer": False}}))
+                                   ctx(memory={"out": {"STARBUCKS COFFEE CO": {"category_id": 5, "is_transfer": False}}}))
         self.assertEqual((d.category_id, d.status), (5, "suggested"))
 
     def test_a_suggestion_never_carries_transfer_flags(self):
         d = categorizer.categorize(txn(merchant_key="E-TRANSFER SENT"),
-                                   ctx(memory={"E-TRANSFER SENT TO": {"category_id": 3, "is_transfer": True}}))
+                                   ctx(memory={"out": {"E-TRANSFER SENT TO": {"category_id": 3, "is_transfer": True}}}))
         self.assertEqual((d.status, d.is_transfer, d.is_excluded), ("suggested", False, False))

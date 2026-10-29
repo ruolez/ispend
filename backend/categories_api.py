@@ -277,12 +277,13 @@ def _move_references(uid, ids, dst_id):
                   WHERE t.id = s.transaction_id AND s.category_id = ANY(%s) AND t.user_id = %s""", (dst_id, ids, uid), commit=False)
     db.execute("""DELETE FROM merchant_memory m WHERE m.user_id = %s AND m.category_id = ANY(%s)
                   AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.user_id = m.user_id
-                              AND o.merchant_key = m.merchant_key AND o.category_id = %s
+                              AND o.merchant_key = m.merchant_key AND o.direction = m.direction AND o.category_id = %s
                               AND (o.times_used > m.times_used OR (o.times_used = m.times_used AND o.id < m.id)))""",
                (uid, ids, dst_id), commit=False)
     db.execute("""DELETE FROM merchant_memory o WHERE o.user_id = %s AND o.category_id = %s
                   AND EXISTS (SELECT 1 FROM merchant_memory m WHERE m.user_id = o.user_id
-                              AND m.merchant_key = o.merchant_key AND m.category_id = ANY(%s))""",
+                              AND m.merchant_key = o.merchant_key AND m.direction = o.direction
+                              AND m.category_id = ANY(%s))""",
                (uid, dst_id, ids), commit=False)
     db.execute("UPDATE merchant_memory SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s",
                (dst_id, ids, uid), commit=False)

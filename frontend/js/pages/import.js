@@ -520,14 +520,15 @@ async function pickRowCategory(f, anchor, rowId) {
   categoryPicker({
     anchor, value: row.category_id, allowNone: !!row.category_id,
     onPick: async (cat) => {
-      const same = rows.filter((r) => r.is_valid && r.merchant_name && r.merchant_name === row.merchant_name);
+      const moneyIn = (r) => Number(r.amount) > 0;
+      const same = rows.filter((r) => r.is_valid && r.merchant_name && r.merchant_name === row.merchant_name && moneyIn(r) === moneyIn(row));
       const ids = (same.length > 1 ? same : [row]).map((r) => r.id);
       try {
         const res = await api(`/api/statements/${f.statementId}/rows?limit=2000`, { method: 'PUT', body: { row_ids: ids, category_id: cat ? cat.id : null } });
         if (cat && !imp.cats.has(cat.id)) imp.cats.set(cat.id, cat);
         f.statement = { ...f.statement, ...res };
         renderReview();
-        toast(cat ? `${cat.name} set for ${ids.length === 1 ? 'this row' : `${ids.length} rows from ${row.merchant_name}`} · it will be remembered` : 'Category cleared', { type: 'success' });
+        toast(cat ? `${cat.name} set for ${ids.length === 1 ? 'this row' : `${ids.length} ${moneyIn(row) ? 'credits' : 'charges'} from ${row.merchant_name}`} · it will be remembered` : 'Category cleared', { type: 'success' });
       } catch (err) { toast(err.message, { type: 'error' }); }
     },
   });

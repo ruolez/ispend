@@ -264,6 +264,13 @@ class TablesTest(unittest.TestCase):
     def test_truncate_runs_children_first(self):
         self.assertEqual(tables.truncate_order()[0], tables.TABLE_ORDER[-1])
 
+    def test_029_fixup_replays_only_the_memory_backfill(self):
+        cur = mock.Mock()
+        fixups.FIXUPS["029_merchant_memory_direction.sql"](cur)
+        (sql,), _kw = cur.execute.call_args
+        self.assertEqual((sql.lstrip().startswith("-- What the user settled on"), "ALTER TABLE" in sql,
+                          sql.count("INSERT INTO merchant_memory")), (True, False, 1))
+
     def test_every_migration_is_classified(self):
         here = os.path.join(os.path.dirname(__file__), "..", "migrations")
         migrations = {f for f in os.listdir(here) if f.endswith(".sql")}

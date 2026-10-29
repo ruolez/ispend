@@ -3,6 +3,7 @@ user's transactions and carry rules and merchant memory along so nothing stops m
 import logging
 from collections import Counter, defaultdict
 
+import categorizer
 import db
 import dedupe
 import merchant
@@ -95,22 +96,23 @@ def renormalize_user(user_id):
             seen.add(new)
             rules_updated += 1
         memory = db.query(
-            "SELECT id, merchant_key, category_id, times_used FROM merchant_memory WHERE user_id = %s ORDER BY times_used DESC, id",
+            """SELECT id, merchant_key, direction, category_id, times_used FROM merchant_memory
+               WHERE user_id = %s ORDER BY times_used DESC, id""",
             (user_id,), commit=False) or []
-        have = {m["merchant_key"]: m for m in memory if m["merchant_key"] not in key_map}
+        have = {(m["merchant_key"], m["direction"]): m for m in memory if m["merchant_key"] not in key_map}
         for m in memory:
             new = key_map.get(m["merchant_key"])
             if not new:
                 continue
-            if new in have:
+            if (new, m["direction"]) in have:
                 db.execute("UPDATE merchant_memory SET times_used = times_used + %s WHERE id = %s",
-                           (m["times_used"], have[new]["id"]), commit=False)
+                           (m["times_used"], have[(new, m["direction"])]["id"]), commit=False)
                 db.execute("DELETE FROM merchant_memory WHERE id = %s", (m["id"],), commit=False)
                 memory_merged += 1
                 continue
             db.execute("UPDATE merchant_memory SET merchant_key = %s, display_name = COALESCE(%s, display_name) WHERE id = %s",
                        (new, name_for.get(new), m["id"]), commit=False)
-            have[new] = m
+            have[(new, m["direction"])] = m
             memory_updated += 1
     return {
         "stripped_phrases": sorted({ph for ps in phrases.values() for ph in ps}),
@@ -124,31 +126,33 @@ def renormalize_user(user_id):
 
 
 def learn_from_history(user_id):
-    """Mine confirmed categorizations into merchant memory: for every merchant the user has
-    categorized, the category they used most often (latest wins ties) is remembered."""
+    """Mine confirmed categorizations into merchant memory: for every merchant and direction the
+    user has categorized, the category they used most often (latest wins ties) is remembered."""
     rows = db.query(
-        """SELECT merchant_key, category_id, COUNT(*) AS n, MAX(updated_at) AS last_at,
-                  BOOL_OR(is_transfer) AS is_transfer
-           FROM transactions
-           WHERE user_id = %s AND category_id IS NOT NULL AND category_status = 'confirmed' AND merchant_key <> ''
-           GROUP BY merchant_key, category_id""",
+        f"""SELECT merchant_key, {categorizer.direction_sql()} AS direction, category_id, COUNT(*) AS n,
+                   MAX(updated_at) AS last_at, BOOL_OR(is_transfer) AS is_transfer
+            FROM transactions
+            WHERE user_id = %s AND category_id IS NOT NULL AND category_status = 'confirmed' AND merchant_key <> ''
+            GROUP BY 1, 2, 3""",
         (user_id,),
     ) or []
     best = {}
     for r in rows:
-        cur = best.get(r["merchant_key"])
+        cur = best.get((r["merchant_key"], r["direction"]))
         if cur is None or (r["n"], r["last_at"]) > (cur["n"], cur["last_at"]):
-            best[r["merchant_key"]] = r
+            best[(r["merchant_key"], r["direction"])] = r
     added = updated = 0
     with db.transaction():
-        for key, r in best.items():
-            existing = db.query("SELECT id, category_id, times_used FROM merchant_memory WHERE user_id = %s AND merchant_key = %s",
-                                (user_id, key), one=True, commit=False)
+        for (key, direction), r in best.items():
+            existing = db.query(
+                """SELECT id, category_id, times_used FROM merchant_memory
+                   WHERE user_id = %s AND merchant_key = %s AND direction = %s""",
+                (user_id, key, direction), one=True, commit=False)
             if existing is None:
                 db.execute(
-                    """INSERT INTO merchant_memory (user_id, merchant_key, category_id, is_transfer, times_used)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (user_id, key, r["category_id"], bool(r["is_transfer"]), int(r["n"])), commit=False)
+                    """INSERT INTO merchant_memory (user_id, merchant_key, direction, category_id, is_transfer, times_used)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (user_id, key, direction, r["category_id"], bool(r["is_transfer"]), int(r["n"])), commit=False)
                 added += 1
             elif existing["times_used"] < r["n"]:
                 db.execute("UPDATE merchant_memory SET times_used = %s WHERE id = %s", (int(r["n"]), existing["id"]), commit=False)

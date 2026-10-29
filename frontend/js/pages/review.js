@@ -133,9 +133,9 @@ function showQueue(r) {
   if (rv.mode === 'merchant') {
     rv.groups = r.groups.map((g) => ({ ...g, excluded: new Set(), expanded: false, always: false, pattern: g.key, patternOpen: false, rows: null }));
     rv.remaining = r.remaining; rv.remainingItems = r.remaining_items != null ? r.remaining_items : r.groups.reduce((a, g) => a + g.count, 0);
-    if (r.groups.length >= r.remaining) pruneSkips('merchant', new Set(r.groups.map((g) => g.key)));
+    if (r.groups.length >= r.remaining) pruneSkips('merchant', new Set(r.groups.map(groupKey)));
   } else {
-    rv.groups = r.items.map((t) => ({ key: t.merchant_key, display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
+    rv.groups = r.items.map((t) => ({ key: t.merchant_key, direction: t.amount > 0 ? 'in' : 'out', display: t.merchant_name, count: 1, total: t.amount, first: t.txn_date, last: t.txn_date, ids: [t.id], item: t, suggestion: t.category_status === 'suggested' && t.category_id ? { category_id: t.category_id, confidence: t.category_confidence, source: t.category_source } : null, sample_description: t.description_raw, excluded: new Set(), always: false, pattern: t.merchant_key, patternOpen: false, currency: t.currency }));
     rv.remaining = r.remaining; rv.remainingItems = r.remaining;
     if (r.items.length >= r.remaining) pruneSkips('single', new Set(r.items.map((t) => `t${t.id}`)));
   }
@@ -149,7 +149,9 @@ function showQueue(r) {
   const first = visibleGroups()[0];
   if (first) setFocus(0, { scroll: false, move: !onControl });
 }
-function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.key; }
+/* Money in and money out from one merchant are separate cards; money out keeps the bare key so
+   merchants hidden before the split stay hidden. */
+function groupKey(g) { return rv.mode === 'single' ? `t${g.ids[0]}` : g.direction === 'in' ? `in:${g.key}` : g.key; }
 
 /* ---------- transfers mode ---------- */
 async function loadTransfers() {
@@ -330,7 +332,7 @@ function cardHtml(g, idx) {
     <div class="rv-head">
       <div style="min-width:0">
         <div class="rv-name">${esc(g.display)}</div>
-        <div class="rv-meta dots">${single ? `<span>${esc(fmtDateLong(g.first))}</span>` : `<span>${plural(g.count, 'charge')}</span>`}<span class="amt">${fmtMoney(g.total, cur, { sign: 'always' })}</span>${!single && g.first !== g.last ? `<span>${fmtDate(g.first, spanYear)} – ${fmtDate(g.last, spanYear)}</span>` : !single ? `<span>${fmtDate(g.first)}</span>` : ''}</div>
+        <div class="rv-meta dots">${single ? `<span>${esc(fmtDateLong(g.first))}</span>` : `<span>${plural(g.count, g.direction === 'in' ? 'credit' : 'charge')}</span>`}<span class="amt">${fmtMoney(g.total, cur, { sign: 'always' })}</span>${!single && g.first !== g.last ? `<span>${fmtDate(g.first, spanYear)} – ${fmtDate(g.last, spanYear)}</span>` : !single ? `<span>${fmtDate(g.first)}</span>` : ''}</div>
         ${g.sample_description ? `<div class="rv-raw" data-tip="${esc(g.sample_description)}">${esc(g.sample_description)}</div>` : ''}
       </div>
       ${!single ? `<button type="button" class="btn btn-ghost btn-xs" data-cact="expand" aria-expanded="${g.expanded}">${icon(g.expanded ? 'chevron-up' : 'chevron-down', 'ico-sm')}${g.expanded ? 'Hide' : 'Show'} charges</button>` : ''}
@@ -448,8 +450,10 @@ async function toggleExpand(g) {
 function includedIds(g) { return g.ids.filter((id) => !g.excluded.has(id)); }
 function ruleFor(g, categoryId) {
   if (!g.always || !g.pattern) return null;
-  if (g.ptype === 'contains') return { pattern: g.pattern, match_type: 'contains', match_field: 'description_clean', name: `${g.display} → ${(catOf(categoryId) || {}).name || 'transfer'}` };
-  return { pattern: g.pattern, match_type: 'equals', match_field: 'merchant_key', name: `${g.display} → ${(catOf(categoryId) || {}).name || 'transfer'}` };
+  const name = `${g.display} → ${(catOf(categoryId) || {}).name || 'transfer'}`;
+  const amounts = g.direction === 'in' ? { amount_min: 0 } : { amount_max: 0 };
+  if (g.ptype === 'contains') return { pattern: g.pattern, match_type: 'contains', match_field: 'description_clean', name, ...amounts };
+  return { pattern: g.pattern, match_type: 'equals', match_field: 'merchant_key', name, ...amounts };
 }
 async function resolve(g, body, label) {
   const ids = includedIds(g);

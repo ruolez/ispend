@@ -9,6 +9,7 @@ enforces that, so the next data-changing migration cannot be forgotten.
 """
 
 import logging
+import os
 
 log = logging.getLogger(__name__)
 
@@ -77,12 +78,21 @@ def _fix_023(cur):
     cur.execute("UPDATE ai_calls SET purpose = 'extract' WHERE purpose = 'categorize' AND item_count = 0")
 
 
+def _fix_029(cur):
+    # 029 split merchant memory into money in / money out using the categorized history; loaded
+    # rows all start as 'out', which is where the migration's backfill starts from too.
+    path = os.path.join(os.path.dirname(__file__), "..", "migrations", "029_merchant_memory_direction.sql")
+    with open(path) as f:
+        cur.execute(f.read().split("-- backfill:", 1)[1].split("\n", 1)[1])
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
     "021_admin_security.sql": _fix_021,
     "022_billing_ledger.sql": _fix_022,
     "023_activity_and_ops.sql": _fix_023,
+    "029_merchant_memory_direction.sql": _fix_029,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

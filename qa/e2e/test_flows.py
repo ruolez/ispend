@@ -297,6 +297,11 @@ def fixture_rows():
     return out
 
 
+def review_card_key(group):
+    """data-key of a merchant card on Review: money in and money out are separate cards."""
+    return f"in:{group['key']}" if group["direction"] == "in" else group["key"]
+
+
 # ---------------------------------------------------------------------------------------------
 # fixtures
 # ---------------------------------------------------------------------------------------------
@@ -1515,6 +1520,9 @@ def test_f5_review(page, qapi):
     page.wait_for_timeout(700)
     rules = qapi.get("/api/rules")
     F.check(any(r["pattern"] == g0["key"] and r["match_field"] == "merchant_key" for r in rules), f"rule for {g0['key']!r} exists in API: {[r['pattern'] for r in rules]}")
+    bound = "amount_min" if g0["direction"] == "in" else "amount_max"
+    F.check(any(r["pattern"] == g0["key"] and r[bound] is not None and float(r[bound]) == 0 for r in rules),
+            f"the rule only matches {g0['direction']!r} money ({bound} = 0)")
     F.check(all(qapi.get(f"/api/transactions/{i}")["category_id"] is not None for i in g0["ids"][:3]), "group transactions categorized")
     F.eq(pill_value(page), qapi.get("/api/review/count")["total"], "pill updated without reload")
     F.check(f"{q['remaining_items'] - g0['count']}" in page.locator("#rv-progress").inner_text(), "progress decremented")
@@ -1528,7 +1536,7 @@ def test_f5_review(page, qapi):
     page.wait_for_timeout(700)
     F.check(all(qapi.get(f"/api/transactions/{i}")["category_id"] is None for i in g0["ids"][:3]), "undo uncategorized the group again")
     F.check(not any(r["pattern"] == g0["key"] for r in qapi.get("/api/rules")), "undo removed the rule it had created")
-    F.check(page.locator(f".rv-card[data-key='{g0['key']}']").count() == 1, "undo brought the card back")
+    F.check(page.locator(f".rv-card[data-key='{review_card_key(g0)}']").count() == 1, "undo brought the card back")
     F.eq(pill_value(page), qapi.get("/api/review/count")["total"], "pill updated after undo")
     dismiss_toasts(page)
     # redo the resolve so the rest of the flow sees the rule
@@ -1549,7 +1557,7 @@ def test_f5_review(page, qapi):
     q2 = qapi.get("/api/review?mode=merchant&limit=100")
     F.check(len(q2["groups"]) >= 3, f"groups remain after one resolve: {len(q2['groups'])}")
     g1 = q2["groups"][0]
-    card = page.locator(f".rv-card[data-key='{g1['key']}']")
+    card = page.locator(f".rv-card[data-key='{review_card_key(g1)}']")
     F.check(not card.locator("[data-cfield='always']").is_checked(), "'Always do this' is off on the next card")
     card.locator("[data-cact='pick']").first.click()
     page.wait_for_selector(".cat-picker input", timeout=5000)

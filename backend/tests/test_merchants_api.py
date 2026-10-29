@@ -49,13 +49,36 @@ class MerchantsApiTest(unittest.TestCase):
 
     def test_category_with_apply_existing_recategorizes_rows(self):
         self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE user_id", [{"id": 3}, {"id": 4}])]
-        res = self._call("put", "/api/merchants/UBER", {"category_id": 7, "apply_existing": True})
+        res = self._call("put", "/api/merchants/UBER", {"category_id": 7, "direction": "out", "apply_existing": True})
         self.assertEqual((res.status_code, res.get_json()["applied"]), (200, 2))
-        self.assertEqual(len(self.x.sql("INSERT INTO merchant_memory")), 1)
+        self.assertEqual([p[:3] for _s, p in self.x.sql("INSERT INTO merchant_memory")], [(1, "UBER", "out")])
         (_sql, params), = self.x.sql("UPDATE transactions SET category_id = %s, category_status = 'confirmed', category_source = 'merchant'")
         self.assertEqual(params, (7, [3, 4]))
 
-    def test_delete_forgets_the_merchant(self):
+    def test_apply_existing_only_touches_the_remembered_direction(self):
+        self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE user_id", [])]
+        self._call("put", "/api/merchants/ACME", {"category_id": 7, "direction": "in", "apply_existing": True})
+        (sql, params), = self.q.sql("SELECT id FROM transactions WHERE user_id")
+        self.assertEqual((params, "(CASE WHEN amount > 0 THEN 'in' ELSE 'out' END) = %s" in sql), ((1, "ACME", "in", 7), True))
+
+    def test_renaming_with_a_category_names_both_directions(self):
+        self.q.routes += [("FROM categories WHERE id", {"id": 7})]
+        self._call("put", "/api/merchants/ACME", {"category_id": 7, "direction": "in", "display_name": "Acme"})
+        self.assertEqual([p for _s, p in self.x.sql("UPDATE merchant_memory SET display_name")], [("Acme", 1, "ACME")])
+
+    def test_a_category_needs_a_direction(self):
+        self.q.routes += [("FROM categories WHERE id", {"id": 7})]
+        for body in ({"category_id": 7}, {"category_id": 7, "direction": "sideways"}):
+            res = self._call("put", "/api/merchants/UBER", body)
+            self.assertEqual((res.status_code, res.get_json()), (400, {"error": "direction must be 'in' or 'out'"}))
+        self.assertEqual(self.x.calls, [])
+
+    def test_delete_forgets_one_direction(self):
+        res = self._call("delete", "/api/merchants/UBER?direction=in")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([p for _s, p in self.x.sql("DELETE FROM merchant_memory")], [(1, "UBER", "in")])
+
+    def test_delete_without_direction_forgets_both(self):
         res = self._call("delete", "/api/merchants/UBER")
         self.assertEqual(res.status_code, 200)
         self.assertEqual([p for _s, p in self.x.sql("DELETE FROM merchant_memory")], [(1, "UBER")])

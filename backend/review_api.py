@@ -58,8 +58,9 @@ def queue():
         remaining = (db.query(f"SELECT COUNT(*) AS n FROM transactions t WHERE {QUEUE_WHERE}{extra}", params, one=True) or {}).get("n", 0)
         return jsonify({"items": rows_json([{k: v for k, v in r.items() if k not in ("raw", "fingerprint")} for r in items]),
                         "remaining": remaining})
+    direction = categorizer.direction_sql("t.amount")
     groups = db.query(
-        f"""SELECT t.merchant_key AS key,
+        f"""SELECT t.merchant_key AS key, {direction} AS direction,
                    MIN(t.merchant_name) AS display,
                    COUNT(*) AS count,
                    SUM(t.amount) AS total,
@@ -73,8 +74,8 @@ def queue():
                    MIN(t.description_raw) AS sample_description,
                    MODE() WITHIN GROUP (ORDER BY t.currency) AS currency
             FROM transactions t WHERE {QUEUE_WHERE}{extra}
-            GROUP BY t.merchant_key
-            ORDER BY COUNT(*) DESC, SUM(abs(t.amount)) DESC, t.merchant_key
+            GROUP BY t.merchant_key, {direction}
+            ORDER BY COUNT(*) DESC, SUM(abs(t.amount)) DESC, t.merchant_key, {direction}
             LIMIT %s""",
         params + [limit],
     ) or []
@@ -84,12 +85,13 @@ def queue():
         if g.get("suggestion_id") is not None:
             suggestion = {"category_id": g["suggestion_id"], "confidence": g.get("suggestion_confidence"),
                           "source": g.get("suggestion_source")}
-        out.append({"key": g["key"], "display": g["display"], "count": g["count"], "total": g["total"],
+        out.append({"key": g["key"], "direction": g["direction"], "display": g["display"], "count": g["count"], "total": g["total"],
                     "first": g["first"], "last": g["last"], "ids": list(g["ids"] or []),
                     "suggestion": suggestion, "sample_description": g.get("sample_description"),
                     "currency": (g.get("currency") or "USD").strip()})
     totals = db.query(
-        f"SELECT COUNT(DISTINCT t.merchant_key) AS groups, COUNT(*) AS items FROM transactions t WHERE {QUEUE_WHERE}{extra}",
+        f"""SELECT COUNT(DISTINCT (t.merchant_key, {direction})) AS groups, COUNT(*) AS items
+            FROM transactions t WHERE {QUEUE_WHERE}{extra}""",
         params, one=True,
     ) or {}
     return jsonify({"groups": out, "remaining": totals.get("groups", 0), "remaining_items": totals.get("items", 0)})
@@ -144,9 +146,12 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
         )
         record_events([(i, "transfer", {"is_transfer": True, "category_id": category_id}, uid) for i in own])
         if learn and category_id is not None:
-            keys = db.query("SELECT DISTINCT merchant_key, MIN(merchant_name) AS name FROM transactions WHERE id = ANY(%s) GROUP BY merchant_key", (own,)) or []
+            keys = db.query(
+                f"""SELECT merchant_key, {categorizer.direction_sql()} AS direction, MIN(merchant_name) AS name
+                    FROM transactions WHERE id = ANY(%s) GROUP BY 1, 2 ORDER BY 1, 2""", (own,)) or []
             for k in keys:
-                categorizer.learn(uid, k["merchant_key"], category_id, display_name=k["name"], is_transfer=True)
+                categorizer.learn(uid, k["merchant_key"], category_id, k["direction"], display_name=k["name"],
+                                  is_transfer=True)
     else:
         updated = categorizer.apply_manual(uid, own, category_id, learn_memory=learn)
 
@@ -161,17 +166,19 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
                 "category_id": category_id,
                 "set_transfer": mark_transfer,
                 "account_id": create_rule.get("account_id"),
+                "amount_min": create_rule.get("amount_min"),
+                "amount_max": create_rule.get("amount_max"),
             })
         except ValueError as e:
             raise ResolveError(str(e)) from e
         top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE user_id = %s", (uid,), one=True)
         row = db.execute(
             """INSERT INTO rules (user_id, name, priority, match_type, match_field, pattern, case_sensitive,
-                   account_id, category_id, set_transfer, hit_count, last_hit_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now()) RETURNING id""",
+                   account_id, category_id, set_transfer, hit_count, last_hit_at, amount_min, amount_max)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s) RETURNING id""",
             (uid, clean["name"], (top["p"] if top else 0) + 10, clean["match_type"], clean["match_field"],
              clean["pattern"], clean["case_sensitive"], clean["account_id"], clean["category_id"],
-             clean["set_transfer"], len(own)),
+             clean["set_transfer"], len(own), clean["amount_min"], clean["amount_max"]),
             returning=True,
         )
         rule_id = row["id"]

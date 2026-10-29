@@ -906,6 +906,43 @@ class TestImportPipeline:
         u1.delete(f"/api/merchants/{t['merchant_key']}")
         u1.delete(f"/api/accounts/{acct}?force=true")
 
+    def test_memory_keeps_money_in_and_money_out_apart(self, u1):
+        acct = create_account(u1, "QA direction acct", "checking")
+        salary, fees = cat_by_slug(u1, "income.salary"), cat_by_slug(u1, "fees.bank")
+
+        def preview(month):
+            content = (f"Date,Description,Amount\n{month}-01,QAZ PAYOUTS CO,1500.00\n"
+                       f"{month}-02,QAZ PAYOUTS CO,-25.00\n{month}-03,QAZ GROCER,-40.00\n").encode()
+            r = upload(u1, None, filename=f"direction-{month}.csv", content=content, account_id=acct)
+            pv = wait_status(u1, r.json()["id"], ("previewed", "error"))
+            rows = [x for x in _valid_rows(pv) if "PAYOUTS" in x["description"]]
+            return pv["id"], next(x for x in rows if Decimal(str(x["amount"])) > 0), next(x for x in rows if Decimal(str(x["amount"])) < 0)
+
+        sid, pay, fee = preview("2026-07")
+        u1.put(f"/api/statements/{sid}/rows", json={"row_ids": [pay["id"]], "category_id": salary["id"]})
+        u1.post(f"/api/statements/{sid}/commit", json={})
+        key = next(x["merchant_key"] for x in list_all(u1, account_id=acct)[0] if "PAYOUTS" in x["description_raw"])
+
+        def remembered():
+            return sorted((m["direction"], m["category_id"]) for m in u1.get("/api/merchants").json() if m["merchant_key"] == key)
+
+        assert remembered() == [("in", salary["id"])]
+
+        sid, pay, fee = preview("2026-08")
+        assert ((pay["category_id"], pay["category_source"]), fee["category_id"]) == ((salary["id"], "merchant"), None)
+        u1.put(f"/api/statements/{sid}/rows", json={"row_ids": [fee["id"]], "category_id": fees["id"]})
+        u1.post(f"/api/statements/{sid}/commit", json={})
+        assert remembered() == sorted([("in", salary["id"]), ("out", fees["id"])])
+
+        sid, pay, fee = preview("2026-09")
+        assert ((pay["category_id"], pay["category_source"]), (fee["category_id"], fee["category_source"])) == \
+            ((salary["id"], "merchant"), (fees["id"], "merchant"))
+        u1.delete(f"/api/statements/{sid}")
+        assert u1.delete(f"/api/merchants/{key}?direction=in").json() == {"ok": True}
+        assert remembered() == [("out", fees["id"])]
+        u1.delete(f"/api/merchants/{key}")
+        u1.delete(f"/api/accounts/{acct}?force=true")
+
     def test_commit_requires_account(self, u1):
         r = upload(u1, os.path.join(FIXTURES, "citi.csv"), filename="citi_noacct.csv")
         pv = wait_status(u1, r.json()["id"], ("previewed", "error"))
@@ -1655,17 +1692,25 @@ class TestReview:
 
     def test_merchant_memory_endpoints(self, u1, manual):
         key = manual["txns"][1]["merchant_key"]
-        r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_b"]["id"], "apply_existing": True,
-                                                  "display_name": "QA Gym Renamed", "rename_all": True})
+        r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_b"]["id"], "direction": "out",
+                                                  "apply_existing": True, "display_name": "QA Gym Renamed",
+                                                  "rename_all": True})
         assert r.json() == {"ok": True, "applied": 3}
         got = u1.get(f"/api/transactions/{manual['txns'][1]['id']}").json()
         assert (got["category_id"], got["category_source"], got["merchant_name"]) == (manual["cat_b"]["id"], "merchant", "QA Gym Renamed")
         mem = next(m for m in u1.get("/api/merchants", params={"q": "gym"}).json() if m["merchant_key"] == key)
-        assert mem["display_name"] == "QA Gym Renamed" and mem["txn_count"] == 3 and money(mem["total"]) == money("-120")
+        assert mem["display_name"] == "QA Gym Renamed" and mem["direction"] == "out" and mem["txn_count"] == 3 \
+            and money(mem["total"]) == money("-120")
         r = u1.put(f"/api/merchants/{key}", json={})
         assert (r.status_code, r.json()) == (400, {"error": "category_id or display_name is required"})
-        # restore category A on the gym rows for the report tests
         r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_a"]["id"], "apply_existing": True})
+        assert (r.status_code, r.json()) == (400, {"error": "direction must be 'in' or 'out'"})
+        r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_a"]["id"], "direction": "in",
+                                                  "apply_existing": True})
+        assert r.json()["applied"] == 0, "money-in memory never touches the gym charges"
+        # restore category A on the gym rows for the report tests
+        r = u1.put(f"/api/merchants/{key}", json={"category_id": manual["cat_a"]["id"], "direction": "out",
+                                                  "apply_existing": True})
         assert r.json()["applied"] == 3
         assert u1.delete(f"/api/merchants/{key}").json() == {"ok": True}
         assert not any(m["merchant_key"] == key for m in u1.get("/api/merchants").json())

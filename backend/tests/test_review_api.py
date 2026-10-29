@@ -55,11 +55,11 @@ class ReviewTest(unittest.TestCase):
         group = {"key": "STARBUCKS", "display": "Starbucks", "count": 3, "total": Decimal("-19.35"),
                  "first": date(2026, 8, 1), "last": date(2026, 9, 2), "ids": [9, 8, 7],
                  "suggestion_id": 5, "suggestion_confidence": Decimal("0.600"), "suggestion_source": "builtin",
-                 "sample_description": "STARBUCKS #1"}
-        nosug = {**group, "key": "ZQX", "display": "Zqx", "suggestion_id": None, "ids": [1]}
+                 "sample_description": "STARBUCKS #1", "direction": "out"}
+        nosug = {**group, "key": "ZQX", "display": "Zqx", "suggestion_id": None, "ids": [1], "direction": "in"}
 
         def handler(sql, params, one):
-            if "COUNT(DISTINCT t.merchant_key) AS groups" in sql:
+            if "AS groups" in sql:
                 return {"groups": 2, "items": 4}
             return [group, nosug]
         with patch_db(FakeDB(handler)):
@@ -70,6 +70,16 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(body["groups"][0]["total"], -19.35)
         self.assertEqual(body["groups"][0]["ids"], [9, 8, 7])
         self.assertIsNone(body["groups"][1]["suggestion"])
+        self.assertEqual([g["direction"] for g in body["groups"]], ["out", "in"])
+
+    def test_merchant_groups_split_money_in_from_money_out(self):
+        fake = FakeDB(lambda sql, params, one: {"groups": 0, "items": 0} if one else [])
+        with patch_db(fake):
+            self.client.get("/api/review?mode=merchant")
+        groups_sql, totals_sql = [" ".join(c[1].split()) for c in fake.calls]
+        direction = "(CASE WHEN t.amount > 0 THEN 'in' ELSE 'out' END)"
+        self.assertEqual((f"GROUP BY t.merchant_key, {direction}" in groups_sql,
+                          f"COUNT(DISTINCT (t.merchant_key, {direction})) AS groups" in totals_sql), (True, True))
 
     def test_count(self):
         with patch_db(FakeDB(lambda sql, params, one: {"uncategorized": 4, "suggested": 2, "total": 6})):
@@ -110,6 +120,44 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(insert[2][10], 2)          # hit_count = rows resolved
         link = [c for c in fake.calls if "category_rule_id = %s" in c[1]][0]
         self.assertEqual(link[2], (77, [1, 2]))
+
+    def test_resolve_rule_keeps_the_amount_bounds(self):
+        def handler(sql, params, one):
+            if "FROM transactions WHERE user_id" in sql:
+                return [{"id": 1}]
+            if "FROM categories" in sql:
+                return {"id": 5}
+            if "MAX(priority)" in sql:
+                return {"p": 0}
+            if "INSERT INTO rules" in sql:
+                return {"id": 78}
+            return None
+        fake = FakeDB(handler)
+        with patch_db(fake), mock.patch.object(categorizer, "apply_manual", return_value=1):
+            self.client.post("/api/review/resolve", json={
+                "ids": [1], "category_id": 5,
+                "create_rule": {"pattern": "ACME PAYROLL", "match_type": "equals", "match_field": "merchant_key",
+                                "amount_min": 0},
+            })
+        insert = [c for c in fake.calls if "INSERT INTO rules" in c[1]][0]
+        self.assertEqual(insert[2][-2:], (Decimal("0"), None))
+
+    def test_transfer_resolve_learns_each_direction(self):
+        keys = [{"merchant_key": "ACME", "direction": "in", "name": "Acme"},
+                {"merchant_key": "ACME", "direction": "out", "name": "Acme"}]
+
+        def handler(sql, params, one):
+            if "FROM transactions WHERE user_id" in sql:
+                return [{"id": 1}, {"id": 2}]
+            if "FROM categories" in sql:
+                return {"id": 3}
+            if "SELECT merchant_key" in sql:
+                return keys
+            return None
+        with patch_db(FakeDB(handler)), mock.patch.object(categorizer, "learn") as learn:
+            self.client.post("/api/review/resolve", json={"ids": [1, 2], "category_id": 3, "mark_transfer": True})
+        self.assertEqual(learn.call_args_list, [mock.call(1, "ACME", 3, "in", display_name="Acme", is_transfer=True),
+                                                mock.call(1, "ACME", 3, "out", display_name="Acme", is_transfer=True)])
 
     def test_suggest_without_ai_is_502(self):
         import openrouter

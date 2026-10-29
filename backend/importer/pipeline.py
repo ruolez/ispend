@@ -556,7 +556,7 @@ def _commit_locked(st, account):
         if r.get("category_source") == "manual" and r.get("category_id"):
             # the user set this category in the preview: it wins and is remembered
             category_id, status, source, rule_id, confidence = r["category_id"], "confirmed", "manual", None, 1.0
-            manual_learn[m.key] = category_id
+            manual_learn[(m.key, categorizer.direction(r["amount"]))] = category_id
         values.append((
             uid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
             r["description"] or "", m.clean, m.key, m.name, category_id, status, source, rule_id, confidence,
@@ -627,9 +627,9 @@ def _commit_locked(st, account):
             result["ai_queued"] = False
             stats["ai_queued"] = False
             db.execute("UPDATE statements SET stats = %s WHERE id = %s", (json.dumps(stats, default=str), sid))
-    for key, cid in manual_learn.items():
+    for (key, way), cid in manual_learn.items():
         try:
-            categorizer.learn(uid, key, cid)
+            categorizer.learn(uid, key, cid, way)
         except Exception:
             log.debug("learn failed for %s", key, exc_info=True)
     result["layout_saved"] = _remember_layout(st, stats, header, account_id)

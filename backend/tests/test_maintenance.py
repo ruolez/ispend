@@ -38,9 +38,10 @@ class RenormalizeUserTest(unittest.TestCase):
             {"id": 4, "pattern": "STARBUCKS", "category_id": 5},
         ]
         memory = [
-            {"id": 11, "merchant_key": "CHEWY", "category_id": 9, "times_used": 5},
-            {"id": 12, "merchant_key": "GEICO EUGENE BRAVERMAN", "category_id": 8, "times_used": 3},
-            {"id": 13, "merchant_key": "CHEWY EUGENE BRAVERMAN", "category_id": 9, "times_used": 2},
+            {"id": 11, "merchant_key": "CHEWY", "direction": "out", "category_id": 9, "times_used": 5},
+            {"id": 12, "merchant_key": "GEICO EUGENE BRAVERMAN", "direction": "out", "category_id": 8, "times_used": 3},
+            {"id": 13, "merchant_key": "CHEWY EUGENE BRAVERMAN", "direction": "out", "category_id": 9, "times_used": 2},
+            {"id": 14, "merchant_key": "CHEWY EUGENE BRAVERMAN", "direction": "in", "category_id": 30, "times_used": 1},
         ]
         self.rows = rows
         self.queries = _stubs.Router([
@@ -84,9 +85,9 @@ class RenormalizeUserTest(unittest.TestCase):
 
     def test_memory_is_renamed_or_merged(self):
         result = self._run()
-        self.assertEqual((result["memory_updated"], result["memory_merged"]), (1, 1))
+        self.assertEqual((result["memory_updated"], result["memory_merged"]), (2, 1))
         renamed = self.execs.sql("UPDATE merchant_memory SET merchant_key")
-        self.assertEqual([p for _s, p in renamed], [("GEICO AUTO", "Geico Auto", 12)])
+        self.assertEqual([(p[0], p[2]) for _s, p in renamed], [("GEICO AUTO", 12), ("CHEWY", 14)])
         merged = self.execs.sql("SET times_used = times_used + %s")
         self.assertEqual([p for _s, p in merged], [(2, 11)])
         self.assertEqual([p for _s, p in self.execs.sql("DELETE FROM merchant_memory")], [(13,)])
@@ -107,21 +108,22 @@ class LearnFromHistoryTest(unittest.TestCase):
         import maintenance
         from unittest import mock
         calls = []
-        rows = [{"merchant_key": "ZELLE JOHN", "category_id": 64, "n": 3, "last_at": 2, "is_transfer": False},
-                {"merchant_key": "ZELLE JOHN", "category_id": 98, "n": 1, "last_at": 3, "is_transfer": False},
-                {"merchant_key": "PAYPAL", "category_id": 98, "n": 2, "last_at": 1, "is_transfer": False}]
+        rows = [{"merchant_key": "ZELLE JOHN", "direction": "out", "category_id": 64, "n": 3, "last_at": 2, "is_transfer": False},
+                {"merchant_key": "ZELLE JOHN", "direction": "out", "category_id": 98, "n": 1, "last_at": 3, "is_transfer": False},
+                {"merchant_key": "ZELLE JOHN", "direction": "in", "category_id": 12, "n": 1, "last_at": 1, "is_transfer": False},
+                {"merchant_key": "PAYPAL", "direction": "out", "category_id": 98, "n": 2, "last_at": 1, "is_transfer": False}]
         def query(sql, params=None, one=False, commit=True):
             calls.append((sql, params))
             if "FROM transactions" in sql: return rows
-            if "FROM merchant_memory" in sql: return {"id": 7, "category_id": 98, "times_used": 1} if params[1] == "PAYPAL" else None
+            if "FROM merchant_memory" in sql: return {"id": 7, "category_id": 98, "times_used": 1} if params[1:] == ("PAYPAL", "out") else None
             return None
         fake = types.SimpleNamespace(query=query, execute=lambda sql, params=None, **k: calls.append((sql, params)),
                                      transaction=_stubs.FakeDB().transaction)
         with mock.patch.object(maintenance, "db", fake):
             out = maintenance.learn_from_history(1)
         inserts = [c for c in calls if "INSERT INTO merchant_memory" in c[0]]
-        self.assertEqual(out, {"merchants_seen": 2, "memory_added": 1, "memory_updated": 1})
-        self.assertEqual(inserts[0][1][:3], (1, "ZELLE JOHN", 64))
+        self.assertEqual(out, {"merchants_seen": 3, "memory_added": 2, "memory_updated": 1})
+        self.assertEqual([c[1][:4] for c in inserts], [(1, "ZELLE JOHN", "out", 64), (1, "ZELLE JOHN", "in", 12)])
 
 
 class PhrasesFollowTheStatementTest(unittest.TestCase):

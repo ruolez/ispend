@@ -28,10 +28,19 @@ class Decision:
 class Context:
     user_id: int
     rules: list = field(default_factory=list)
-    memory: dict = field(default_factory=dict)
+    memory: dict = field(default_factory=dict)       # direction -> merchant_key -> memory row
     slug_to_id: dict = field(default_factory=dict)
     ai_enabled: bool = False
-    memory_keys: list = field(default_factory=list)
+    memory_keys: dict = field(default_factory=dict)  # direction -> merchant keys
+
+
+def direction(amount):
+    """Merchant memory is kept per direction: the same source can pay you and charge you."""
+    return "in" if amount is not None and amount > 0 else "out"
+
+
+def direction_sql(amount_col="amount"):
+    return f"(CASE WHEN {amount_col} > 0 THEN 'in' ELSE 'out' END)"
 
 
 def deactivate_timed_out(compiled_rules):
@@ -47,7 +56,7 @@ def load_context(user_id):
         "SELECT * FROM rules WHERE user_id = %s AND is_active ORDER BY priority, id", (user_id,)
     ) or []
     mem_rows = db.query(
-        "SELECT merchant_key, category_id, is_transfer, display_name FROM merchant_memory WHERE user_id = %s",
+        "SELECT merchant_key, direction, category_id, is_transfer, display_name FROM merchant_memory WHERE user_id = %s",
         (user_id,),
     ) or []
     cat_rows = db.query("SELECT id, slug FROM categories WHERE user_id = %s", (user_id,)) or []
@@ -56,14 +65,16 @@ def load_context(user_id):
         ai_enabled = bool(openrouter.enabled("categorize", user_id))
     except Exception:
         ai_enabled = False
-    memory = {r["merchant_key"]: dict(r) for r in mem_rows}
+    memory = {}
+    for r in mem_rows:
+        memory.setdefault(r["direction"], {})[r["merchant_key"]] = dict(r)
     return Context(
         user_id=user_id,
         rules=[rules_mod.compile_rule(dict(r)) for r in rule_rows],
         memory=memory,
         slug_to_id={r["slug"]: r["id"] for r in cat_rows},
         ai_enabled=ai_enabled,
-        memory_keys=list(memory.keys()),
+        memory_keys={d: list(keys) for d, keys in memory.items()},
     )
 
 
@@ -92,16 +103,19 @@ def categorize(txn, ctx):
         )
 
     key = txn.get("merchant_key") or ""
-    mem = ctx.memory.get(key) if key else None
+    way = direction(txn.get("amount"))
+    memory = ctx.memory.get(way, {})
+    mem = memory.get(key) if key else None
     if mem:
         return Decision(
             category_id=mem["category_id"], status="confirmed", source="merchant", confidence=0.95,
             is_transfer=bool(mem.get("is_transfer")), is_excluded=bool(mem.get("is_transfer")),
         )
-    if key and ctx.memory_keys:
-        best = process.extractOne(key, ctx.memory_keys, scorer=fuzz.ratio, score_cutoff=FUZZY_CUTOFF)
+    keys = ctx.memory_keys.get(way)
+    if key and keys:
+        best = process.extractOne(key, keys, scorer=fuzz.ratio, score_cutoff=FUZZY_CUTOFF)
         if best:
-            mem = ctx.memory[best[0]]
+            mem = memory[best[0]]
             # a suggestion never moves money out of the totals; confirming it in Review does
             return Decision(category_id=mem["category_id"], status="suggested", source="merchant", confidence=0.8)
 
@@ -115,24 +129,28 @@ def categorize(txn, ctx):
     return Decision()
 
 
-def learn(user_id, merchant_key, category_id, display_name=None, is_transfer=False):
+def learn(user_id, merchant_key, category_id, direction, display_name=None, is_transfer=False):
     if not merchant_key or category_id is None:
         return
     db.execute(
-        """INSERT INTO merchant_memory (user_id, merchant_key, display_name, category_id, is_transfer)
-           VALUES (%s, %s, %s, %s, %s)
-           ON CONFLICT (user_id, merchant_key) DO UPDATE SET
+        """INSERT INTO merchant_memory (user_id, merchant_key, direction, display_name, category_id, is_transfer)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON CONFLICT (user_id, merchant_key, direction) DO UPDATE SET
              category_id = EXCLUDED.category_id,
              is_transfer = EXCLUDED.is_transfer,
              display_name = COALESCE(EXCLUDED.display_name, merchant_memory.display_name),
              times_used = merchant_memory.times_used + 1,
              last_used_at = now()""",
-        (user_id, merchant_key, display_name, category_id, bool(is_transfer)),
+        (user_id, merchant_key, direction, display_name, category_id, bool(is_transfer)),
     )
 
 
-def forget(user_id, merchant_key):
-    db.execute("DELETE FROM merchant_memory WHERE user_id = %s AND merchant_key = %s", (user_id, merchant_key))
+def forget(user_id, merchant_key, direction=None):
+    if direction is None:
+        db.execute("DELETE FROM merchant_memory WHERE user_id = %s AND merchant_key = %s", (user_id, merchant_key))
+    else:
+        db.execute("DELETE FROM merchant_memory WHERE user_id = %s AND merchant_key = %s AND direction = %s",
+                   (user_id, merchant_key, direction))
 
 
 def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manual"):
@@ -142,7 +160,7 @@ def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manua
     if not ids:
         return 0
     rows = db.query(
-        "SELECT id, merchant_key, merchant_name FROM transactions WHERE user_id = %s AND id = ANY(%s)",
+        "SELECT id, merchant_key, merchant_name, amount FROM transactions WHERE user_id = %s AND id = ANY(%s)",
         (user_id, ids),
     ) or []
     if not rows:
@@ -170,10 +188,10 @@ def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manua
     if learn_memory:
         seen = {}
         for r in rows:
-            if r["merchant_key"] and r["merchant_key"] not in seen:
-                seen[r["merchant_key"]] = r["merchant_name"]
-        for key, name in seen.items():
-            learn(user_id, key, category_id, display_name=name)
+            if r["merchant_key"]:
+                seen.setdefault((r["merchant_key"], direction(r["amount"])), r["merchant_name"])
+        for (key, way), name in seen.items():
+            learn(user_id, key, category_id, way, display_name=name)
     return len(ids)
 
 

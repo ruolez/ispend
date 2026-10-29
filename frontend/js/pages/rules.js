@@ -350,8 +350,8 @@ async function loadMerchants() {
 }
 function merchantRow(m) {
   const c = state.cats.get(Number(m.category_id));
-  return `<tr data-key="${esc(m.merchant_key)}">
-    <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" data-tip="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)}</span></div></td>
+  return `<tr data-key="${esc(merchantRowKey(m))}">
+    <td><div class="merchant"><button type="button" class="merch-name" data-mact="rename" data-tip="Rename this merchant everywhere">${esc(m.display_name || m.merchant_key)}${icon('pencil', 'ico-sm')}</button><span class="merchant-raw">${esc(m.merchant_key)} · ${m.direction === 'in' ? 'money in' : 'money out'}</span></div></td>
     <td>${m.is_transfer ? `<span class="badge badge-neutral">transfer</span> ` : ''}${c ? `<button type="button" class="catchip" data-mact="pick" data-tip="${esc(c.path)}"><i class="dot" style="--c:var(--${esc(c.color || c.parent_color || 'c1')})"></i><span class="catchip-label">${esc(c.parent_name ? `${c.parent_name} › ${c.name}` : c.name)}</span></button>` : `<button type="button" class="catchip catchip--empty" data-mact="pick"><i class="dot"></i><span class="catchip-label">Missing category</span></button>`}</td>
     <td class="right num col-used">${fmtNumber(m.times_used)}</td>
     <td class="right num">${fmtNumber(m.txn_count)}</td>
@@ -368,7 +368,8 @@ function renderMerchants() {
   }
   tb.innerHTML = state.merchants.map(merchantRow).join('');
 }
-function merchantFromEvent(e) { const tr = e.target.closest('tr[data-key]'); return tr ? state.merchants.find((m) => m.merchant_key === tr.dataset.key) : null; }
+function merchantRowKey(m) { return `${m.direction}:${m.merchant_key}`; }
+function merchantFromEvent(e) { const tr = e.target.closest('tr[data-key]'); return tr ? state.merchants.find((m) => merchantRowKey(m) === tr.dataset.key) : null; }
 function onMerchantClick(e) {
   const m = merchantFromEvent(e); const b = e.target.closest('[data-mact]');
   if (!m || !b) return;
@@ -377,7 +378,7 @@ function onMerchantClick(e) {
     case 'pick': return categoryPicker({ anchor: b, value: m.category_id, allowCreate: true, onPick: (c) => { if (c) saveMerchant(m, { category_id: c.id }, `${m.display_name || m.merchant_key} → ${c.name}`); } });
     case 'menu': return ui.menu(b, [
       { label: 'Apply to existing transactions', icon: 'play', onClick: () => saveMerchant(m, { category_id: m.category_id, apply_existing: true }, null, true) },
-      { label: 'Rename…', icon: 'pencil', onClick: () => { const btn = $(`tr[data-key="${CSS.escape(m.merchant_key)}"] .merch-name`); if (btn) startRename(btn, m); } },
+      { label: 'Rename…', icon: 'pencil', onClick: () => { const btn = $(`tr[data-key="${CSS.escape(merchantRowKey(m))}"] .merch-name`); if (btn) startRename(btn, m); } },
       { label: 'View transactions', icon: 'list', href: `/transactions.html${toQuery({ q: m.display_name || m.merchant_key, range: 'all' })}` },
       { divider: true },
       { label: 'Forget', icon: 'trash', danger: true, onClick: () => forgetMerchant(m) },
@@ -396,7 +397,7 @@ function onMerchantKey(e) {
   if (e.key === 'Escape') { e.target.dataset.cancel = '1'; e.target.blur(); }
 }
 async function commitMerchantName(input) {
-  const tr = input.closest('tr'); const m = state.merchants.find((x) => x.merchant_key === tr.dataset.key);
+  const tr = input.closest('tr'); const m = state.merchants.find((x) => merchantRowKey(x) === tr.dataset.key);
   const v = input.value.trim();
   if (input.dataset.cancel || !v || v === input.dataset.orig) { renderMerchants(); return; }
   await saveMerchant(m, { category_id: m.category_id, display_name: v, rename_all: true }, `Renamed to ${v}`);
@@ -404,7 +405,7 @@ async function commitMerchantName(input) {
 async function saveMerchant(m, body, label, showApplied) {
   const prev = { category_id: m.category_id, is_transfer: m.is_transfer };
   try {
-    const r = await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'PUT', body: { category_id: m.category_id, is_transfer: m.is_transfer, ...body } });
+    const r = await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'PUT', body: { category_id: m.category_id, is_transfer: m.is_transfer, direction: m.direction, ...body } });
     if (showApplied) toast(r.applied ? `${plural(r.applied, 'transaction')} updated` : 'Every transaction already had this category', { type: 'success' });
     else if (label && 'category_id' in body) ui.undoable(label, () => saveMerchant({ ...m }, prev, null));
     else if (label) toast(label, { type: 'success', duration: 1800 });
@@ -414,7 +415,7 @@ async function saveMerchant(m, body, label, showApplied) {
 }
 async function forgetMerchant(m) {
   if (!(await ui.confirm({ title: `Forget ${m.display_name || m.merchant_key}?`, body: 'iSpend will stop doing this on its own. Anything already sorted keeps its category.', confirmText: 'Forget', danger: true }))) return;
-  try { await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}`, { method: 'DELETE' }); toast('Merchant forgotten', { type: 'success' }); await loadMerchants(); }
+  try { await api(`/api/merchants/${encodeURIComponent(m.merchant_key)}${toQuery({ direction: m.direction })}`, { method: 'DELETE' }); toast('Merchant forgotten', { type: 'success' }); await loadMerchants(); }
   catch (err) { toast(err.message, { type: 'error' }); }
 }
 document.body.addEventListener('click', (e) => { if (e.target.closest('[data-act="reload-merchants"]')) loadMerchants(); });

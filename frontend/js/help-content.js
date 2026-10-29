@@ -26,7 +26,7 @@ const HELP_FAQ = [
     a: 'In this order: your <a href="/rules.html">rules</a>, then merchants you have sorted before, then built-in hints for well-known shops. If you turned on AI assistance in <a href="/settings.html#ai">Settings</a>, it suggests categories for the rest. Suggestions wait in <a href="/review.html">Review</a> and are never applied until you confirm them.',
     k: 'category categorize automatic rules merchant memory ai suggestion review uncategorized' },
   { id: 'rules', topic: 'organize', q: 'How do I make a charge always go to the same category?',
-    a: 'Sorting it once is usually enough: iSpend remembers the merchant. For anything more specific, such as text in the description or an amount range, create a rule on <a href="/rules.html">Rules</a>. Rules are checked top to bottom, and the first match wins.',
+    a: 'Sorting it once is usually enough: iSpend remembers the merchant, separately for money in and money out, so a refund or deposit can keep a different category from the charges. For anything more specific, such as text in the description or an amount range, create a rule on <a href="/rules.html">Rules</a>. Rules are checked top to bottom, and the first match wins.',
     k: 'always same category rule merchant remember automatic' },
   { id: 'transfers', topic: 'organize', q: 'Why are card payments and transfers left out of my spending?',
     a: 'Moving money between your own accounts isn’t spending. When iSpend finds both sides of a transfer, or you file a charge under a transfer category, it is excluded from spending and income totals. If one was left out by mistake, choose <b>Include in reports</b> on the transaction.',

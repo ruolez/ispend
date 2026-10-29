@@ -438,6 +438,7 @@ def suggest():
              GROUP BY t.merchant_key)
            SELECT h.*, COALESCE(m.category_id, h.recent_category_id) AS category_id, m.is_transfer
            FROM hits h LEFT JOIN merchant_memory m ON m.user_id = %s AND m.merchant_key = h.merchant_key
+                AND m.direction = """ + categorizer.direction_sql("h.last_amount") + """
            ORDER BY (lower(h.merchant_name) LIKE lower(%s)) DESC, h.n DESC, h.last_date DESC
            LIMIT %s""",
         (uid, like, like, like, uid, f"{q}%", limit),
@@ -601,7 +602,7 @@ def create_transaction():
         if category_id:
             record_event(row["id"], "manual", {"category_id": category_id}, uid)
             if data.get("learn", True):
-                categorizer.learn(uid, key, category_id, display_name=name)
+                categorizer.learn(uid, key, category_id, categorizer.direction(amount), display_name=name)
         audit("transaction.create", {"id": row["id"]})
     return jsonify(row_json(_get_own(row["id"], uid))), 201
 
@@ -748,7 +749,7 @@ def bulk():
         updated = categorizer.apply_manual(uid, own, None, learn_memory=False)
     elif action == "accept_suggestion":
         rows = db.query(
-            """SELECT id, merchant_key, merchant_name, category_id FROM transactions
+            """SELECT id, merchant_key, merchant_name, category_id, amount FROM transactions
                WHERE user_id = %s AND id = ANY(%s) AND category_status = 'suggested' AND category_id IS NOT NULL""",
             (uid, own),
         ) or []
@@ -763,9 +764,10 @@ def bulk():
             if data.get("learn", True):
                 seen = {}
                 for r in rows:
-                    seen.setdefault((r["merchant_key"], r["category_id"]), r["merchant_name"])
-                for (key, cid), name in seen.items():
-                    categorizer.learn(uid, key, cid, display_name=name)
+                    seen.setdefault((r["merchant_key"], categorizer.direction(r["amount"]), r["category_id"]),
+                                    r["merchant_name"])
+                for (key, way, cid), name in seen.items():
+                    categorizer.learn(uid, key, cid, way, display_name=name)
             updated = len(sids)
     elif action == "reject_suggestion":
         touched = [r["id"] for r in (db.query(
