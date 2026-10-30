@@ -1,5 +1,6 @@
 """Merchant memory is kept per direction (money in / money out) against a real database: the
-029 migration splits what was learned before, and learning one direction leaves the other alone.
+029 backfill (replayed by backup/fixups.py when an older archive is restored) splits what was
+learned before, and learning one direction leaves the other alone.
 
     ISPEND_TEST_DSN=postgresql://... python -m unittest tests.test_merchant_direction_integration
 """
@@ -11,11 +12,17 @@ from decimal import Decimal
 sys.path.insert(0, os.path.dirname(__file__))
 import _pg  # noqa: E402
 
-MIGRATION = os.path.join(os.path.dirname(__file__), "..", "migrations", "029_merchant_memory_direction.sql")
+# Back to the pre-029 shape (one memory row per merchant), then forward again the way 029 went.
 UNDO_029 = """
-    ALTER TABLE merchant_memory DROP CONSTRAINT merchant_memory_user_key_direction_key;
+    ALTER TABLE merchant_memory DROP CONSTRAINT merchant_memory_profile_key_direction_key;
     ALTER TABLE merchant_memory DROP COLUMN direction;
-    ALTER TABLE merchant_memory ADD CONSTRAINT merchant_memory_user_id_merchant_key_key UNIQUE (user_id, merchant_key);
+    ALTER TABLE merchant_memory ADD CONSTRAINT mm_pre029_key UNIQUE (profile_id, merchant_key);
+"""
+REDO_029 = """
+    ALTER TABLE merchant_memory ADD COLUMN direction TEXT NOT NULL DEFAULT 'out' CHECK (direction IN ('in','out'));
+    ALTER TABLE merchant_memory DROP CONSTRAINT mm_pre029_key;
+    ALTER TABLE merchant_memory
+      ADD CONSTRAINT merchant_memory_profile_key_direction_key UNIQUE (profile_id, merchant_key, direction);
 """
 
 
@@ -30,12 +37,12 @@ class MerchantDirectionTest(_pg.PgTestCase):
         from scope import Scope
         cls.scope = Scope(cls.uid, db.execute("INSERT INTO profiles (user_id, name) VALUES (%s, 'Personal') RETURNING id",
                                               (cls.uid,), returning=True)["id"])
-        cls.acct = db.execute("INSERT INTO accounts (user_id, name) VALUES (%s, 'Checking') RETURNING id",
-                              (cls.uid,), returning=True)["id"]
+        cls.acct = db.execute("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, 'Checking') RETURNING id",
+                              (cls.uid, cls.scope.pid,), returning=True)["id"]
 
         def cat(name, kind):
-            return db.execute("INSERT INTO categories (user_id, name, slug, kind) VALUES (%s, %s, %s, %s) RETURNING id",
-                              (cls.uid, name, name.lower(), kind), returning=True)["id"]
+            return db.execute("INSERT INTO categories (user_id, profile_id, name, slug, kind) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                              (cls.uid, cls.scope.pid, name, name.lower(), kind), returning=True)["id"]
 
         cls.income = cat("Salary", "income")
         cls.fees = cat("Fees", "expense")
@@ -50,11 +57,11 @@ class MerchantDirectionTest(_pg.PgTestCase):
     def txn(self, key, amount, category_id, source="manual"):
         self.n += 1
         self.db.execute(
-            """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw,
+            """INSERT INTO transactions (user_id, profile_id, account_id, txn_date, amount, currency, description_raw,
                    description_clean, merchant_key, merchant_name, category_id, category_status, category_source,
                    fingerprint)
-               VALUES (%s, %s, '2026-09-01', %s, 'USD', %s, %s, %s, %s, %s, 'confirmed', %s, %s)""",
-            (self.uid, self.acct, Decimal(amount), key, key, key, key, category_id, source, f"fp{self.n}"))
+               VALUES (%s, %s, %s, '2026-09-01', %s, 'USD', %s, %s, %s, %s, %s, 'confirmed', %s, %s)""",
+            (self.uid, self.scope.pid, self.acct, Decimal(amount), key, key, key, key, category_id, source, f"fp{self.n}"))
 
     def memory(self):
         rows = self.db.query("SELECT merchant_key, direction, category_id FROM merchant_memory WHERE user_id = %s",
@@ -65,10 +72,12 @@ class MerchantDirectionTest(_pg.PgTestCase):
         """old_memory: (merchant_key, category_id) rows in the pre-029 shape, one per merchant."""
         self.db.execute(UNDO_029)
         for key, cid in old_memory:
-            self.db.execute("INSERT INTO merchant_memory (user_id, merchant_key, category_id) VALUES (%s, %s, %s)",
-                            (self.uid, key, cid))
-        with open(MIGRATION) as f:
-            self.db.execute(f.read())
+            self.db.execute("INSERT INTO merchant_memory (user_id, profile_id, merchant_key, category_id) VALUES (%s, %s, %s, %s)",
+                            (self.uid, self.scope.pid, key, cid))
+        from backup import fixups
+        self.db.execute(REDO_029)
+        with self.db.transaction() as conn, conn.cursor() as cur:
+            fixups._fix_029(cur)
 
     def test_migration_splits_a_merchant_the_user_sorted_both_ways(self):
         # the reported case: deposits were sorted as Salary by hand, the memory then auto-filed the

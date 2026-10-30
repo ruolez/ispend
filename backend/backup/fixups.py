@@ -80,10 +80,18 @@ def _fix_023(cur):
 
 def _fix_029(cur):
     # 029 split merchant memory into money in / money out using the categorized history; loaded
-    # rows all start as 'out', which is where the migration's backfill starts from too.
+    # rows all start as 'out', which is where the migration's backfill starts from too. Memory is
+    # kept per profile since 030 (an archive this old gets one profile per person), so the
+    # backfill groups by profile and the rows it adds carry both owner columns.
     path = os.path.join(os.path.dirname(__file__), "..", "migrations", "029_merchant_memory_direction.sql")
     with open(path) as f:
-        cur.execute(f.read().split("-- backfill:", 1)[1].split("\n", 1)[1])
+        sql = f.read().split("-- backfill:", 1)[1].split("\n", 1)[1].replace("user_id", "profile_id")
+    for before, after in (("INSERT INTO merchant_memory (profile_id,", "INSERT INTO merchant_memory (user_id, profile_id,"),
+                          ("SELECT c.profile_id, c.merchant_key, c.direction, m.display_name",
+                           "SELECT m.user_id, c.profile_id, c.merchant_key, c.direction, m.display_name")):
+        assert before in sql, before
+        sql = sql.replace(before, after)
+    cur.execute(sql)
 
 
 def _fix_030(cur):
@@ -105,6 +113,13 @@ def _fix_030(cur):
            AND NOT EXISTS (SELECT 1 FROM import_layouts x WHERE x.profile_id = p.id)""")
 
 
+def _fix_031(cur):
+    # 031 removed the preferences that 030 had copied to the profile from users.preferences.
+    path = os.path.join(os.path.dirname(__file__), "..", "migrations", "031_profiles_only.sql")
+    with open(path) as f:
+        cur.execute(f.read().split("-- backfill:", 1)[1].split("\n", 1)[1])
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
@@ -113,6 +128,7 @@ FIXUPS = {
     "023_activity_and_ops.sql": _fix_023,
     "029_merchant_memory_direction.sql": _fix_029,
     "030_profiles.sql": _fix_030,
+    "031_profiles_only.sql": _fix_031,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

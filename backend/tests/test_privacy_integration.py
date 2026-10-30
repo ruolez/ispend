@@ -25,21 +25,21 @@ class PrivacyTest(_pg.PgTestCase):
                          returning=True)["id"]
         cls.uid = uid
         import profiles
-        profiles.create(db.get_db(), uid)
+        pid = profiles.create(db.get_db(), uid)
         db.get_db().commit()
-        acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Joint', 'checking', 'USD') RETURNING id",
-                          (uid,), returning=True)["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name, account_type, currency) VALUES (%s, %s, 'Joint', 'checking', 'USD') RETURNING id",
+                          (uid, pid,), returning=True)["id"]
         folder = os.path.join(config.STATEMENTS_DIR, str(uid))
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "abc.csv"), "w") as f:
             f.write("date,amount\n2026-01-01,-5\n")
-        st = db.execute("""INSERT INTO statements (user_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind, status)
-                           VALUES (%s, %s, 'march.csv', %s, 'abc', 30, 'csv', 'committed') RETURNING id""",
-                        (uid, acct, f"{uid}/abc.csv"), returning=True)["id"]
-        db.execute("""INSERT INTO transactions (user_id, account_id, statement_id, txn_date, amount, currency, description_raw,
+        st = db.execute("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind, status)
+                           VALUES (%s, %s, %s, 'march.csv', %s, 'abc', 30, 'csv', 'committed') RETURNING id""",
+                        (uid, pid, acct, f"{uid}/abc.csv"), returning=True)["id"]
+        db.execute("""INSERT INTO transactions (user_id, profile_id, account_id, statement_id, txn_date, amount, currency, description_raw,
                                                 description_clean, merchant_key, merchant_name, fingerprint, occurrence)
-                      VALUES (%s, %s, %s, '2026-01-01', -5, 'USD', 'COFFEE', 'Coffee', 'coffee', 'Coffee', 'fp', 1)""",
-                   (uid, acct, st))
+                      VALUES (%s, %s, %s, %s, '2026-01-01', -5, 'USD', 'COFFEE', 'Coffee', 'coffee', 'Coffee', 'fp', 1)""",
+                   (uid, pid, acct, st))
         db.execute("INSERT INTO settings (key, value) VALUES (%s, 'sk-secret'), (%s, 'm/a')",
                    (f"u{uid}:openrouter_api_key", f"u{uid}:openrouter_model"))
         db.execute("INSERT INTO audit_log (user_id, action, detail) VALUES (%s, 'account.create', %s)",
@@ -110,20 +110,20 @@ class WipeOwnedDataTest(_pg.PgTestCase):
         db = self.db
         uid = db.execute("INSERT INTO users (username, password_hash, role) VALUES ('boss', 'x', 'admin') RETURNING id",
                          returning=True)["id"]
-        profiles.create(db.get_db(), uid)
+        pid = profiles.create(db.get_db(), uid)
         db.get_db().commit()
-        acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Mine', 'checking', 'USD') RETURNING id",
-                          (uid,), returning=True)["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name, account_type, currency) VALUES (%s, %s, 'Mine', 'checking', 'USD') RETURNING id",
+                          (uid, pid,), returning=True)["id"]
         cat = db.query("SELECT id FROM categories WHERE user_id = %s AND parent_id IS NOT NULL LIMIT 1", (uid,), one=True)["id"]
-        st = db.execute("""INSERT INTO statements (user_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind, status)
-                           VALUES (%s, %s, 'may.csv', %s, 'def', 30, 'csv', 'committed') RETURNING id""",
-                        (uid, acct, f"{uid}/def.csv"), returning=True)["id"]
-        db.execute("""INSERT INTO transactions (user_id, account_id, statement_id, txn_date, amount, currency, description_raw,
+        st = db.execute("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind, status)
+                           VALUES (%s, %s, %s, 'may.csv', %s, 'def', 30, 'csv', 'committed') RETURNING id""",
+                        (uid, pid, acct, f"{uid}/def.csv"), returning=True)["id"]
+        db.execute("""INSERT INTO transactions (user_id, profile_id, account_id, statement_id, txn_date, amount, currency, description_raw,
                                                 description_clean, merchant_key, merchant_name, fingerprint, occurrence, category_id)
-                      VALUES (%s, %s, %s, '2026-02-01', -9, 'USD', 'TEA', 'Tea', 'tea', 'Tea', 'fp2', 1, %s)""",
-                   (uid, acct, st, cat))
-        db.execute("INSERT INTO rules (user_id, name, match_type, pattern, category_id) VALUES (%s, 'tea', 'contains', 'TEA', %s)",
-                   (uid, cat))
+                      VALUES (%s, %s, %s, %s, '2026-02-01', -9, 'USD', 'TEA', 'Tea', 'tea', 'Tea', 'fp2', 1, %s)""",
+                   (uid, pid, acct, st, cat))
+        db.execute("INSERT INTO rules (user_id, profile_id, name, match_type, pattern, category_id) VALUES (%s, %s, 'tea', 'contains', 'TEA', %s)",
+                   (uid, pid, cat))
         db.execute("INSERT INTO settings (key, value) VALUES (%s, 'sk-own')", (f"u{uid}:openrouter_api_key",))
         db.execute("INSERT INTO login_events (user_id, kind, ok) VALUES (%s, 'password', true)", (uid,))
         folder = os.path.join(config.STATEMENTS_DIR, str(uid))

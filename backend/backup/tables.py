@@ -74,7 +74,7 @@ PK = {
     "settings": "key",
     "subscriptions": "user_id",
     "stripe_events": "id",
-    "recurring_dismissals": "user_id, merchant_key",
+    "recurring_dismissals": "profile_id, merchant_key",
     "anomaly_dismissals": "user_id, transaction_id",
     "transaction_tags": "transaction_id, tag_id",
     "user_activity_days": "user_id, day",

@@ -16,6 +16,8 @@ from datetime import date
 from decimal import Decimal
 from urllib.parse import urlparse
 
+from scope import Scope
+
 DSN = os.environ.get("ISPEND_TEST_DSN")
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -67,10 +69,10 @@ class DatabaseIntegrationTest(unittest.TestCase):
         cls.uid = db.execute("INSERT INTO users (username, password_hash, role) VALUES ('it', 'x', 'user') RETURNING id",
                              returning=True)["id"]
         import profiles
-        profiles.create(db.get_db(), cls.uid)
+        cls.pid = profiles.create(db.get_db(), cls.uid)
         db.get_db().commit()
-        cls.card = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Card', 'credit_card', 'USD') RETURNING id",
-                              (cls.uid,), returning=True)["id"]
+        cls.card = db.execute("INSERT INTO accounts (user_id, profile_id, name, account_type, currency) VALUES (%s, %s, 'Card', 'credit_card', 'USD') RETURNING id",
+                              (cls.uid, cls.pid,), returning=True)["id"]
 
     @classmethod
     def tearDownClass(cls):
@@ -85,15 +87,15 @@ class DatabaseIntegrationTest(unittest.TestCase):
         admin.close()
 
     def _cat(self, slug):
-        return self.db.query("SELECT id, kind FROM categories WHERE user_id = %s AND slug = %s", (self.uid, slug), one=True)["id"]
+        return self.db.query("SELECT id, kind FROM categories WHERE profile_id = %s AND slug = %s", (self.pid, slug), one=True)["id"]
 
     def _insert_txn(self, amount, category_id=None, status="none", fp="fp"):
         return self.db.execute(
-            """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw, description_clean,
+            """INSERT INTO transactions (user_id, profile_id, account_id, txn_date, amount, currency, description_raw, description_clean,
                    merchant_key, merchant_name, category_id, category_status, fingerprint, occurrence)
-               VALUES (%s, %s, %s, %s, 'USD', 'd', 'd', 'k', 'K', %s, %s, %s, 1)
+               VALUES (%s, %s, %s, %s, %s, 'USD', 'd', 'd', 'k', 'K', %s, %s, %s, 1)
                RETURNING id, is_transfer, is_excluded""",
-            (self.uid, self.card, date(2026, 1, 5), Decimal(amount), category_id, status, fp), returning=True)
+            (self.uid, self.pid, self.card, date(2026, 1, 5), Decimal(amount), category_id, status, fp), returning=True)
 
     def test_revenue_ledger_round_trip(self):
         """The subscription UPDATE ... FROM old statement, the event classification it feeds and the
@@ -234,7 +236,7 @@ class DatabaseIntegrationTest(unittest.TestCase):
         self.assertEqual(count(), 2)
         import signs
 
-        self.assertEqual(signs.flip_signs(self.uid, [txn]), 1)
+        self.assertEqual(signs.flip_signs(Scope(self.uid, self.pid), [txn]), 1)
         amounts = [r["amount"] for r in self.db.query("SELECT amount FROM transaction_splits WHERE transaction_id = %s ORDER BY sort_order", (txn,))]
         self.assertEqual(amounts, [Decimal("30.00"), Decimal("20.00")])
         self.db.execute("DELETE FROM transaction_splits WHERE transaction_id = %s", (txn,))
@@ -248,16 +250,16 @@ class DatabaseIntegrationTest(unittest.TestCase):
         self.db.execute_values("INSERT INTO transaction_splits (transaction_id, category_id, amount, sort_order) VALUES %s",
                                [(txn, groceries, Decimal("-50.00"), 0), (txn, shopping, Decimal("-30.00"), 1)])
         day = date(2026, 1, 5)
-        by_cat = {c["id"]: (c["total"], c["count"]) for c in reports.by_category(self.uid, day, day, level="sub")}
+        by_cat = {c["id"]: (c["total"], c["count"]) for c in reports.by_category(self.pid, day, day, level="sub")}
         self.assertEqual((by_cat[groceries], by_cat[shopping]), ((50.0, 1), (30.0, 1)))
-        self.assertEqual(reports.summary(self.uid, day, day)["expenses"], 80.0)
+        self.assertEqual(reports.summary(self.pid, day, day)["expenses"], 80.0)
         self.db.execute("DELETE FROM transactions WHERE id = %s", (txn,))
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM transaction_splits WHERE transaction_id = %s", (txn,), one=True)["n"], 0)
 
     def test_reimport_skips_every_row_and_discard_rolls_back(self):
         import importer
 
-        st = importer.store_upload(self.uid, _Upload(os.path.join(FIXTURES, "chase_card.csv")), account_id=self.card)
+        st = importer.store_upload(Scope(self.uid, self.pid), _Upload(os.path.join(FIXTURES, "chase_card.csv")), account_id=self.card)
         importer.parse_statement(st["id"])
         first = importer.commit_statement(st["id"], self.card)
         self.assertGreater(first["imported"], 0)
@@ -265,7 +267,7 @@ class DatabaseIntegrationTest(unittest.TestCase):
         n_rows = self.db.query("SELECT COUNT(*) AS n FROM transactions WHERE statement_id = %s", (st["id"],), one=True)["n"]
         self.assertEqual(n_rows, first["imported"])
 
-        again = importer.store_upload(self.uid, _Upload(os.path.join(FIXTURES, "chase_card.csv")), account_id=self.card)
+        again = importer.store_upload(Scope(self.uid, self.pid), _Upload(os.path.join(FIXTURES, "chase_card.csv")), account_id=self.card)
         self.assertEqual(again["duplicate_of"], st["id"])
         importer.parse_statement(again["id"])
         second = importer.commit_statement(again["id"], self.card)

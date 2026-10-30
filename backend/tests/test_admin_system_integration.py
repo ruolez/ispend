@@ -18,18 +18,19 @@ class SystemSqlTest(_pg.PgTestCase):
         db = cls.db
         uid = db.execute("INSERT INTO users (username, password_hash) VALUES ('sys', 'x') RETURNING id", returning=True)["id"]
         cls.uid = uid
-        acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'A', 'checking', 'USD') RETURNING id",
-                          (uid,), returning=True)["id"]
+        pid = db.execute("INSERT INTO profiles (user_id, name) VALUES (%s, 'Personal') RETURNING id", (uid,), returning=True)["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name, account_type, currency) VALUES (%s, %s, 'A', 'checking', 'USD') RETURNING id",
+                          (uid, pid,), returning=True)["id"]
         rows = [("stuck", "parsing", "45 minutes", 900), ("fresh", "parsing", "2 minutes", None),
                 ("bad", "error", "1 hour", 120), ("ok", "committed", "2 hours", 300)]
         cls.ids = {}
         for name, status, age, ms in rows:
             cls.ids[name] = db.execute(
-                f"""INSERT INTO statements (user_id, account_id, original_filename, stored_path, file_sha256, file_size,
+                f"""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256, file_size,
                                             file_kind, status, bank_profile, parse_ms, error_message, created_at, updated_at)
-                    VALUES (%s, %s, %s, 'x', %s, 10, 'csv', %s, 'chase', %s, %s, now() - interval '{age}', now() - interval '{age}')
+                    VALUES (%s, %s, %s, %s, 'x', %s, 10, 'csv', %s, 'chase', %s, %s, now() - interval '{age}', now() - interval '{age}')
                     RETURNING id""",
-                (uid, acct, f"{name}.csv", name, status, ms, "Could not read" if status == "error" else None),
+                (uid, pid, acct, f"{name}.csv", name, status, ms, "Could not read" if status == "error" else None),
                 returning=True)["id"]
         db.execute("""INSERT INTO app_errors (source, fingerprint, error_type, message, location)
                       VALUES ('request', 'fp1', 'KeyError', 'x', 'GET /api/x'), ('request', 'fp1', 'KeyError', 'y', 'GET /api/x')""")

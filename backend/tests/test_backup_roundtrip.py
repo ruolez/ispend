@@ -122,7 +122,7 @@ class BackupRoundTripTest(unittest.TestCase):
                             "VALUES ('rt_locked', 'h', 'locked', now(), 'because') RETURNING id",
                             returning=True)["id"]
         cls.uid, cls.admin_id, cls.locked_id = uid, admin_id, locked
-        profiles.create(db.get_db(), uid)
+        pid = profiles.create(db.get_db(), uid)
         db.get_db().commit()
 
         # settings: NULL must stay distinct from '', and control characters must survive COPY
@@ -134,25 +134,25 @@ class BackupRoundTripTest(unittest.TestCase):
         db.execute("INSERT INTO settings (key, value) VALUES (%s, %s)",
                    ("rt_weird", "tab\there\nnewline\\backslash \\N literal \"quote\" ünïcode ☕"))
 
-        acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) "
-                          "VALUES (%s, 'Chequing', 'checking', 'CAD') RETURNING id", (uid,), returning=True)["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name, account_type, currency) "
+                          "VALUES (%s, %s, 'Chequing', 'checking', 'CAD') RETURNING id", (uid, pid,), returning=True)["id"]
         cls.acct = acct
         # 3-deep category chain exercises the self-FK two-pass
-        top = db.execute("INSERT INTO categories (user_id, name, slug, kind) "
-                         "VALUES (%s, 'RT Top', 'rt-top', 'expense') RETURNING id", (uid,), returning=True)["id"]
-        mid = db.execute("INSERT INTO categories (user_id, parent_id, name, slug, kind) "
-                         "VALUES (%s, %s, 'RT Mid', 'rt-mid', 'expense') RETURNING id",
-                         (uid, top), returning=True)["id"]
+        top = db.execute("INSERT INTO categories (user_id, profile_id, name, slug, kind) "
+                         "VALUES (%s, %s, 'RT Top', 'rt-top', 'expense') RETURNING id", (uid, pid,), returning=True)["id"]
+        mid = db.execute("INSERT INTO categories (user_id, profile_id, parent_id, name, slug, kind) "
+                         "VALUES (%s, %s, %s, 'RT Mid', 'rt-mid', 'expense') RETURNING id",
+                         (uid, pid, top), returning=True)["id"]
         cls.cat = mid
-        xfer = db.execute("INSERT INTO categories (user_id, name, slug, kind) "
-                          "VALUES (%s, 'RT Transfer', 'rt-transfer', 'transfer') RETURNING id",
-                          (uid,), returning=True)["id"]
-        tag = db.execute("INSERT INTO tags (user_id, name) VALUES (%s, 'rt-tag') RETURNING id",
-                         (uid,), returning=True)["id"]
+        xfer = db.execute("INSERT INTO categories (user_id, profile_id, name, slug, kind) "
+                          "VALUES (%s, %s, 'RT Transfer', 'rt-transfer', 'transfer') RETURNING id",
+                          (uid, pid,), returning=True)["id"]
+        tag = db.execute("INSERT INTO tags (user_id, profile_id, name) VALUES (%s, %s, 'rt-tag') RETURNING id",
+                         (uid, pid,), returning=True)["id"]
         rule = db.execute(
-            """INSERT INTO rules (user_id, name, match_type, match_field, pattern, category_id)
-               VALUES (%s, 'rt rule', 'regex', 'description_clean', %s, %s) RETURNING id""",
-            (uid, r"^ACME\s+\d+$", mid), returning=True)["id"]
+            """INSERT INTO rules (user_id, profile_id, name, match_type, match_field, pattern, category_id)
+               VALUES (%s, %s, 'rt rule', 'regex', 'description_clean', %s, %s) RETURNING id""",
+            (uid, pid, r"^ACME\s+\d+$", mid), returning=True)["id"]
 
         sha = "a" * 64
         os.makedirs(os.path.join(cls.tmp_src, str(uid)), exist_ok=True)
@@ -160,20 +160,20 @@ class BackupRoundTripTest(unittest.TestCase):
             with open(os.path.join(cls.tmp_src, str(uid), sha + suffix), "wb") as f:
                 f.write(body)
         st1 = db.execute(
-            """INSERT INTO statements (user_id, account_id, original_filename, stored_path, ocr_path,
+            """INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, ocr_path,
                                        file_sha256, file_size, file_kind, status, stats)
-               VALUES (%s, %s, 'rt.pdf', %s, %s, %s, 21, 'pdf', 'committed', '{}') RETURNING id""",
-            (uid, acct, f"{uid}/{sha}.pdf", f"{uid}/{sha}.ocr.pdf", sha), returning=True)["id"]
+               VALUES (%s, %s, %s, 'rt.pdf', %s, %s, %s, 21, 'pdf', 'committed', '{}') RETURNING id""",
+            (uid, pid, acct, f"{uid}/{sha}.pdf", f"{uid}/{sha}.ocr.pdf", sha), returning=True)["id"]
         # second row reusing the SAME blob: the archive must store it once
         st2 = db.execute(
-            """INSERT INTO statements (user_id, account_id, original_filename, stored_path,
+            """INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path,
                                        file_sha256, file_size, file_kind, status, stats)
-               VALUES (%s, %s, 'rt-again.pdf', %s, %s, 21, 'pdf', 'previewed', '{}') RETURNING id""",
-            (uid, acct, f"{uid}/{sha}.pdf", sha), returning=True)["id"]
+               VALUES (%s, %s, %s, 'rt-again.pdf', %s, %s, 21, 'pdf', 'previewed', '{}') RETURNING id""",
+            (uid, pid, acct, f"{uid}/{sha}.pdf", sha), returning=True)["id"]
         cls.st1, cls.st2 = st1, st2
 
         def txn(desc, amount, fingerprint, **kw):
-            cols = {"user_id": uid, "account_id": acct, "statement_id": st1, "txn_date": "2026-01-05",
+            cols = {"user_id": uid, "profile_id": pid, "account_id": acct, "statement_id": st1, "txn_date": "2026-01-05",
                     "amount": amount, "currency": "CAD", "description_raw": desc,
                     "description_clean": desc, "merchant_key": desc.lower(), "merchant_name": desc,
                     "fingerprint": fingerprint, **kw}
@@ -207,13 +207,13 @@ class BackupRoundTripTest(unittest.TestCase):
                    (st2, json.dumps({"c": ["x", None]}),
                     ['has "quote"', "has ,comma", "has \\backslash", "has {brace}", ""],
                     cls.t_small, rule))
-        db.execute("INSERT INTO budgets (user_id, category_id, month, amount) "
-                   "VALUES (%s, %s, '2026-01-01', 250.00)", (uid, mid))
-        db.execute("INSERT INTO merchant_memory (user_id, merchant_key, category_id) "
-                   "VALUES (%s, 'penny', %s)", (uid, mid))
-        db.execute("INSERT INTO insights (user_id, period_start, period_end, model, content) "
-                   "VALUES (%s, '2026-01-01', '2026-01-31', 'm', 'markdown ☕')", (uid,))
-        db.execute("INSERT INTO recurring_dismissals (user_id, merchant_key) VALUES (%s, 'penny')", (uid,))
+        db.execute("INSERT INTO budgets (user_id, profile_id, category_id, month, amount) "
+                   "VALUES (%s, %s, %s, '2026-01-01', 250.00)", (uid, pid, mid))
+        db.execute("INSERT INTO merchant_memory (user_id, profile_id, merchant_key, category_id) "
+                   "VALUES (%s, %s, 'penny', %s)", (uid, pid, mid))
+        db.execute("INSERT INTO insights (user_id, profile_id, period_start, period_end, model, content) "
+                   "VALUES (%s, %s, '2026-01-01', '2026-01-31', 'm', 'markdown ☕')", (uid, pid,))
+        db.execute("INSERT INTO recurring_dismissals (user_id, profile_id, merchant_key) VALUES (%s, %s, 'penny')", (uid, pid,))
         db.execute("INSERT INTO anomaly_dismissals (user_id, transaction_id) VALUES (%s, %s)", (uid, cls.t_big))
         db.execute("INSERT INTO ai_calls (user_id, purpose, model, status) VALUES (NULL, 'test', 'm', 'ok')")
         db.execute("INSERT INTO audit_log (user_id, action, detail) VALUES (NULL, 'user.purge', %s)",
@@ -273,8 +273,8 @@ class BackupRoundTripTest(unittest.TestCase):
                       VALUES (%s, 'rt@example.com', 'campaign', 'campaign', 'sent', %s)""", (uid, campaign))
         db.execute("INSERT INTO signup_attribution (user_id, channel, utm_source) VALUES (%s, 'search', 'google')", (uid,))
         db.execute("INSERT INTO data_exports (user_id, token, status) VALUES (%s, 'rt-token', 'expired')", (uid,))
-        db.execute("""INSERT INTO import_layouts (user_id, layout_key, mapping, account_id)
-                      VALUES (%s, 'rt-layout', '{"date": 0}', %s)""", (uid, acct))
+        db.execute("""INSERT INTO import_layouts (user_id, profile_id, layout_key, mapping, account_id)
+                      VALUES (%s, %s, 'rt-layout', '{"date": 0}', %s)""", (uid, pid, acct))
 
     # ---------- the round trip ----------
 
@@ -351,6 +351,8 @@ class BackupRoundTripTest(unittest.TestCase):
         mine = owners[self.uid]
         self.assertEqual((mine["name"], mine["kind"], mine["preferences"]["saved_views"]),
                          ("Personal", "personal", [{"id": "v1", "name": "Café ☕"}]))
+        user = next(u for u in after["users"] if u["id"] == self.uid)
+        self.assertEqual(user["preferences"], {"theme": "dark"}, "per-book preferences moved to the profile")
         for table in self.tables.TABLE_ORDER:
             if not after[table] or "profile_id" not in after[table][0]:
                 continue
@@ -415,7 +417,7 @@ def _without(row, column):
 
 def _strip_profiles(src, dst):
     """Rewrite an archive as one made before migration 030: no profiles table, no profile_id or
-    users.last_profile_id columns, and 030 missing from its migrations."""
+    users.last_profile_id columns, and no migration from 030 on."""
     import hashlib
     import zipfile
 
@@ -433,7 +435,7 @@ def _strip_profiles(src, dst):
             zout.writestr(member, data)
             tables.append({**entry, "columns": [entry["columns"][i] for i in keep], "bytes": len(data),
                            "sha256": hashlib.sha256(data).hexdigest()})
-        migrations = [m for m in manifest["app"]["migrations"] if m != "030_profiles.sql"]
+        migrations = [m for m in manifest["app"]["migrations"] if m < "030"]
         manifest = {**manifest, "tables": tables,
                     "app": {**manifest["app"], "migrations": migrations, "migration_head": migrations[-1]}}
         for name in zin.namelist():
