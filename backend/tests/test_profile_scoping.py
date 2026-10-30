@@ -32,6 +32,7 @@ PREDICATE = re.compile(
 ALLOWED = {
     "auth.py": 3,                 # the session hook's join of the person, subscription and profiles
     "db.py": 3,                   # startup seeding by owner; promote_admin checks the person's data
+    "profile_move.py": 2,         # repairs links that a move split across the person's profiles
     "profiles.py": 1,             # the person's profiles, with counts per profile
     "statements_api.py": 2,       # the uploader's name (users join)
     "transactions_api.py": 1,     # who acted on an event (users join)

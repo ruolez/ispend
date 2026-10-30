@@ -129,6 +129,71 @@ function openProfileModal(p) {
   m.el.querySelector('#profile-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
 }
 
+const andList = (parts) => { const xs = parts.filter(Boolean); return xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : (xs[0] || ''); };
+
+/* Move accounts of the profile in use into another one, after a preview of what goes with them. */
+async function openMoveModal({ accountIds = [], targetId = null } = {}) {
+  const me = state.me;
+  const targets = (me.profiles || []).filter((p) => p.id !== (me.profile || {}).id);
+  if (!targets.length) {
+    toast('Create another profile first, then move accounts into it.', { action: { label: 'New profile', fn: () => { location.hash = '#profiles-new'; } } });
+    return;
+  }
+  if (!state.accounts.length) state.accounts = await api('/api/accounts?all=1');
+  const picked = new Set(accountIds);
+  let plan = null, seq = 0;
+  const m = ui.modal({
+    title: 'Move to another profile', width: 560,
+    html: `<div class="field"><label for="mv-target">Move to</label><select id="mv-target" class="select">${targets.map((p) => `<option value="${p.id}" ${p.id === targetId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <fieldset class="field"><legend>Accounts in ${esc(me.profile.name)}</legend>
+        <div class="radio-list" id="mv-accounts">${state.accounts.map((a) => `<label class="radio-item"><input type="checkbox" value="${a.id}" ${picked.has(a.id) ? 'checked' : ''}><span class="grow">${esc(a.name)}</span><span class="text-3 fs-sm">${plural(a.txn_count || 0, 'transaction')}</span></label>`).join('')}</div>
+      </fieldset>
+      <div id="mv-preview" aria-live="polite"></div>`,
+    actions: [{ label: 'Cancel' }, { label: 'Move', primary: true, onClick: async () => {
+      if (!plan || !picked.size) { toast('Choose the accounts to move', { type: 'error' }); return false; }
+      const rename = {};
+      $$('[data-rename]', m.el).forEach((i) => { if (i.value.trim()) rename[i.dataset.rename] = i.value.trim(); });
+      const target = targets.find((p) => p.id === Number(m.el.querySelector('#mv-target').value));
+      const r = await api(`/api/profiles/${target.id}/move`, { method: 'POST', body: { account_ids: [...picked], rename } });
+      store.invalidate('accounts'); store.invalidate('categories'); store.invalidate('tags');
+      toast(`${plural(r.accounts, 'account')} and ${plural(r.transactions, 'transaction')} moved to ${target.name}`,
+        { type: 'success', duration: 9000, action: { label: `Open ${target.name}`, fn: () => switchProfile(target.id) } });
+      loadAccounts();
+      if (state.profiles.length) loadProfiles();
+    } }],
+  });
+  const host = m.el.querySelector('#mv-preview');
+  const refresh = debounce(async () => {
+    const mine = ++seq;
+    plan = null;
+    if (!picked.size) { host.innerHTML = '<p class="text-3 fs-sm">Choose the accounts to move.</p>'; return; }
+    host.innerHTML = ui.skeleton('80%', 14);
+    const target = Number(m.el.querySelector('#mv-target').value);
+    let p;
+    try { p = await api(`/api/profiles/${target}/move-preview`, { method: 'POST', body: { account_ids: [...picked] } }); } catch (err) { if (mine === seq) host.innerHTML = ui.errorBox(err.message); return; }
+    if (mine !== seq) return;
+    plan = p;
+    const name = esc(targets.find((t) => t.id === target).name);
+    const lines = [
+      `${andList([plural(p.counts.transactions, 'transaction'), p.counts.statements && plural(p.counts.statements, 'statement'),
+        p.counts.rules && plural(p.counts.rules, 'account rule'), p.counts.layouts && plural(p.counts.layouts, 'saved file layout')])} move to ${name}.`,
+      p.categories_created.length ? `${name} gets ${plural(p.categories_created.length, 'new category', 'new categories')}: ${esc(p.categories_created.join(', '))}. The rest use ${name}’s own categories.` : `Everything is filed under ${name}’s own categories.`,
+      p.tags_created.length ? `New labels in ${name}: ${esc(p.tags_created.join(', '))}.` : '',
+      p.counts.transfers_unlinked ? `${plural(p.counts.transfers_unlinked, 'transfer')} between a moved account and one that stays will be unlinked: each side stays in its own profile.` : '',
+      p.busy.length ? '<span class="text-danger">An import into one of these accounts is still running. Wait for it to finish.</span>' : '',
+    ].filter(Boolean);
+    host.innerHTML = `<div class="notice notice-info"><ul class="m-0">${lines.map((l) => `<li>${l}</li>`).join('')}</ul></div>
+      ${p.collisions.length ? `<p class="mt-3 mb-2">${name} already has an account with this name. Choose a new one:</p>${p.collisions.map((c) => `<div class="field"><label for="mv-rename-${c.id}">${esc(c.name)}</label><input id="mv-rename-${c.id}" class="input" data-rename="${c.id}" value="${esc(c.name)} (moved)"></div>`).join('')}` : ''}`;
+  }, 150);
+  m.el.querySelector('#mv-accounts').addEventListener('change', (e) => {
+    const id = Number(e.target.value);
+    if (e.target.checked) picked.add(id); else picked.delete(id);
+    refresh();
+  });
+  m.el.querySelector('#mv-target').addEventListener('change', refresh);
+  refresh();
+}
+
 async function deleteProfile(p) {
   if (state.profiles.length < 2) {
     toast('This is your only profile. Create another one before deleting it.', { type: 'error' });
@@ -470,7 +535,10 @@ async function onAction(e) {
       const p = state.profiles.find((x) => x.id === id);
       return ui.menu(el, [
         { label: 'Edit', icon: 'pencil', onClick: () => openProfileModal(p) },
-        ...((state.me.profile || {}).id === p.id ? [] : [{ label: 'Switch to', icon: 'arrow-right', onClick: () => switchProfile(p.id) }]),
+        ...((state.me.profile || {}).id === p.id ? [] : [
+          { label: 'Switch to', icon: 'arrow-right', onClick: () => switchProfile(p.id) },
+          { label: `Move accounts here from ${state.me.profile.name}…`, icon: 'arrow-left-right', onClick: () => openMoveModal({ targetId: p.id }) },
+        ]),
         { divider: true },
         { label: 'Delete…', icon: 'trash', danger: true, onClick: () => deleteProfile(p) },
       ]);
@@ -480,6 +548,7 @@ async function onAction(e) {
     case 'account-menu': return ui.menu(el, [
       { label: 'Edit', icon: 'pencil', onClick: () => openAccountModal(acct) },
       { label: 'View transactions', icon: 'list', href: `/transactions.html?acct=${acct.id}` },
+      { label: 'Move to profile…', icon: 'arrow-left-right', onClick: () => openMoveModal({ accountIds: [acct.id] }) },
       { divider: true },
       { label: acct.is_active ? 'Archive' : 'Restore', icon: acct.is_active ? 'inbox' : 'rotate-ccw', onClick: async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: !acct.is_active } }); store.invalidate('accounts'); ui.undoable(acct.is_active ? 'Account archived' : 'Account restored', async () => { await api(`/api/accounts/${acct.id}`, { method: 'PUT', body: { is_active: acct.is_active } }); store.invalidate('accounts'); loadAccounts(); }); loadAccounts(); } },
       { label: 'Delete', icon: 'trash', danger: true, onClick: async () => {

@@ -8,6 +8,7 @@ holds a reference from one profile into another.
 
     ISPEND_TEST_DSN=postgresql://... python -m unittest tests.test_profiles_integration
 """
+import json
 import os
 import re
 import sys
@@ -339,6 +340,205 @@ class ProfileManagementTest(_pg.PgTestCase):
         self.assertEqual(c.put(f"/api/profiles/{self.home}", json={"name": "mine"}).status_code, 404)
         self.assertEqual(c.post("/api/auth/me/profile", json={"id": self.home}).status_code, 404)
         self.assertEqual(c.post("/api/profiles", json={"name": "x", "start": "copy", "copy_from": self.home}).status_code, 404)
+
+
+@unittest.skipUnless(_pg.available(), "set ISPEND_TEST_DSN and run this file on its own")
+class MoveAccountsTest(_pg.PgTestCase):
+    """Moving accounts from Personal into a Business profile. Each test builds its own person."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import app as app_module
+        cls._billing_patch = mock.patch("billing_tick.start")
+        cls._billing_patch.start()
+        cls.flask_app = app_module.create_app()
+        cls.n = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._billing_patch.stop()
+        super().tearDownClass()
+
+    def setUp(self):
+        import profiles
+        db = self.db
+        type(self).n += 1
+        self.uid = uid = db.execute("INSERT INTO users (username, password_hash) VALUES (%s, 'x') RETURNING id",
+                                    (f"mover{self.n}",), returning=True)["id"]
+        conn = db.get_db()
+        self.a = a = profiles.create(conn, uid, "Personal")
+        self.b = profiles.create(conn, uid, "Studio", kind="business")
+        conn.commit()
+
+        def ins(sql, params):
+            return db.execute(sql, params, returning=True)["id"]
+
+        def cat(slug, pid=a):
+            return db.query("SELECT id FROM categories WHERE profile_id = %s AND slug = %s", (pid, slug), one=True)["id"]
+
+        self.cat = cat
+        acct = lambda name, kind="checking": ins(  # noqa: E731
+            "INSERT INTO accounts (user_id, profile_id, name, account_type) VALUES (%s, %s, %s, %s) RETURNING id",
+            (uid, a, name, kind))
+        self.x, self.y, self.z = acct("Everyday"), acct("Visa", "credit_card"), acct("Savings", "savings")
+        self.side = ins("""INSERT INTO categories (user_id, profile_id, name, slug, kind) VALUES (%s, %s, 'Side gigs', 'side_gigs', 'expense')
+                           RETURNING id""", (uid, a))
+        self.office_income = ins("""INSERT INTO categories (user_id, profile_id, name, slug, kind)
+                                    VALUES (%s, %s, 'Office', 'office', 'income') RETURNING id""", (uid, a))
+        self.s1 = ins("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256,
+                                                file_size, file_kind, status) VALUES (%s, %s, %s, 'oct.csv', 'x/oct.csv', 'sha1', 1, 'csv', 'committed')
+                         RETURNING id""", (uid, a, self.x))
+        self.s_visa = ins("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256,
+                                                    file_size, file_kind, status) VALUES (%s, %s, %s, 'visa.csv', 'x/visa.csv', 'sha2', 1, 'csv', 'committed')
+                             RETURNING id""", (uid, a, self.y))
+        self.k = 0
+
+        def txn(account, amount, key, category=None, statement=None):
+            self.k += 1
+            return ins("""INSERT INTO transactions (user_id, profile_id, account_id, statement_id, txn_date, amount, currency,
+                                                    description_raw, description_clean, merchant_key, merchant_name, category_id,
+                                                    category_status, fingerprint)
+                          VALUES (%s, %s, %s, %s, '2026-10-01', %s, 'USD', %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                       (uid, a, account, statement, amount, key, key, key, key, category,
+                        "confirmed" if category else "none", f"fp{self.k}"))
+
+        self.coffee = txn(self.x, "-4.50", "BLUE BOTTLE", cat("dining.coffee"), self.s1)
+        self.gig = txn(self.x, "-40.00", "UPWORK FEE", self.side, self.s1)
+        self.split = txn(self.x, "-100.00", "COSTCO", cat("groceries"), self.s1)
+        self.odd = txn(self.x, "75.00", "REIMBURSED", self.office_income)
+        self.stray = txn(self.x, "-9.00", "LATE FEE", cat("fees.bank"), self.s_visa)   # statement of an account that stays
+        self.pay_out = txn(self.x, "-200.00", "PAYMENT TO VISA", cat("transfers.card_payment"))
+        self.pay_in = txn(self.y, "200.00", "PAYMENT THANK YOU", cat("transfers.card_payment"), self.s_visa)
+        self.save_out = txn(self.x, "-50.00", "TRANSFER TO SAVINGS", cat("transfers.internal"))
+        self.save_in = txn(self.z, "50.00", "TRANSFER FROM CHECKING", cat("transfers.internal"))
+        for one, two in ((self.pay_out, self.pay_in), (self.save_out, self.save_in)):
+            db.execute("UPDATE transactions SET transfer_pair_id = %s WHERE id = %s", (two, one))
+            db.execute("UPDATE transactions SET transfer_pair_id = %s WHERE id = %s", (one, two))
+        with db.transaction():
+            db.execute("""INSERT INTO transaction_splits (transaction_id, category_id, amount) VALUES (%s, %s, -60), (%s, %s, -40)""",
+                       (self.split, cat("groceries"), self.split, self.side), commit=False)
+        self.trip = ins("INSERT INTO tags (user_id, profile_id, name) VALUES (%s, %s, 'Trip') RETURNING id", (uid, a))
+        db.execute("INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (%s, %s)", (self.coffee, self.trip))
+        self.rule = ins("""INSERT INTO rules (user_id, profile_id, name, match_type, pattern, category_id, account_id)
+                           VALUES (%s, %s, 'gigs', 'contains', 'UPWORK', %s, %s) RETURNING id""", (uid, a, self.side, self.x))
+        db.execute("UPDATE transactions SET category_rule_id = %s WHERE id = %s", (self.rule, self.gig))
+        db.execute("""INSERT INTO merchant_memory (user_id, profile_id, merchant_key, direction, category_id)
+                      VALUES (%s, %s, 'BLUE BOTTLE', 'out', %s)""", (uid, a, cat("dining.coffee")))
+        db.execute("""INSERT INTO import_layouts (user_id, profile_id, layout_key, mapping, account_id)
+                      VALUES (%s, %s, 'k', '{"date": 0}', %s)""", (uid, a, self.x))
+        self.preview_st = ins("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256,
+                                                         file_size, file_kind, status)
+                                 VALUES (%s, %s, %s, 'nov.csv', 'x/nov.csv', 'sha3', 1, 'csv', 'previewed') RETURNING id""",
+                              (uid, a, self.x))
+        db.execute("""INSERT INTO import_rows (statement_id, row_index, raw, category_id, duplicate_of)
+                      VALUES (%s, 0, '{}', %s, %s)""", (self.preview_st, self.side, self.coffee))
+        db.execute("""UPDATE profiles SET preferences = %s WHERE id = %s""",
+                   (json.dumps({"default_account_id": self.x,
+                                "saved_views": [{"id": "v1", "name": "Both", "query": f"?acct={self.x},{self.y}&range=all",
+                                                 "pinned": True, "page": "transactions"}]}), a))
+
+    def _client(self):
+        c = self.flask_app.test_client()
+        with c.session_transaction() as s:
+            s.update({"user_id": self.uid, "role": "user", "uepoch": 0, "profile_id": self.a})
+        return c
+
+    def _row(self, sql, *params):
+        return self.db.query(sql, params, one=True)
+
+    def test_the_preview_says_what_will_happen_and_writes_nothing(self):
+        res = self._client().post(f"/api/profiles/{self.b}/move-preview", json={"account_ids": [self.x]})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        p = res.get_json()
+        self.assertEqual((p["counts"]["transactions"], p["counts"]["statements"], p["counts"]["rules"],
+                          p["counts"]["transfers_unlinked"], p["collisions"], p["busy"]),
+                         (7, 2, 1, 2, [], []))
+        self.assertEqual(sorted(p["categories_created"]), ["Groceries", "Office", "Side gigs"])
+        self.assertIn("Coffee", p["categories_matched"])
+        self.assertEqual(p["tags_created"], ["Trip"])
+        self.assertEqual(self._row("SELECT profile_id FROM accounts WHERE id = %s", self.x)["profile_id"], self.a)
+
+    def test_moving_one_account_brings_its_rows_and_unlinks_transfers_that_stay_behind(self):
+        res = self._client().post(f"/api/profiles/{self.b}/move", json={"account_ids": [self.x]})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        db, b = self.db, self.b
+        self.assertEqual(db.query("SELECT DISTINCT profile_id FROM transactions WHERE account_id = %s", (self.x,)), [{"profile_id": b}])
+        self.assertEqual([r["profile_id"] for r in db.query("SELECT profile_id FROM statements WHERE account_id = %s", (self.x,))], [b, b])
+        moved = {r["id"]: r for r in db.query(
+            """SELECT t.id, t.statement_id, t.transfer_pair_id, t.is_transfer, t.category_rule_id, c.slug, c.kind, c.profile_id AS cat_profile
+                 FROM transactions t LEFT JOIN categories c ON c.id = t.category_id WHERE t.account_id = %s""", (self.x,))}
+        self.assertEqual({k: moved[k]["slug"] for k in (self.coffee, self.gig, self.split, self.odd)},
+                         {self.coffee: "dining.coffee", self.gig: "side_gigs", self.split: "groceries", self.odd: "office_2"})
+        self.assertEqual(moved[self.odd]["kind"], "income", "an income category never becomes the business's expense one")
+        self.assertEqual({r["cat_profile"] for r in moved.values()}, {b})
+        self.assertEqual(moved[self.gig]["category_rule_id"], self.rule, "the account's own rule came along")
+        self.assertIsNone(moved[self.stray]["statement_id"], "its statement belongs to an account that stayed")
+        for out, other in ((self.pay_out, self.pay_in), (self.save_out, self.save_in)):
+            self.assertEqual((moved[out]["transfer_pair_id"], moved[out]["is_transfer"]), (None, True))
+            self.assertEqual(self._row("SELECT transfer_pair_id FROM transactions WHERE id = %s", other)["transfer_pair_id"], None)
+        self.assertEqual(self._row("SELECT profile_id FROM rules WHERE id = %s", self.rule)["profile_id"], b)
+        self.assertEqual(self._row("SELECT profile_id FROM import_layouts WHERE account_id = %s", self.x)["profile_id"], b)
+        self.assertEqual(self._row("""SELECT c.slug FROM merchant_memory m JOIN categories c ON c.id = m.category_id
+                                       WHERE m.profile_id = %s AND m.merchant_key = 'BLUE BOTTLE'""", b)["slug"], "dining.coffee")
+        self.assertEqual(self._row("""SELECT g.name, g.profile_id FROM transaction_tags tt JOIN tags g ON g.id = tt.tag_id
+                                       WHERE tt.transaction_id = %s""", self.coffee), {"name": "Trip", "profile_id": b})
+        self.assertEqual(self._row("SELECT duplicate_of FROM import_rows WHERE statement_id = %s", self.preview_st)["duplicate_of"],
+                         self.coffee, "the preview's duplicate moved with it")
+        prefs = self._row("SELECT preferences FROM profiles WHERE id = %s", self.a)["preferences"]
+        self.assertEqual((prefs.get("default_account_id"), prefs["saved_views"][0]["query"]),
+                         (None, f"?acct={self.y}&range=all"))
+        self.assertEqual(integrity_problems(db), [])
+
+    def test_moving_both_ends_of_a_transfer_keeps_the_pair(self):
+        res = self._client().post(f"/api/profiles/{self.b}/move", json={"account_ids": [self.x, self.z]})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        self.assertEqual(res.get_json()["transfers_unlinked"], 1, "only the card payment's other leg stayed behind")
+        self.assertEqual(self._row("SELECT transfer_pair_id FROM transactions WHERE id = %s", self.save_out)["transfer_pair_id"],
+                         self.save_in)
+        self.assertEqual(integrity_problems(self.db), [])
+
+    def test_a_name_the_target_already_uses_needs_a_new_one(self):
+        self.db.execute("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, 'Everyday')", (self.uid, self.b))
+        c = self._client()
+        res = c.post(f"/api/profiles/{self.b}/move", json={"account_ids": [self.x]})
+        self.assertEqual(res.status_code, 409)
+        res = c.post(f"/api/profiles/{self.b}/move", json={"account_ids": [self.x], "rename": {str(self.x): "Everyday (personal)"}})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        self.assertEqual(self._row("SELECT name FROM accounts WHERE id = %s", self.x)["name"], "Everyday (personal)")
+
+    def test_an_import_still_running_blocks_the_move(self):
+        self.db.execute("UPDATE statements SET status = 'parsing' WHERE id = %s", (self.preview_st,))
+        res = self._client().post(f"/api/profiles/{self.b}/move", json={"account_ids": [self.x]})
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(self._row("SELECT profile_id FROM accounts WHERE id = %s", self.x)["profile_id"], self.a)
+
+    def test_a_failure_halfway_leaves_everything_where_it_was(self):
+        import profile_move
+        before = self.db.query("SELECT COUNT(*) AS n FROM categories WHERE profile_id = %s", (self.b,), one=True)
+        with mock.patch.object(profile_move, "_forget_accounts", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                with self.flask_app.test_request_context():
+                    profile_move.move(self.uid, self.a, self.b, [self.x])
+        self.db.get_db().rollback()
+        self.assertEqual(self._row("SELECT profile_id FROM accounts WHERE id = %s", self.x)["profile_id"], self.a)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM categories WHERE profile_id = %s", (self.b,), one=True), before)
+        self.assertEqual(self._row("SELECT transfer_pair_id FROM transactions WHERE id = %s", self.pay_out)["transfer_pair_id"],
+                         self.pay_in)
+
+    def test_only_accounts_of_the_active_profile_into_another_of_ones_own(self):
+        c = self._client()
+        self.assertEqual(c.post(f"/api/profiles/{self.a}/move", json={"account_ids": [self.x]}).status_code, 400)
+        other = self.db.execute("INSERT INTO users (username, password_hash) VALUES (%s, 'x') RETURNING id",
+                                (f"other{self.n}",), returning=True)["id"]
+        import profiles
+        conn = self.db.get_db()
+        theirs = profiles.create(conn, other)
+        conn.commit()
+        self.assertEqual(c.post(f"/api/profiles/{theirs}/move", json={"account_ids": [self.x]}).status_code, 404)
+        b_acct = self.db.execute("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, 'Biz') RETURNING id",
+                                 (self.uid, self.b), returning=True)["id"]
+        self.assertEqual(c.post(f"/api/profiles/{self.b}/move", json={"account_ids": [b_acct]}).status_code, 404)
 
 if __name__ == "__main__":
     unittest.main()

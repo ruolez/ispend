@@ -2,8 +2,10 @@
 from flask import Blueprint, g, jsonify, session
 
 import db
+import profile_move
 import profiles
 from auth import login_required
+from scope import current_profile_id
 from util import api_error, audit, json_body, parse_int_list, rows_json, to_int
 
 bp = Blueprint("profiles", __name__, url_prefix="/api/profiles")
@@ -92,3 +94,41 @@ def delete_profile(profile_id):
         session["profile_id"] = g.profile_id = result["next_profile_id"]
     audit("profile.delete", {"id": profile_id, **{k: v for k, v in result.items() if k != "next_profile_id"}})
     return jsonify({"ok": True, **result, "active_profile_id": session.get("profile_id")})
+
+
+def _move_args(profile_id):
+    uid = session["user_id"]
+    src = current_profile_id()
+    if profile_id == src or not profiles.owned(uid, profile_id):
+        raise profiles.ProfileError("Choose another of your profiles to move to", 404 if profile_id != src else 400)
+    data = json_body()
+    account_ids = parse_int_list(data.get("account_ids"))
+    if not account_ids:
+        raise profiles.ProfileError("Choose the accounts to move")
+    renames = data.get("rename") if isinstance(data.get("rename"), dict) else {}
+    try:
+        renames = {int(k): v for k, v in renames.items()}
+    except (TypeError, ValueError):
+        raise profiles.ProfileError("rename maps account ids to new names") from None
+    return uid, src, account_ids, renames
+
+
+@bp.post("/<int:profile_id>/move-preview")
+@login_required
+def move_preview(profile_id):
+    """What moving these accounts of the active profile into profile_id would do."""
+    try:
+        uid, src, account_ids, renames = _move_args(profile_id)
+        return jsonify(profile_move.preview(uid, src, profile_id, account_ids, renames))
+    except profiles.ProfileError as e:
+        return api_error(str(e), e.status)
+
+
+@bp.post("/<int:profile_id>/move")
+@login_required
+def move_accounts(profile_id):
+    try:
+        uid, src, account_ids, renames = _move_args(profile_id)
+        return jsonify(profile_move.move(uid, src, profile_id, account_ids, renames))
+    except profiles.ProfileError as e:
+        return api_error(str(e), e.status)
