@@ -6,6 +6,7 @@ os.environ.setdefault("SECRET_KEY", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 
 import transfers  # noqa: E402
+from scope import Scope  # noqa: E402
 
 
 class ScoreTest(unittest.TestCase):
@@ -27,14 +28,14 @@ class AutoPairTest(unittest.TestCase):
         paired = []
         with mock.patch.object(transfers, "candidates", return_value=cands), \
              mock.patch.object(transfers, "pair", side_effect=lambda uid, a, b: paired.append((a, b))):
-            self.assertEqual(transfers.auto_pair(1), 2)
+            self.assertEqual(transfers.auto_pair(Scope(1, 1)), 2)
         self.assertEqual(paired, [(1, 10), (3, 13)])
 
     def test_pair_errors_are_skipped(self):
         cands = [{"a": {"id": 1, "txn_date": "d", "description": "TRANSFER"}, "b": {"id": 2, "description": ""}, "confidence": 0.9}]
         with mock.patch.object(transfers, "candidates", return_value=cands), \
              mock.patch.object(transfers, "pair", side_effect=ValueError("nope")):
-            self.assertEqual(transfers.auto_pair(1), 0)
+            self.assertEqual(transfers.auto_pair(Scope(1, 1)), 0)
 
 
 if __name__ == "__main__":
@@ -49,7 +50,7 @@ class PairGuardsTest(unittest.TestCase):
     def test_a_leg_paired_elsewhere_is_refused(self):
         with mock.patch.object(transfers.db, "query", return_value=self._rows(b_pair=99)):
             with self.assertRaises(transfers.AlreadyPaired):
-                transfers.pair(1, 1, 2)
+                transfers.pair(Scope(1, 1), 1, 2)
 
     def test_repairing_the_same_two_legs_is_allowed(self):
         calls = []
@@ -59,5 +60,5 @@ class PairGuardsTest(unittest.TestCase):
              mock.patch.object(transfers, "record_events"):
             tx.return_value.__enter__ = lambda *a: None
             tx.return_value.__exit__ = lambda *a: False
-            out = transfers.pair(1, 1, 2)
+            out = transfers.pair(Scope(1, 1), 1, 2)
         self.assertEqual((out["a_id"], out["b_id"], len(calls)), (1, 2, 2))

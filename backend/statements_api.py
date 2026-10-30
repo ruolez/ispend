@@ -7,6 +7,7 @@ import db
 import importer
 import jobs
 from auth import login_required
+from scope import current_scope
 from util import api_error, audit, json_body, parse_int_list, row_json, rows_json, to_int
 
 bp = Blueprint("statements", __name__, url_prefix="/api/statements")
@@ -359,7 +360,7 @@ def flip_signs(statement_id):
         return api_error("Only imported statements can be flipped", 409)
     ids = [r["id"] for r in db.query(
         "SELECT id FROM transactions WHERE statement_id = %s AND user_id = %s", (statement_id, session["user_id"])) or []]
-    n = signs.flip_signs(session["user_id"], ids, reason=f"statement {statement_id}")
+    n = signs.flip_signs(current_scope(), ids, reason=f"statement {statement_id}")
     mapping = dict(st.get("mapping") or {})
     mapping["flip_sign"] = not bool(mapping.get("flip_sign"))
     db.execute("UPDATE statements SET mapping = %s, updated_at = now() WHERE id = %s",

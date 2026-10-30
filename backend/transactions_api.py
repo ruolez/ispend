@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, Response, jsonify, request, session
+from flask import Blueprint, Response, jsonify, request
 
 import categorizer
 import dedupe
@@ -112,9 +112,9 @@ def _parse_decimal(value):
     return d
 
 
-def build_filters(args, user_id):
+def build_filters(args, scope):
     """Query-string filters -> (sql_fragment starting with ' AND ...', params)."""
-    sql, params = " t.user_id = %s", [user_id]
+    sql, params = " t.profile_id = %s", [scope.pid]
     account_ids = parse_int_list(args.get("account_id"))
     if account_ids:
         sql += " AND t.account_id = ANY(%s)"
@@ -137,7 +137,7 @@ def build_filters(args, user_id):
     rng = args.get("range")
     if rng and (rng in RANGES or rng.startswith("month:")) and not (d_from or d_to):
         if rng in ("this-week", "last-week"):
-            d_from, d_to = range_bounds(rng, week_start=user_week_start(user_id))
+            d_from, d_to = range_bounds(rng, week_start=user_week_start(scope.uid))
         else:
             d_from, d_to = range_bounds(rng)
     if d_from:
@@ -205,12 +205,12 @@ def build_filters(args, user_id):
     return sql, params
 
 
-def _own_tag_ids(uid, raw):
-    """Validated list of the user's tag ids from a body value; None when one is not theirs."""
+def _own_tag_ids(pid, raw):
+    """Validated list of the profile's tag ids from a body value; None when one is not theirs."""
     ids = sorted(set(parse_int_list(raw)))
     if not ids:
         return []
-    own = {r["id"] for r in (db.query("SELECT id FROM tags WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])}
+    own = {r["id"] for r in (db.query("SELECT id FROM tags WHERE profile_id = %s AND id = ANY(%s)", (pid, ids)) or [])}
     return ids if own == set(ids) else None
 
 
@@ -260,8 +260,8 @@ def cursor_clause(sort, cursor):
 @login_required
 def list_transactions():
     args = request.args
-    uid = session["user_id"]
-    where, params = build_filters(args, uid)
+    scope = current_scope()
+    where, params = build_filters(args, scope)
     sort = args.get("sort") if args.get("sort") in SORTS else "-date"
     try:
         limit = min(max(int(args.get("limit") or 100), 1), 500)
@@ -333,8 +333,8 @@ def list_transactions():
 @bp.get("/export")
 @login_required
 def export_csv():
-    uid = session["user_id"]
-    where, params = build_filters(request.args, uid)
+    scope = current_scope()
+    where, params = build_filters(request.args, scope)
     rows = db.query(
         f"""SELECT t.txn_date, a.name AS account, t.description_raw, t.merchant_name,
                    COALESCE(p.name || ' > ' || c.name, c.name) AS category, t.amount, t.currency, t.notes,
@@ -376,7 +376,7 @@ def transfer_candidates():
         days = min(max(int(request.args.get("days") or 4), 0), 365)
     except ValueError:
         days = 4
-    return jsonify(transfers.candidates(session["user_id"], days=days))
+    return jsonify(transfers.candidates(current_profile_id(), days=days))
 
 
 @bp.post("/pair")
@@ -387,7 +387,7 @@ def pair_transfer():
     b_id = to_int(data.get("b_id"), "b_id", required=True)
     before = snapshot(current_profile_id(), [a_id, b_id])
     try:
-        out = transfers.pair(session["user_id"], a_id, b_id)
+        out = transfers.pair(current_scope(), a_id, b_id)
     except transfers.AlreadyPaired as e:
         return api_error(str(e), 409)
     except ValueError as e:
@@ -406,10 +406,11 @@ def auto_pair():
         min_confidence = min(max(float(data.get("min_confidence") or 0.9), 0.0), 1.0)
     except (TypeError, ValueError):
         return api_error("min_confidence must be a number between 0 and 1")
-    uid = session["user_id"]
-    legs = [t["id"] for c in transfers.candidates(uid, limit=1000) if c["confidence"] >= min_confidence for t in (c["a"], c["b"])]
-    before = snapshot(current_profile_id(), sorted(set(legs)))
-    paired = transfers.auto_pair(uid, min_confidence=min_confidence)
+    scope = current_scope()
+    pid = scope.pid
+    legs = [t["id"] for c in transfers.candidates(pid, limit=1000) if c["confidence"] >= min_confidence for t in (c["a"], c["b"])]
+    before = snapshot(pid, sorted(set(legs)))
+    paired = transfers.auto_pair(scope, min_confidence=min_confidence)
     audit("transactions.auto_pair", {"paired": paired})
     return jsonify({"paired": paired, "before": before})
 
@@ -419,7 +420,8 @@ def auto_pair():
 def suggest():
     """Autocomplete for manual entry: merchants the user already has, with the category they
     usually land in (remembered merchant first, else the most recent categorized row)."""
-    uid = session["user_id"]
+    scope = current_scope()
+    pid = scope.pid
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return jsonify([])
@@ -435,14 +437,14 @@ def suggest():
                     (array_agg(t.category_id ORDER BY (t.category_id IS NULL), t.txn_date DESC, t.id DESC))[1] AS recent_category_id,
                     MAX(t.txn_date) AS last_date, COUNT(*) AS n
              FROM transactions t
-             WHERE t.user_id = %s AND (t.merchant_name ILIKE %s OR t.description_clean ILIKE %s OR t.description_raw ILIKE %s)
+             WHERE t.profile_id = %s AND (t.merchant_name ILIKE %s OR t.description_clean ILIKE %s OR t.description_raw ILIKE %s)
              GROUP BY t.merchant_key)
            SELECT h.*, COALESCE(m.category_id, h.recent_category_id) AS category_id, m.is_transfer
-           FROM hits h LEFT JOIN merchant_memory m ON m.user_id = %s AND m.merchant_key = h.merchant_key
+           FROM hits h LEFT JOIN merchant_memory m ON m.profile_id = %s AND m.merchant_key = h.merchant_key
                 AND m.direction = """ + categorizer.direction_sql("h.last_amount") + """
            ORDER BY (lower(h.merchant_name) LIKE lower(%s)) DESC, h.n DESC, h.last_date DESC
            LIMIT %s""",
-        (uid, like, like, like, uid, f"{q}%", limit),
+        (pid, like, like, like, pid, f"{q}%", limit),
     ) or []
     return jsonify(rows_json(rows))
 
@@ -455,14 +457,14 @@ def by_merchant(merchant_key):
     except ValueError:
         limit = 50
     rows = db.query(
-        f"SELECT {ITEM_FIELDS} FROM transactions t WHERE t.user_id = %s AND t.merchant_key = %s ORDER BY t.txn_date DESC, t.id DESC LIMIT %s",
-        (session["user_id"], merchant_key, limit),
+        f"SELECT {ITEM_FIELDS} FROM transactions t WHERE t.profile_id = %s AND t.merchant_key = %s ORDER BY t.txn_date DESC, t.id DESC LIMIT %s",
+        (current_profile_id(), merchant_key, limit),
     ) or []
     return jsonify(rows_json(rows))
 
 
-def _get_own(txn_id, uid):
-    return db.query(f"SELECT {ITEM_FIELDS} FROM transactions t WHERE t.id = %s AND t.user_id = %s", (txn_id, uid), one=True)
+def _get_own(txn_id, pid):
+    return db.query(f"SELECT {ITEM_FIELDS} FROM transactions t WHERE t.id = %s AND t.profile_id = %s", (txn_id, pid), one=True)
 
 
 def _events(txn_id):
@@ -478,15 +480,16 @@ def _events(txn_id):
 @bp.get("/<int:txn_id>")
 @login_required
 def get_transaction(txn_id):
-    uid = session["user_id"]
-    row = _get_own(txn_id, uid)
+    scope = current_scope()
+    pid = scope.pid
+    row = _get_own(txn_id, pid)
     if not row:
         return api_error("Transaction not found", 404)
     others = db.query(
         f"""SELECT {ITEM_FIELDS} FROM transactions t
-            WHERE t.user_id = %s AND t.merchant_key = %s AND t.id <> %s
+            WHERE t.profile_id = %s AND t.merchant_key = %s AND t.id <> %s
             ORDER BY t.txn_date DESC, t.id DESC LIMIT 10""",
-        (uid, row["merchant_key"], txn_id),
+        (pid, row["merchant_key"], txn_id),
     ) or []
     statement = None
     if row["statement_id"]:
@@ -512,8 +515,9 @@ def _splits(txn_id):
 def set_splits(txn_id):
     """Replace the split lines (>= 2, same sign, summing to the amount); the first line's category
     becomes the row's primary category. The deferred DB trigger backs up this validation."""
-    uid = session["user_id"]
-    row = _get_own(txn_id, uid)
+    scope = current_scope()
+    uid, pid = scope.uid, scope.pid
+    row = _get_own(txn_id, pid)
     if not row:
         return api_error("Transaction not found", 404)
     if row["is_transfer"]:
@@ -522,7 +526,7 @@ def set_splits(txn_id):
     if problem:
         return api_error(problem)
     cat_ids = sorted({ln["category_id"] for ln in lines})
-    own_cats = db.query("SELECT id, kind FROM categories WHERE user_id = %s AND id = ANY(%s)", (uid, cat_ids)) or []
+    own_cats = db.query("SELECT id, kind FROM categories WHERE profile_id = %s AND id = ANY(%s)", (pid, cat_ids)) or []
     if len(own_cats) != len(cat_ids):
         return api_error("Category not found", 404)
     if any(c["kind"] == "transfer" for c in own_cats):
@@ -540,24 +544,25 @@ def set_splits(txn_id):
         )
         record_event(txn_id, "split", {"lines": len(lines), "category_ids": [ln["category_id"] for ln in lines]}, uid, commit=False)
     audit("transaction.split", {"id": txn_id, "lines": len(lines)})
-    return jsonify({**row_json(_get_own(txn_id, uid)), "splits": _splits(txn_id)})
+    return jsonify({**row_json(_get_own(txn_id, pid)), "splits": _splits(txn_id)})
 
 
 @bp.delete("/<int:txn_id>/splits")
 @login_required
 def clear_splits(txn_id):
-    uid = session["user_id"]
-    if not _get_own(txn_id, uid):
+    scope = current_scope()
+    uid, pid = scope.uid, scope.pid
+    if not _get_own(txn_id, pid):
         return api_error("Transaction not found", 404)
     removed = drop_splits([txn_id], uid, "unsplit")
     audit("transaction.unsplit", {"id": txn_id})
-    return jsonify({**row_json(_get_own(txn_id, uid)), "splits": [], "removed": bool(removed)})
+    return jsonify({**row_json(_get_own(txn_id, pid)), "splits": [], "removed": bool(removed)})
 
 
 @bp.get("/<int:txn_id>/events")
 @login_required
 def get_events(txn_id):
-    if not _get_own(txn_id, session["user_id"]):
+    if not _get_own(txn_id, current_profile_id()):
         return api_error("Transaction not found", 404)
     return jsonify(_events(txn_id))
 
@@ -565,10 +570,11 @@ def get_events(txn_id):
 @bp.post("")
 @login_required
 def create_transaction():
-    uid = session["user_id"]
+    scope = current_scope()
+    uid, pid = scope.uid, scope.pid
     data = json_body()
     account_id = to_int(data.get("account_id"), "Account")
-    account = db.query("SELECT id, currency FROM accounts WHERE id = %s AND user_id = %s", (account_id, uid), one=True)
+    account = db.query("SELECT id, currency FROM accounts WHERE id = %s AND profile_id = %s", (account_id, pid), one=True)
     if not account:
         return api_error("Account not found", 404)
     txn_date = _parse_date(str(data.get("txn_date") or ""))
@@ -586,15 +592,15 @@ def create_transaction():
     ) or {}).get("n", 0)
     category_id = to_int(data.get("category_id"), "Category")
     if category_id is not None and not db.query(
-            "SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
+            "SELECT id FROM categories WHERE id = %s AND profile_id = %s", (category_id, pid), one=True):
         return api_error("Category not found", 404)
     with db.transaction():
         row = db.execute(
-            """INSERT INTO transactions (user_id, account_id, txn_date, amount, currency, description_raw, description_clean,
-                   merchant_key, merchant_name, category_id, category_status, category_source, category_confidence,
-                   fingerprint, occurrence, notes, raw)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (uid, account["id"], txn_date, amount, account["currency"], description, clean, key, name,
+            """INSERT INTO transactions (user_id, profile_id, account_id, txn_date, amount, currency, description_raw,
+                   description_clean, merchant_key, merchant_name, category_id, category_status, category_source,
+                   category_confidence, fingerprint, occurrence, notes, raw)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (uid, pid, account["id"], txn_date, amount, account["currency"], description, clean, key, name,
              category_id, "confirmed" if category_id else "none", "manual" if category_id else None,
              1.0 if category_id else None, fp, occurrence, str(data.get("notes") or "").strip() or None, '{"manual": true}'),
             returning=True,
@@ -603,16 +609,17 @@ def create_transaction():
         if category_id:
             record_event(row["id"], "manual", {"category_id": category_id}, uid)
             if data.get("learn", True):
-                categorizer.learn(current_scope(), key, category_id, categorizer.direction(amount), display_name=name)
+                categorizer.learn(scope, key, category_id, categorizer.direction(amount), display_name=name)
         audit("transaction.create", {"id": row["id"]})
-    return jsonify(row_json(_get_own(row["id"], uid))), 201
+    return jsonify(row_json(_get_own(row["id"], pid))), 201
 
 
 @bp.put("/<int:txn_id>")
 @login_required
 def update_transaction(txn_id):
-    uid = session["user_id"]
-    row = _get_own(txn_id, uid)
+    scope = current_scope()
+    uid, pid = scope.uid, scope.pid
+    row = _get_own(txn_id, pid)
     if not row:
         return api_error("Transaction not found", 404)
     data = json_body()
@@ -620,12 +627,12 @@ def update_transaction(txn_id):
     if "category_id" in data:
         category_id = to_int(data["category_id"], "Category")
         if category_id is not None:
-            cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
+            cat = db.query("SELECT id FROM categories WHERE id = %s AND profile_id = %s", (category_id, pid), one=True)
             if not cat:
                 return api_error("Category not found", 404)
-        categorizer.apply_manual(current_scope(), [txn_id], category_id, learn_memory=learn)
+        categorizer.apply_manual(scope, [txn_id], category_id, learn_memory=learn)
     if "tag_ids" in data:
-        tag_ids = _own_tag_ids(uid, data.get("tag_ids"))
+        tag_ids = _own_tag_ids(pid, data.get("tag_ids"))
         if tag_ids is None:
             return api_error("Tag not found", 404)
         _set_tags(uid, [txn_id], tag_ids)
@@ -637,15 +644,15 @@ def update_transaction(txn_id):
         name = (data.get("merchant_name") or "").strip()
         if name:
             if data.get("rename_all"):
-                db.execute("UPDATE transactions SET merchant_name = %s WHERE user_id = %s AND merchant_key = %s",
-                           (name, uid, row["merchant_key"]))
-                db.execute("UPDATE merchant_memory SET display_name = %s WHERE user_id = %s AND merchant_key = %s",
-                           (name, uid, row["merchant_key"]))
+                db.execute("UPDATE transactions SET merchant_name = %s WHERE profile_id = %s AND merchant_key = %s",
+                           (name, pid, row["merchant_key"]))
+                db.execute("UPDATE merchant_memory SET display_name = %s WHERE profile_id = %s AND merchant_key = %s",
+                           (name, pid, row["merchant_key"]))
             else:
                 db.execute("UPDATE transactions SET merchant_name = %s, updated_at = now() WHERE id = %s", (name, txn_id))
     if data.get("is_transfer") is not None:
         if data["is_transfer"]:
-            transfers_cat = transfers._transfer_category_id(uid, set())
+            transfers_cat = transfers._transfer_category_id(pid, set())
             db.execute(
                 """UPDATE transactions SET is_transfer = TRUE, is_excluded = TRUE,
                        category_id = COALESCE(category_id, %s),
@@ -657,20 +664,21 @@ def update_transaction(txn_id):
             record_event(txn_id, "transfer", {"is_transfer": True}, uid)
             drop_splits([txn_id], uid, "transfer")
         else:
-            transfers.unpair(uid, txn_id)
+            transfers.unpair(scope, txn_id)
     if data.get("is_excluded") is not None and not data.get("is_transfer"):
         db.execute("UPDATE transactions SET is_excluded = %s, updated_at = now() WHERE id = %s",
                    (bool(data["is_excluded"]), txn_id))
         record_event(txn_id, "excluded", {"is_excluded": bool(data["is_excluded"])}, uid)
     audit("transaction.update", {"id": txn_id, "fields": sorted(k for k in data if k != "learn")})
-    return jsonify(row_json(_get_own(txn_id, uid)))
+    return jsonify(row_json(_get_own(txn_id, pid)))
 
 
 @bp.delete("/<int:txn_id>")
 @login_required
 def delete_transaction(txn_id):
-    uid = session["user_id"]
-    row = _get_own(txn_id, uid)
+    scope = current_scope()
+    pid = scope.pid
+    row = _get_own(txn_id, pid)
     if not row:
         return api_error("Transaction not found", 404)
     _release_partners([txn_id])
@@ -697,7 +705,7 @@ def _release_partners(deleted_ids):
 @bp.post("/<int:txn_id>/rule-draft")
 @login_required
 def rule_draft(txn_id):
-    row = _get_own(txn_id, session["user_id"])
+    row = _get_own(txn_id, current_profile_id())
     if not row:
         return api_error("Transaction not found", 404)
     return jsonify({
@@ -716,7 +724,7 @@ def rule_draft(txn_id):
 @login_required
 def unpair_transfer(txn_id):
     try:
-        n = transfers.unpair(session["user_id"], txn_id)
+        n = transfers.unpair(current_scope(), txn_id)
     except LookupError as e:
         return api_error(str(e), 404)
     audit("transactions.unpair", {"id": txn_id})
@@ -726,33 +734,34 @@ def unpair_transfer(txn_id):
 @bp.post("/bulk")
 @login_required
 def bulk():
-    uid = session["user_id"]
+    scope = current_scope()
+    uid, pid = scope.uid, scope.pid
     data = json_body()
     ids = parse_int_list(data.get("ids"))
     action = data.get("action")
     if not ids:
         return api_error("ids are required")
     own = [r["id"] for r in (db.query(
-        "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])]
+        "SELECT id FROM transactions WHERE profile_id = %s AND id = ANY(%s)", (pid, ids)) or [])]
     if not own:
         return api_error("No matching transactions", 404)
-    before = None if action in ("delete", "restore") else snapshot(current_profile_id(), own)
+    before = None if action in ("delete", "restore") else snapshot(pid, own)
     updated = 0
     if action == "categorize":
         category_id = to_int(data.get("category_id"), "Category")
         if category_id is None:
             return api_error("category_id is required")
-        cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
+        cat = db.query("SELECT id FROM categories WHERE id = %s AND profile_id = %s", (category_id, pid), one=True)
         if not cat:
             return api_error("Category not found", 404)
-        updated = categorizer.apply_manual(current_scope(), own, category_id, learn_memory=bool(data.get("learn", True)))
+        updated = categorizer.apply_manual(scope, own, category_id, learn_memory=bool(data.get("learn", True)))
     elif action == "uncategorize":
-        updated = categorizer.apply_manual(current_scope(), own, None, learn_memory=False)
+        updated = categorizer.apply_manual(scope, own, None, learn_memory=False)
     elif action == "accept_suggestion":
         rows = db.query(
             """SELECT id, merchant_key, merchant_name, category_id, amount FROM transactions
-               WHERE user_id = %s AND id = ANY(%s) AND category_status = 'suggested' AND category_id IS NOT NULL""",
-            (uid, own),
+               WHERE profile_id = %s AND id = ANY(%s) AND category_status = 'suggested' AND category_id IS NOT NULL""",
+            (pid, own),
         ) or []
         if rows:
             sids = [r["id"] for r in rows]
@@ -768,22 +777,22 @@ def bulk():
                     seen.setdefault((r["merchant_key"], categorizer.direction(r["amount"]), r["category_id"]),
                                     r["merchant_name"])
                 for (key, way, cid), name in seen.items():
-                    categorizer.learn(current_scope(), key, cid, way, display_name=name)
+                    categorizer.learn(scope, key, cid, way, display_name=name)
             updated = len(sids)
     elif action == "reject_suggestion":
         touched = [r["id"] for r in (db.query(
-            "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s) AND category_status = 'suggested'",
-            (uid, own)) or [])]
+            "SELECT id FROM transactions WHERE profile_id = %s AND id = ANY(%s) AND category_status = 'suggested'",
+            (pid, own)) or [])]
         updated = db.execute(
             """UPDATE transactions SET category_id = NULL, category_status = 'none', category_source = NULL,
                    category_confidence = NULL, ai_rationale = NULL, updated_at = now()
-               WHERE user_id = %s AND id = ANY(%s)""",
-            (uid, touched),
+               WHERE profile_id = %s AND id = ANY(%s)""",
+            (pid, touched),
         ) if touched else 0
         record_events([(i, "manual", {"rejected": True}, uid) for i in touched])
         drop_splits(touched, uid, "rejected")
     elif action == "set_transfer":
-        transfers_cat = transfers._transfer_category_id(uid, set())
+        transfers_cat = transfers._transfer_category_id(pid, set())
         updated = db.execute(
             """UPDATE transactions SET is_transfer = TRUE, is_excluded = TRUE,
                    category_id = COALESCE(category_id, %s),
@@ -799,13 +808,13 @@ def bulk():
             "SELECT transfer_pair_id FROM transactions WHERE id = ANY(%s) AND transfer_pair_id IS NOT NULL", (own,)) or [])]
         updated = db.execute(
             """UPDATE transactions SET is_transfer = FALSE, is_excluded = FALSE, transfer_pair_id = NULL, updated_at = now()
-               WHERE user_id = %s AND id = ANY(%s)""",
-            (uid, own + pairs),
+               WHERE profile_id = %s AND id = ANY(%s)""",
+            (pid, own + pairs),
         )
         record_events([(i, "transfer", {"is_transfer": False}, uid) for i in own])
     elif action == "flip_sign":
         import signs
-        updated = signs.flip_signs(uid, own, reason="bulk")
+        updated = signs.flip_signs(scope, own, reason="bulk")
     elif action in ("exclude", "include"):
         flag = action == "exclude"
         updated = db.execute("UPDATE transactions SET is_excluded = %s, updated_at = now() WHERE id = ANY(%s)", (flag, own))
@@ -814,7 +823,7 @@ def bulk():
         _release_partners(own)
         updated = db.execute("DELETE FROM transactions WHERE id = ANY(%s)", (own,))
     elif action in ("tag", "untag"):
-        tag_ids = _own_tag_ids(uid, data.get("tag_ids"))
+        tag_ids = _own_tag_ids(pid, data.get("tag_ids"))
         if tag_ids is None:
             return api_error("Tag not found", 404)
         if not tag_ids:
@@ -828,7 +837,7 @@ def bulk():
         updated = len(own)
     elif action == "restore":
         try:
-            updated = _restore(uid, own, data.get("items"))
+            updated = _restore(scope, own, data.get("items"))
         except ValueError as e:
             return api_error(str(e))
         if updated is None:
@@ -842,15 +851,16 @@ def bulk():
     return jsonify(body)
 
 
-def _restore(uid, own, items):
+def _restore(scope, own, items):
     """Write back a `before` snapshot (see util.SNAPSHOT_FIELDS); the client's exact Undo."""
     if not isinstance(items, list):
         return None
-    cats = {r["id"] for r in (db.query("SELECT id FROM categories WHERE user_id = %s", (uid,)) or [])}
-    rule_ids = {r["id"] for r in (db.query("SELECT id FROM rules WHERE user_id = %s", (uid,)) or [])}
+    pid = scope.pid
+    cats = {r["id"] for r in (db.query("SELECT id FROM categories WHERE profile_id = %s", (pid,)) or [])}
+    rule_ids = {r["id"] for r in (db.query("SELECT id FROM rules WHERE profile_id = %s", (pid,)) or [])}
     wanted = [it.get("transfer_pair_id") for it in items if isinstance(it, dict) and it.get("transfer_pair_id")]
-    pair_ids = {r["id"] for r in (db.query("SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)",
-                                            (uid, parse_int_list(",".join(str(w) for w in wanted)))) or [])} if wanted else set()
+    pair_ids = {r["id"] for r in (db.query("SELECT id FROM transactions WHERE profile_id = %s AND id = ANY(%s)",
+                                            (pid, parse_int_list(",".join(str(w) for w in wanted)))) or [])} if wanted else set()
     clean = clean_restore_items(items, set(own), cats, rule_ids, pair_ids)
     with db.transaction():
         for it in clean:
@@ -858,11 +868,11 @@ def _restore(uid, own, items):
                 """UPDATE transactions SET category_id = %s, category_status = %s, category_source = %s, category_rule_id = %s,
                        category_confidence = %s, ai_rationale = %s, is_transfer = %s, is_excluded = %s, transfer_pair_id = %s,
                        updated_at = now()
-                   WHERE id = %s AND user_id = %s""",
+                   WHERE id = %s AND profile_id = %s""",
                 (it["category_id"], it["category_status"], it["category_source"], it["category_rule_id"], it["category_confidence"],
-                 it["ai_rationale"], it["is_transfer"], it["is_excluded"], it["transfer_pair_id"], it["id"], uid),
+                 it["ai_rationale"], it["is_transfer"], it["is_excluded"], it["transfer_pair_id"], it["id"], pid),
                 commit=False,
             )
     record_events([(it["id"], "manual", {"restored": True, "category_id": it["category_id"], "is_transfer": it["is_transfer"],
-                                         "is_excluded": it["is_excluded"]}, uid) for it in clean])
+                                         "is_excluded": it["is_excluded"]}, scope.uid) for it in clean])
     return len(clean)

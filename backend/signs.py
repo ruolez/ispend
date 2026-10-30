@@ -8,7 +8,7 @@ import db
 from util import record_events
 
 SELECT = """SELECT id, account_id, txn_date, amount, description_clean, fingerprint, occurrence
-            FROM transactions WHERE user_id = %s AND id = ANY(%s) ORDER BY txn_date, id"""
+            FROM transactions WHERE profile_id = %s AND id = ANY(%s) ORDER BY txn_date, id"""
 
 
 def plan_flips(rows, taken):
@@ -31,11 +31,11 @@ def plan_flips(rows, taken):
     return plan
 
 
-def flip_signs(user_id, txn_ids, reason=None):
-    """Negate amounts for the given transactions of this user. Returns the number flipped."""
+def flip_signs(scope, txn_ids, reason=None):
+    """Negate amounts for the given transactions of this profile. Returns the number flipped."""
     if not txn_ids:
         return 0
-    rows = db.query(SELECT, (user_id, list(txn_ids))) or []
+    rows = db.query(SELECT, (scope.pid, list(txn_ids))) or []
     if not rows:
         return 0
     account_ids = sorted({r["account_id"] for r in rows})
@@ -55,5 +55,5 @@ def flip_signs(user_id, txn_ids, reason=None):
                 (amount, fp, occ, txn_id), commit=False,
             )
         db.execute("UPDATE transaction_splits SET amount = -amount WHERE transaction_id = ANY(%s)", (ids,), commit=False)
-        record_events([(p[0], "manual", {"flip_sign": True, "reason": reason}, user_id) for p in plan], commit=False)
+        record_events([(p[0], "manual", {"flip_sign": True, "reason": reason}, scope.uid) for p in plan], commit=False)
     return len(plan)

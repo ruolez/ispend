@@ -11,6 +11,7 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 
 import db  # noqa: E402
 import transactions_api as tapi  # noqa: E402
+from scope import Scope  # noqa: E402
 import util  # noqa: E402
 from flask import Flask  # noqa: E402
 
@@ -97,7 +98,7 @@ class BuildFiltersTest(unittest.TestCase):
         args = {"account_id": "1,2", "category_id": "5,none", "from": "2026-01-01", "to": "2026-01-31",
                 "q": "star", "status": "uncategorized", "transfers": "exclude", "min": "5", "max": "50",
                 "statement_id": "9"}
-        sql, params = tapi.build_filters(args, 42)
+        sql, params = tapi.build_filters(args, Scope(1, 42))
         self.assertEqual(params, [42, [1, 2], [5], [5], [5], [5], date(2026, 1, 1), date(2026, 1, 31),
                                   "%star%", "%star%", "%star%", "%star%", Decimal("5"), Decimal("50"), 9])
         for frag in ("t.account_id = ANY", "t.category_id IS NULL", "t.txn_date >=", "ILIKE",
@@ -106,44 +107,44 @@ class BuildFiltersTest(unittest.TestCase):
             self.assertIn(frag, sql)
 
     def test_split_filters(self):
-        sql, params = tapi.build_filters({"split": "1"}, 1)
+        sql, params = tapi.build_filters({"split": "1"}, Scope(1, 1))
         self.assertIn("EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)", sql)
         self.assertEqual(params, [1])
-        sql, params = tapi.build_filters({"category_id": "5"}, 1)
+        sql, params = tapi.build_filters({"category_id": "5"}, Scope(1, 1))
         self.assertIn("s.category_id = ANY(%s)", sql)
         self.assertEqual(params, [1, [5], [5], [5], [5]])
 
     def test_tag_filters(self):
-        sql, params = tapi.build_filters({"tag": "3,4"}, 1)
+        sql, params = tapi.build_filters({"tag": "3,4"}, Scope(1, 1))
         self.assertIn("tt.tag_id = ANY(%s)", sql)
         self.assertEqual(params, [1, [3, 4]])
-        sql, params = tapi.build_filters({"tag": "3,4", "tag_mode": "all"}, 1)
+        sql, params = tapi.build_filters({"tag": "3,4", "tag_mode": "all"}, Scope(1, 1))
         self.assertEqual(sql.count("EXISTS (SELECT 1 FROM transaction_tags"), 2)
         self.assertEqual(params, [1, 3, 4])
-        sql, params = tapi.build_filters({"tag": "none"}, 1)
+        sql, params = tapi.build_filters({"tag": "none"}, Scope(1, 1))
         self.assertIn("NOT EXISTS (SELECT 1 FROM transaction_tags", sql)
         self.assertEqual(params, [1])
-        self.assertEqual(tapi.build_filters({"tag": "abc"}, 1), (" t.user_id = %s", [1]))
+        self.assertEqual(tapi.build_filters({"tag": "abc"}, Scope(1, 1)), (" t.profile_id = %s", [1]))
 
     def test_range_ignored_when_explicit_dates(self):
-        sql, params = tapi.build_filters({"range": "last-year", "from": "2026-02-01"}, 1)
+        sql, params = tapi.build_filters({"range": "last-year", "from": "2026-02-01"}, Scope(1, 1))
         self.assertEqual(params, [1, date(2026, 2, 1)])
         self.assertNotIn("<=", sql)
 
     def test_flow_filters_debits_or_credits(self):
-        self.assertEqual(tapi.build_filters({"flow": "out"}, 1), (" t.user_id = %s AND t.amount < 0", [1]))
-        self.assertEqual(tapi.build_filters({"flow": "in"}, 1), (" t.user_id = %s AND t.amount > 0", [1]))
-        self.assertEqual(tapi.build_filters({"flow": "sideways"}, 1), (" t.user_id = %s", [1]))
+        self.assertEqual(tapi.build_filters({"flow": "out"}, Scope(1, 1)), (" t.profile_id = %s AND t.amount < 0", [1]))
+        self.assertEqual(tapi.build_filters({"flow": "in"}, Scope(1, 1)), (" t.profile_id = %s AND t.amount > 0", [1]))
+        self.assertEqual(tapi.build_filters({"flow": "sideways"}, Scope(1, 1)), (" t.profile_id = %s", [1]))
 
     def test_month_preset_bounds_the_query(self):
-        sql, params = tapi.build_filters({"range": "month:2026-08"}, 1)
+        sql, params = tapi.build_filters({"range": "month:2026-08"}, Scope(1, 1))
         self.assertEqual(params, [1, date(2026, 8, 1), date(2026, 8, 31)])
         self.assertIn("t.txn_date >= %s", sql)
         self.assertIn("t.txn_date <= %s", sql)
 
     def test_junk_is_ignored(self):
-        sql, params = tapi.build_filters({"account_id": "x", "min": "abc", "statement_id": "nope"}, 1)
-        self.assertEqual((sql, params), (" t.user_id = %s", [1]))
+        sql, params = tapi.build_filters({"account_id": "x", "min": "abc", "statement_id": "nope"}, Scope(1, 1))
+        self.assertEqual((sql, params), (" t.profile_id = %s", [1]))
 
 
 class CursorTest(unittest.TestCase):
@@ -390,7 +391,7 @@ class ListEndpointTest(unittest.TestCase):
 
     def test_bulk_tag_and_untag(self):
         def handler(sql, params, one):
-            if "FROM tags WHERE user_id" in sql:
+            if "FROM tags WHERE profile_id" in sql:
                 return [{"id": 7}]
             return [{"id": 1}, {"id": 2}]
         fake = FakeDB(handler)
@@ -402,7 +403,7 @@ class ListEndpointTest(unittest.TestCase):
         with patch_db(fake):
             self.client.post("/api/transactions/bulk", json={"ids": [1, 2], "action": "untag", "tag_ids": [7]})
         self.assertTrue(any("DELETE FROM transaction_tags" in c[1] and c[2] == ([1, 2], [7]) for c in fake.calls))
-        fake2 = FakeDB(lambda sql, params, one: [] if "FROM tags WHERE user_id" in sql else [{"id": 1}])
+        fake2 = FakeDB(lambda sql, params, one: [] if "FROM tags WHERE profile_id" in sql else [{"id": 1}])
         with patch_db(fake2):
             res = self.client.post("/api/transactions/bulk", json={"ids": [1], "action": "tag", "tag_ids": [99]})
         self.assertEqual(res.status_code, 404)

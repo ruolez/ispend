@@ -16,6 +16,7 @@ sys.modules.setdefault("config", types.SimpleNamespace(
 
 import openrouter  # noqa: E402
 import transfers  # noqa: E402
+from scope import Scope  # noqa: E402
 
 
 class FakeResponse:
@@ -75,7 +76,7 @@ class TransferPairOrderTest(unittest.TestCase):
                 mock.patch.object(transfers, "record_events", create=True):
             tx.return_value.__enter__ = lambda *a: None
             tx.return_value.__exit__ = lambda *a: False
-            out = transfers.pair(1, 1, 2)
+            out = transfers.pair(Scope(1, 1), 1, 2)
         self.assertEqual((out["a_id"], out["b_id"]), (1, 2))
 
 

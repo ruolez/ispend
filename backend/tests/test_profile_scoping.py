@@ -36,10 +36,8 @@ ALLOWED = {
     "profiles.py": 2,             # the user's own profiles
     "reports.py": 12,
     "reports_api.py": 4,
-    "signs.py": 1,
     "statements_api.py": 10,
-    "transactions_api.py": 24,
-    "transfers.py": 6,
+    "transactions_api.py": 1,     # who acted on an event (users join)
 }
 
 

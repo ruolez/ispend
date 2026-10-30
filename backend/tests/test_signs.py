@@ -14,6 +14,7 @@ _stubs.install()
 
 import dedupe  # noqa: E402
 import signs  # noqa: E402
+from scope import Scope  # noqa: E402
 import util  # noqa: E402
 from importer.generic import looks_inverted  # noqa: E402
 
@@ -29,7 +30,7 @@ class FlipSignsDbTest(unittest.TestCase):
 
         def query(sql, params=None, **kw):
             calls.append(("query", sql, params))
-            return [row(1, "12.50")] if "FROM transactions WHERE user_id" in sql else []
+            return [row(1, "12.50")] if "FROM transactions WHERE profile_id" in sql else []
 
         def execute(sql, params=None, **kw):
             calls.append(("execute", sql, params))
@@ -37,7 +38,7 @@ class FlipSignsDbTest(unittest.TestCase):
         fake = types.SimpleNamespace(query=query, execute=execute, transaction=contextlib.nullcontext,
                                      execute_values=lambda sql, rows, **kw: calls.append(("execute_values", sql, rows)))
         with mock.patch.object(signs, "db", fake), mock.patch.object(util, "db", fake):
-            self.assertEqual(signs.flip_signs(1, [1]), 1)
+            self.assertEqual(signs.flip_signs(Scope(1, 1), [1]), 1)
         self.assertIn(("execute", "UPDATE transaction_splits SET amount = -amount WHERE transaction_id = ANY(%s)", ([1],)), calls)
         self.assertEqual(calls[-1][0], "execute_values")
 
