@@ -42,7 +42,7 @@ class BudgetsApiTest(unittest.TestCase):
             return getattr(c, method)(path, data=json.dumps(body) if body is not None else None, content_type="application/json")
 
     def test_validation(self):
-        self.q.routes += [("FROM categories WHERE id = %s AND user_id", lambda sql, p: CAT if p[0] == 3 else None)]
+        self.q.routes += [("FROM categories WHERE id = %s AND profile_id", lambda sql, p: CAT if p[0] == 3 else None)]
         cases = [({}, 400, "amount must be an amount"), ({"category_id": 3, "amount": 0}, 400, "amount must be greater than zero"),
                  ({"category_id": 3, "amount": "abc"}, 400, "amount must be an amount"), ({"category_id": 3, "amount": 5, "month": "2026-13"}, 400, "month must be YYYY-MM"),
                  ({"category_id": 99, "amount": 5}, 404, "Category not found"), ({"category_id": 3, "amount": 5, "note": "x" * 201}, 400, "note must be at most 200 characters")]
@@ -51,27 +51,27 @@ class BudgetsApiTest(unittest.TestCase):
             self.assertEqual((res.status_code, res.get_json()["error"]), (status, msg), body)
 
     def test_transfer_category_rejected(self):
-        self.q.routes += [("FROM categories WHERE id = %s AND user_id", {**CAT, "kind": "transfer"})]
+        self.q.routes += [("FROM categories WHERE id = %s AND profile_id", {**CAT, "kind": "transfer"})]
         res = self._call("post", "/api/budgets", {"category_id": 3, "amount": 50})
         self.assertEqual((res.status_code, res.get_json()["error"]), (400, "Transfers cannot be budgeted"))
 
     def test_parent_child_overlap_rejected(self):
-        self.q.routes += [("FROM categories WHERE id = %s AND user_id", SUB), ("b.category_id = %s", {"id": 7, "name": "Dining"})]
+        self.q.routes += [("FROM categories WHERE id = %s AND profile_id", SUB), ("b.category_id = %s", {"id": 7, "name": "Dining"})]
         res = self._call("post", "/api/budgets", {"category_id": 4, "amount": 50, "month": "2026-09"})
         self.assertEqual((res.status_code, res.get_json()["error"]), (400, "Budget Dining or its subcategories, not both"))
-        self.q.routes = [("FROM categories WHERE id = %s AND user_id", CAT), ("c.parent_id = %s", {"id": 8})]
+        self.q.routes = [("FROM categories WHERE id = %s AND profile_id", CAT), ("c.parent_id = %s", {"id": 8})]
         res = self._call("post", "/api/budgets", {"category_id": 3, "amount": 50, "month": "2026-09"})
         self.assertEqual(res.status_code, 400)
 
     def test_upsert_sql_and_status(self):
-        self.q.routes += [("FROM categories WHERE id = %s AND user_id", CAT), ("FROM budgets b WHERE b.id", ROW)]
+        self.q.routes += [("FROM categories WHERE id = %s AND profile_id", CAT), ("FROM budgets b WHERE b.id", ROW)]
         self.x.routes += [("INSERT INTO budgets", {"id": 7, "inserted": True})]
         res = self._call("post", "/api/budgets", {"category_id": 3, "amount": "600", "month": "2026-09", "note": " lunches "})
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.get_json(), {"id": 7, "category_id": 3, "month": "2026-09", "amount": 600.0, "note": None, "created_at": None, "updated_at": None})
         sql, params = self.x.sql("INSERT INTO budgets")[0]
-        self.assertIn("ON CONFLICT (user_id, category_id, month) DO UPDATE", sql)
-        self.assertEqual(params, (1, 3, date(2026, 9, 1), Decimal("600.00"), "lunches"))
+        self.assertIn("ON CONFLICT (profile_id, category_id, month) DO UPDATE", sql)
+        self.assertEqual(params, (1, 1, 3, date(2026, 9, 1), Decimal("600.00"), "lunches"))
         self.x.routes = [("INSERT INTO budgets", {"id": 7, "inserted": False})]
         self.assertEqual(self._call("post", "/api/budgets", {"category_id": 3, "amount": 650, "month": "2026-09"}).status_code, 200)
 
@@ -82,7 +82,7 @@ class BudgetsApiTest(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertIsNone(res.get_json()["category_id"])
         self.assertEqual(self.q.sql("FROM categories"), [])
-        self.assertEqual(self.x.sql("INSERT INTO budgets")[0][1], (1, None, date(2026, 9, 1), Decimal("500.00"), None))
+        self.assertEqual(self.x.sql("INSERT INTO budgets")[0][1], (1, 1, None, date(2026, 9, 1), Decimal("500.00"), None))
 
     def test_update_and_delete_require_ownership(self):
         self.assertEqual(self._call("put", "/api/budgets/7", {"amount": 10}).status_code, 404)
@@ -96,7 +96,7 @@ class BudgetsApiTest(unittest.TestCase):
 
     def test_copy_counts_inserted_and_skipped(self):
         self.q.routes += [("SELECT category_id, amount, note FROM budgets", [{"category_id": 3, "amount": Decimal("1"), "note": None}, {"category_id": 5, "amount": Decimal("2"), "note": "x"}])]
-        self.x.routes += [("ON CONFLICT DO NOTHING RETURNING id", lambda sql, p: {"id": 1} if p[1] == 3 else None)]
+        self.x.routes += [("ON CONFLICT DO NOTHING RETURNING id", lambda sql, p: {"id": 1} if p[2] == 3 else None)]
         res = self._call("post", "/api/budgets/copy", {"from": "2026-08", "to": "2026-09"})
         self.assertEqual(res.get_json(), {"copied": 1, "skipped": 1})
         self.assertEqual((self._call("post", "/api/budgets/copy", {"from": "2026-08", "to": "2026-08"}).get_json()["error"]), "Pick two different months")
@@ -105,7 +105,7 @@ class BudgetsApiTest(unittest.TestCase):
 
     def test_progress_composes_by_category_with_accounts(self):
         rows = [{"id": 3, "name": "Dining", "color": "c2", "icon": "utensils", "parent_id": None, "total": 150.0, "count": 4, "pct": 100.0}]
-        self.q.routes += [("FROM budgets b WHERE b.user_id = %s AND b.month", [ROW]),
+        self.q.routes += [("FROM budgets b WHERE b.profile_id = %s AND b.month", [ROW]),
                           ("SELECT id, name, color, icon, parent_id FROM categories", [{"id": 3, "name": "Dining", "color": "c2", "icon": "utensils", "parent_id": None}])]
         with mock.patch.object(reports, "by_category", return_value=rows) as bc, mock.patch.object(reports, "today", return_value=date(2026, 9, 15)):
             res = self._call("get", "/api/budgets/progress?month=2026-09&account_id=1,2")

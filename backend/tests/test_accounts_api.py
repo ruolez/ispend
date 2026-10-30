@@ -59,7 +59,7 @@ class AccountsApiTest(unittest.TestCase):
         self.assertEqual(res.get_json(), {"id": 9, "name": "Amex Gold", "account_type": "credit_card", "currency": "CAD",
                                           "last4": "1234", "color": "c1", "institution": "amex"})
         sql, params = self.x.sql("INSERT INTO accounts")[0]
-        self.assertEqual(params, (1, "Amex Gold", "amex", "credit_card", "CAD", "1234", "c1"))
+        self.assertEqual(params, (1, 1, "Amex Gold", "amex", "credit_card", "CAD", "1234", "c1"))
         self.assertEqual(self.x.sql("INSERT INTO audit_log")[0][1][:2], (1, "account.create"))
 
     def test_update_and_delete_of_foreign_account_are_404(self):
@@ -101,7 +101,7 @@ class AccountsApiTest(unittest.TestCase):
         outer a.user_id: without its own filter it aggregated every tenant's transactions."""
         self._call("get", "/api/accounts?all=1")
         sql = " ".join(self.q.calls[0][0].split())
-        self.assertIn("FROM transactions WHERE user_id = %s GROUP BY account_id", sql)
+        self.assertIn("FROM transactions WHERE profile_id = %s GROUP BY account_id", sql)
         self.assertEqual(self.q.calls[0][1], (1, 1))
 
     def test_list_hides_archived_unless_asked(self):

@@ -26,11 +26,9 @@ PREDICATE = re.compile(
 # Remaining user_id predicates per module. Lower a number when you convert a site; never raise one
 # for finance data.
 ALLOWED = {
-    "accounts_api.py": 6,
     "ai_api.py": 6,
     "ai_categorizer.py": 3,
     "auth.py": 18,                # users, subscriptions, auth tokens, exports, the user's own profiles
-    "budgets_api.py": 12,
     "categories_api.py": 29,
     "categorizer.py": 7,
     "db.py": 3,
@@ -46,10 +44,9 @@ ALLOWED = {
     "rules_api.py": 9,
     "signs.py": 1,
     "statements_api.py": 10,
-    "tags_api.py": 6,
     "transactions_api.py": 24,
     "transfers.py": 6,
-    "util.py": 2,
+    "util.py": 1,
 }
 
 

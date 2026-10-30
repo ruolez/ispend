@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request, session
 
 import db
 from auth import login_required
+from scope import current_profile_id
 from util import api_error, audit, json_body, rows_json
 
 bp = Blueprint("accounts", __name__, url_prefix="/api/accounts")
@@ -21,9 +22,9 @@ SELECT a.id, a.name, a.institution, a.account_type, a.currency, a.last4, a.color
 FROM accounts a
 LEFT JOIN (
   SELECT account_id, COUNT(*) AS txn_count, MAX(txn_date) AS last_txn_date, MIN(txn_date) AS first_txn_date
-  FROM transactions WHERE user_id = %s GROUP BY account_id
+  FROM transactions WHERE profile_id = %s GROUP BY account_id
 ) s ON s.account_id = a.id
-WHERE a.user_id = %s
+WHERE a.profile_id = %s
 """
 
 
@@ -62,7 +63,8 @@ def list_accounts():
     sql = LIST_SQL
     if request.args.get("all") != "1":
         sql += " AND a.is_active"
-    rows = db.query(sql + " ORDER BY a.is_active DESC, a.name", (session["user_id"], session["user_id"]))
+    pid = current_profile_id()
+    rows = db.query(sql + " ORDER BY a.is_active DESC, a.name", (pid, pid))
     return jsonify(rows_json(rows))
 
 
@@ -81,14 +83,15 @@ def create_account():
         f = _validate(data)
     except ValueError as e:
         return api_error(str(e))
-    dup = db.query("SELECT id FROM accounts WHERE user_id = %s AND lower(name) = lower(%s)",
-                   (session["user_id"], f["name"]), one=True)
+    pid = current_profile_id()
+    dup = db.query("SELECT id FROM accounts WHERE profile_id = %s AND lower(name) = lower(%s)",
+                   (pid, f["name"]), one=True)
     if dup:
         return api_error("An account with that name already exists")
     row = db.execute(
-        """INSERT INTO accounts (user_id, name, institution, account_type, currency, last4, color)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (session["user_id"], f["name"], f["institution"], f["account_type"], f["currency"], f["last4"], f["color"]),
+        """INSERT INTO accounts (user_id, profile_id, name, institution, account_type, currency, last4, color)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (session["user_id"], pid, f["name"], f["institution"], f["account_type"], f["currency"], f["last4"], f["color"]),
         returning=True,
     )
     audit("account.create", {"id": row["id"], "name": f["name"]})
@@ -98,8 +101,8 @@ def create_account():
 @bp.put("/<int:account_id>")
 @login_required
 def update_account(account_id):
-    existing = db.query("SELECT * FROM accounts WHERE id = %s AND user_id = %s",
-                        (account_id, session["user_id"]), one=True)
+    existing = db.query("SELECT * FROM accounts WHERE id = %s AND profile_id = %s",
+                        (account_id, current_profile_id()), one=True)
     if not existing:
         return api_error("Account not found", 404)
     data = json_body()
@@ -122,16 +125,16 @@ def update_account(account_id):
 @bp.delete("/<int:account_id>")
 @login_required
 def delete_account(account_id):
-    existing = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s",
-                        (account_id, session["user_id"]), one=True)
+    existing = db.query("SELECT id FROM accounts WHERE id = %s AND profile_id = %s",
+                        (account_id, current_profile_id()), one=True)
     if not existing:
         return api_error("Account not found", 404)
     count = db.query("SELECT COUNT(*) AS n FROM transactions WHERE account_id = %s", (account_id,), one=True)["n"]
     if count and request.args.get("force") != "true":
         return api_error(f"This account has {count} transactions. Archive it instead, or delete with force.", 409)
     import importer
-    statements = db.query("SELECT * FROM statements WHERE account_id = %s AND user_id = %s",
-                          (account_id, session["user_id"])) or []
+    statements = db.query("SELECT * FROM statements WHERE account_id = %s AND profile_id = %s",
+                          (account_id, current_profile_id())) or []
     with db.transaction():
         for st in statements:
             importer.discard_statement(st, delete_transactions=True)

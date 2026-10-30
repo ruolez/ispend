@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, session
 
 import db
 from auth import login_required
+from scope import current_profile_id
 from util import api_error, audit, json_body, next_color_slot
 
 bp = Blueprint("tags", __name__, url_prefix="/api/tags")
@@ -13,15 +14,15 @@ NAME_MAX = 40
 FIELDS = "g.id, g.name, g.color, g.sort_order, g.created_at"
 
 
-def _uid():
-    return session["user_id"]
+def _pid():
+    return current_profile_id()
 
 
 def _row(tag_id):
     return db.query(
         f"""SELECT {FIELDS}, (SELECT COUNT(*) FROM transaction_tags tt WHERE tt.tag_id = g.id) AS txn_count
-            FROM tags g WHERE g.id = %s AND g.user_id = %s""",
-        (tag_id, _uid()), one=True,
+            FROM tags g WHERE g.id = %s AND g.profile_id = %s""",
+        (tag_id, _pid()), one=True,
     )
 
 
@@ -39,8 +40,8 @@ def _clean_name(value):
     return name, None
 
 
-def _taken(uid, name, exclude_id=None):
-    row = db.query("SELECT id FROM tags WHERE user_id = %s AND lower(name) = lower(%s)", (uid, name), one=True)
+def _taken(pid, name, exclude_id=None):
+    row = db.query("SELECT id FROM tags WHERE profile_id = %s AND lower(name) = lower(%s)", (pid, name), one=True)
     return bool(row) and row["id"] != exclude_id
 
 
@@ -50,10 +51,10 @@ def list_tags():
     rows = db.query(
         f"""SELECT {FIELDS}, COALESCE(n.c, 0) AS txn_count
             FROM tags g LEFT JOIN (SELECT tt.tag_id, COUNT(*) AS c FROM transaction_tags tt
-                                   JOIN tags tg ON tg.id = tt.tag_id WHERE tg.user_id = %s
+                                   JOIN tags tg ON tg.id = tt.tag_id WHERE tg.profile_id = %s
                                    GROUP BY tt.tag_id) n ON n.tag_id = g.id
-            WHERE g.user_id = %s ORDER BY g.sort_order, lower(g.name)""",
-        (_uid(), _uid()),
+            WHERE g.profile_id = %s ORDER BY g.sort_order, lower(g.name)""",
+        (_pid(), _pid()),
     ) or []
     return jsonify([_json(r) for r in rows])
 
@@ -61,17 +62,18 @@ def list_tags():
 @bp.post("")
 @login_required
 def create_tag():
-    uid = _uid()
+    pid = _pid()
     data = json_body()
     name, problem = _clean_name(data.get("name"))
     if problem:
         return api_error(problem)
-    if _taken(uid, name):
+    if _taken(pid, name):
         return api_error("A tag with that name already exists")
-    color = data.get("color") or next_color_slot(uid, "tags")
+    color = data.get("color") or next_color_slot(pid, "tags")
     if color not in COLOR_SLOTS:
         return api_error("Invalid color slot")
-    row = db.execute("INSERT INTO tags (user_id, name, color) VALUES (%s, %s, %s) RETURNING id", (uid, name, color), returning=True)
+    row = db.execute("INSERT INTO tags (user_id, profile_id, name, color) VALUES (%s, %s, %s, %s) RETURNING id",
+                     (session["user_id"], pid, name, color), returning=True)
     audit("tag.create", {"id": row["id"], "name": name})
     return jsonify(_json(_row(row["id"]))), 201
 
@@ -79,7 +81,7 @@ def create_tag():
 @bp.put("/<int:tag_id>")
 @login_required
 def update_tag(tag_id):
-    uid = _uid()
+    pid = _pid()
     row = _row(tag_id)
     if not row:
         return api_error("Tag not found", 404)
@@ -89,12 +91,12 @@ def update_tag(tag_id):
         name, problem = _clean_name(data.get("name"))
         if problem:
             return api_error(problem)
-        if _taken(uid, name, exclude_id=tag_id):
+        if _taken(pid, name, exclude_id=tag_id):
             return api_error("A tag with that name already exists")
     color = data.get("color") or row["color"]
     if color not in COLOR_SLOTS:
         return api_error("Invalid color slot")
-    db.execute("UPDATE tags SET name = %s, color = %s WHERE id = %s AND user_id = %s", (name, color, tag_id, uid))
+    db.execute("UPDATE tags SET name = %s, color = %s WHERE id = %s AND profile_id = %s", (name, color, tag_id, pid))
     audit("tag.update", {"id": tag_id, "name": name, "color": color})
     return jsonify(_json(_row(tag_id)))
 
@@ -102,11 +104,11 @@ def update_tag(tag_id):
 @bp.delete("/<int:tag_id>")
 @login_required
 def delete_tag(tag_id):
-    uid = _uid()
+    pid = _pid()
     row = _row(tag_id)
     if not row:
         return api_error("Tag not found", 404)
     removed = int(row.get("txn_count") or 0)
-    db.execute("DELETE FROM tags WHERE id = %s AND user_id = %s", (tag_id, uid))
+    db.execute("DELETE FROM tags WHERE id = %s AND profile_id = %s", (tag_id, pid))
     audit("tag.delete", {"id": tag_id, "name": row["name"], "removed_from": removed})
     return jsonify({"ok": True, "removed_from": removed})

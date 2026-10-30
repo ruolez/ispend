@@ -61,9 +61,9 @@ def to_money(value, name):
     return out.quantize(Decimal("0.01"))
 
 
-def next_color_slot(user_id, table):
-    """The least-used palette slot (c1..c12) among the user's rows of `table` (tags, categories)."""
-    used = db.query(f"SELECT color, COUNT(*) AS n FROM {table} WHERE user_id = %s GROUP BY color", (user_id,)) or []
+def next_color_slot(profile_id, table):
+    """The least-used palette slot (c1..c12) among the profile's rows of `table` (tags, categories)."""
+    used = db.query(f"SELECT color, COUNT(*) AS n FROM {table} WHERE profile_id = %s GROUP BY color", (profile_id,)) or []
     counts = {r["color"]: r["n"] for r in used}
     return min((f"c{i}" for i in range(1, 13)), key=lambda c: (counts.get(c, 0), int(c[1:])))
 
