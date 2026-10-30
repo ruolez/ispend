@@ -85,7 +85,7 @@ class ProfileIsolationTest(_pg.PgTestCase):
         def ins(sql, params):
             return db.execute(sql, params, returning=True)["id"]
 
-        cat = db.query("SELECT id FROM categories WHERE profile_id = %s AND slug = 'groceries'", (pid,), one=True)["id"]
+        cat = db.query("SELECT id FROM categories WHERE profile_id = %s AND slug = 'dining'", (pid,), one=True)["id"]
         own_cat = ins("""INSERT INTO categories (user_id, profile_id, name, slug, kind, color)
                          VALUES (%s, %s, %s, %s, 'expense', 'c3') RETURNING id""", (uid, pid, f"{mark} Supplies", f"{mark.lower()}_supplies"))
         acct = ins("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, %s) RETURNING id",
@@ -209,6 +209,136 @@ class ProfileIsolationTest(_pg.PgTestCase):
                             (self.ids_b["category"], self.ids_a["transaction"]))
         self.db.get_db().rollback()
 
+
+
+@unittest.skipUnless(_pg.available(), "set ISPEND_TEST_DSN and run this file on its own")
+class ProfileManagementTest(_pg.PgTestCase):
+    """Creating, copying, renaming and deleting profiles through the API."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import app as app_module
+        import profiles
+
+        cls._billing_patch = mock.patch("billing_tick.start")
+        cls._billing_patch.start()
+        cls.flask_app = app_module.create_app()
+        cls.uid = cls.db.execute("INSERT INTO users (username, password_hash) VALUES ('max', 'x') RETURNING id",
+                                 returning=True)["id"]
+        conn = cls.db.get_db()
+        cls.home = profiles.create(conn, cls.uid)
+        conn.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._billing_patch.stop()
+        super().tearDownClass()
+
+    def _client(self, pid=None):
+        c = self.flask_app.test_client()
+        with c.session_transaction() as s:
+            s.update({"user_id": self.uid, "role": "user", "uepoch": 0, "profile_id": pid or self.home})
+        return c
+
+    def _slugs(self, pid):
+        return {r["slug"] for r in self.db.query("SELECT slug FROM categories WHERE profile_id = %s", (pid,))}
+
+    def test_a_business_profile_starts_with_business_categories(self):
+        res = self._client().post("/api/profiles", json={"name": "Studio", "kind": "business", "color": "c4"})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        slugs = self._slugs(res.get_json()["id"])
+        # what transfer pairing and the built-in hints look for, plus the business's own
+        self.assertTrue({"transfers", "transfers.card_payment", "transfers.internal", "transfers.owner", "income.sales",
+                         "fees.bank", "subscriptions.software", "office.supplies"} <= slugs, slugs)
+        self.assertNotIn("groceries", slugs)
+
+    def test_a_copy_brings_categories_rules_tags_and_memory_but_no_money(self):
+        db = self.db
+        dining = db.query("SELECT id FROM categories WHERE profile_id = %s AND slug = 'dining'", (self.home,), one=True)["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, 'Joint') RETURNING id",
+                          (self.uid, self.home), returning=True)["id"]
+        db.execute("""INSERT INTO rules (user_id, profile_id, name, match_type, pattern, category_id)
+                      VALUES (%s, %s, 'cafes', 'contains', 'CAFE', %s)""", (self.uid, self.home, dining))
+        db.execute("""INSERT INTO rules (user_id, profile_id, name, match_type, pattern, category_id, account_id)
+                      VALUES (%s, %s, 'joint only', 'contains', 'X', %s, %s)""", (self.uid, self.home, dining, acct))
+        db.execute("INSERT INTO tags (user_id, profile_id, name) VALUES (%s, %s, 'Trip')", (self.uid, self.home))
+        db.execute("""INSERT INTO merchant_memory (user_id, profile_id, merchant_key, category_id)
+                      VALUES (%s, %s, 'BLUE BOTTLE', %s)""", (self.uid, self.home, dining))
+        res = self._client().post("/api/profiles", json={"name": "Copy", "start": "copy", "copy_from": self.home})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        pid = res.get_json()["id"]
+        got = db.query("""SELECT (SELECT COUNT(*) FROM categories WHERE profile_id = %(p)s) AS categories,
+                                 (SELECT COUNT(*) FROM categories WHERE profile_id = %(h)s) AS source_categories,
+                                 (SELECT array_agg(pattern) FROM rules WHERE profile_id = %(p)s) AS rules,
+                                 (SELECT array_agg(name) FROM tags WHERE profile_id = %(p)s) AS tags,
+                                 (SELECT array_agg(c.slug) FROM merchant_memory m JOIN categories c ON c.id = m.category_id
+                                   WHERE m.profile_id = %(p)s) AS memory,
+                                 (SELECT COUNT(*) FROM accounts WHERE profile_id = %(p)s) AS accounts""",
+                       {"p": pid, "h": self.home}, one=True)
+        self.assertEqual((got["categories"], got["rules"], got["tags"], got["memory"], got["accounts"]),
+                         (got["source_categories"], ["CAFE"], ["Trip"], ["dining"], 0))
+        self.assertEqual(integrity_problems(db), [])
+
+    def test_names_are_unique_per_person_and_validated(self):
+        c = self._client()
+        self.assertEqual(c.post("/api/profiles", json={"name": "personal"}).get_json()["error"],
+                         "You already have a profile with that name")
+        self.assertEqual(c.post("/api/profiles", json={"name": "  "}).status_code, 400)
+        self.assertEqual(c.post("/api/profiles", json={"name": "X", "kind": "charity"}).status_code, 400)
+
+    def test_rename_and_recolor(self):
+        pid = self._client().post("/api/profiles", json={"name": "Side gig"}).get_json()["id"]
+        res = self._client().put(f"/api/profiles/{pid}", json={"name": "Side Hustle", "color": "c9"})
+        self.assertEqual((res.status_code, res.get_json()["name"], res.get_json()["color"]), (200, "Side Hustle", "c9"))
+
+    def test_delete_needs_the_name_and_takes_everything_with_it(self):
+        import config
+        db = self.db
+        pid = self._client().post("/api/profiles", json={"name": "Old shop", "kind": "business"}).get_json()["id"]
+        acct = db.execute("INSERT INTO accounts (user_id, profile_id, name) VALUES (%s, %s, 'Shop') RETURNING id",
+                          (self.uid, pid), returning=True)["id"]
+        folder = os.path.join(config.STATEMENTS_DIR, str(self.uid))
+        os.makedirs(folder, exist_ok=True)
+        for name in ("only-here.csv", "shared.csv"):
+            with open(os.path.join(folder, name), "w") as f:
+                f.write("date,amount\n")
+        for st_pid, name in ((pid, "only-here.csv"), (pid, "shared.csv"), (self.home, "shared.csv")):
+            db.execute("""INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256,
+                                                 file_size, file_kind, status)
+                          VALUES (%s, %s, %s, %s, %s, %s, 10, 'csv', 'committed')""",
+                       (self.uid, st_pid, acct if st_pid == pid else None, name, f"{self.uid}/{name}", name))
+        client = self._client(pid)
+        self.assertEqual(client.delete(f"/api/profiles/{pid}", json={"confirm": "old"}).status_code, 400)
+        res = client.delete(f"/api/profiles/{pid}", json={"confirm": "old shop"})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        self.assertEqual((res.get_json()["accounts"], res.get_json()["statements"]), (1, 2))
+        self.assertEqual(res.get_json()["active_profile_id"], self.home, "the session moves to another profile")
+        self.assertEqual([os.path.exists(os.path.join(folder, n)) for n in ("only-here.csv", "shared.csv")], [False, True])
+        self.assertIsNone(db.query("SELECT 1 FROM accounts WHERE id = %s", (acct,), one=True))
+
+    def test_the_last_profile_cannot_be_deleted(self):
+        other = self.db.execute("INSERT INTO users (username, password_hash) VALUES ('solo', 'x') RETURNING id",
+                                returning=True)["id"]
+        import profiles
+        conn = self.db.get_db()
+        pid = profiles.create(conn, other)
+        conn.commit()
+        c = self.flask_app.test_client()
+        with c.session_transaction() as s:
+            s.update({"user_id": other, "role": "user", "uepoch": 0, "profile_id": pid})
+        res = c.delete(f"/api/profiles/{pid}", json={"confirm": "Personal"})
+        self.assertEqual(res.status_code, 409)
+
+    def test_someone_elses_profile_is_not_found(self):
+        stranger = self.db.execute("INSERT INTO users (username, password_hash) VALUES ('eve', 'x') RETURNING id",
+                                   returning=True)["id"]
+        c = self.flask_app.test_client()
+        with c.session_transaction() as s:
+            s.update({"user_id": stranger, "role": "user", "uepoch": 0})
+        self.assertEqual(c.put(f"/api/profiles/{self.home}", json={"name": "mine"}).status_code, 404)
+        self.assertEqual(c.post("/api/auth/me/profile", json={"id": self.home}).status_code, 404)
+        self.assertEqual(c.post("/api/profiles", json={"name": "x", "start": "copy", "copy_from": self.home}).status_code, 404)
 
 if __name__ == "__main__":
     unittest.main()

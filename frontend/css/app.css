@@ -144,6 +144,17 @@ html[data-sidebar="hidden"] body.sidebar-open .sidebar-backdrop { opacity: 1; po
 .sb-collapse { width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--text-3); display: grid; place-items: center; flex: 0 0 auto; }
 @media (hover: hover) { .sb-collapse:hover { background: var(--surface-2); color: var(--text-1); } }
 .sb-collapse .ico { width: 16px; height: 16px; }
+/* Profile switcher: which books are on screen */
+.sb-profile-wrap { padding: 0 10px 2px; flex: 0 0 auto; }
+.sb-profile { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--border-control); border-radius: var(--r-md); background: var(--surface); color: var(--text-1); font-weight: 550; font-size: var(--fs-sm); text-align: left; }
+.sb-profile .dot, .tb-profile .dot { width: 10px; height: 10px; }
+.sb-profile-name { flex: 1 1 auto; min-width: 0; }
+.sb-profile .ico { color: var(--text-3); flex: 0 0 auto; }
+@media (hover: hover) { .sb-profile:hover { background: var(--surface-2); } }
+html[data-sidebar="rail"] .sb-profile-wrap { padding: 0 13px 2px; }
+html[data-sidebar="rail"] .sb-profile { width: 38px; justify-content: center; padding: 0; }
+html[data-sidebar="rail"] .sb-profile-name, html[data-sidebar="rail"] .sb-profile .ico { display: none; }
+.tb-profile { display: none; }
 .sb-nav { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 4px 10px 12px; }
 .sb-group { margin-top: 14px; }
 .sb-group-label { padding: 0 8px 6px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-4); white-space: nowrap; }
@@ -277,7 +288,9 @@ html[data-sidebar="rail"] .sb-expand { display: grid; }
 .input-group .ico-wrap { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-4); display: flex; pointer-events: none; }
 .input-group .ico-wrap .ico { width: 15px; height: 15px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-4); }
-.field > label, .label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+.field > label, .field > legend, .label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+fieldset.field { border: 0; padding: 0; min-width: 0; }
+fieldset.field > legend { padding: 0; margin-bottom: 6px; }
 .btn .label { color: inherit; font-size: inherit; font-weight: inherit; }
 .field .hint { margin-top: -2px; }
 .field-error { display: flex; align-items: flex-start; gap: 6px; margin-top: -2px; font-size: var(--fs-sm); color: var(--danger-text); }
@@ -665,6 +678,7 @@ tr:focus-within .row-actions > .btn-icon, tr.is-focused .row-actions > .btn-icon
   .tb-search span, .tb-search kbd { display: none; }
   .tb-search { width: var(--control-h); height: var(--control-h); padding: 0; justify-content: center; }
   .tb-username { display: none; }
+  .tb-profile:not([hidden]) { display: inline-flex; align-items: center; gap: 6px; max-width: 40vw; height: 32px; padding: 0 12px; border: 1px solid var(--border-control); border-radius: var(--r-pill); background: var(--surface); color: var(--text-1); font-size: var(--fs-sm); font-weight: 550; }
   .main { padding-bottom: calc(88px + var(--safe-bottom)); }
   .bottomnav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 250; height: calc(64px + var(--safe-bottom)); background: var(--surface); border-top: 1px solid var(--border); padding: 6px calc(4px + var(--safe-right)) calc(6px + var(--safe-bottom)) calc(4px + var(--safe-left)); }
   .bn-item { flex: 1 1 auto; min-width: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); text-decoration: none; border-radius: var(--r-md); position: relative; }

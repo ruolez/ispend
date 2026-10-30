@@ -293,7 +293,9 @@ def _move_references(pid, ids, dst_id):
 @bp.post("/reset-defaults")
 @login_required
 def reset_defaults():
+    pid = current_profile_id()
+    kind = (db.query("SELECT kind FROM profiles WHERE id = %s", (pid,), one=True) or {}).get("kind") or "personal"
     with db.transaction() as conn:
-        seed_categories.seed_for_profile(conn, session["user_id"], current_profile_id())
+        seed_categories.seed_for_profile(conn, session["user_id"], pid, seed_categories.TAXONOMIES[kind])
     audit("category.reset_defaults")
     return jsonify(load_tree(current_profile_id()))

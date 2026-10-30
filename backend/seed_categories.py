@@ -79,6 +79,79 @@ DEFAULT_TAXONOMY = [
     ("taxes", "Taxes", "expense", "c9", "landmark", []),
 ]
 
+# A business profile's books. Slugs the built-in hints and transfer pairing look for are shared with
+# the personal set (transfers.*, income.*, fees.bank, subscriptions.software, travel.*, dining,
+# transport.*, utilities.*, insurance, taxes, shopping.online), so a business still gets hints.
+BUSINESS_TAXONOMY = [
+    ("income", "Revenue", "income", "c6", "banknote", [
+        ("income.sales", "Sales", "receipt"),
+        ("income.services", "Services", "briefcase"),
+        ("income.interest", "Interest", "percent"),
+        ("income.refunds", "Refunds", "rotate-ccw"),
+        ("income.other", "Other Income", "coins"),
+    ]),
+    ("transfers", "Transfers", "transfer", "c10", "arrow-left-right", [
+        ("transfers.card_payment", "Credit Card Payment", "credit-card"),
+        ("transfers.internal", "Internal Transfer", "repeat"),
+        ("transfers.owner", "Owner Draw / Contribution", "user"),
+    ]),
+    ("cogs", "Cost of Goods Sold", "expense", "c4", "archive", [
+        ("cogs.inventory", "Inventory", "archive"),
+        ("cogs.shipping", "Shipping & Freight", "send"),
+    ]),
+    ("advertising", "Advertising & Marketing", "expense", "c2", "target", []),
+    ("subscriptions", "Software & Subscriptions", "expense", "c12", "monitor", [
+        ("subscriptions.software", "Software", "monitor"),
+        ("subscriptions.memberships", "Memberships", "badge-check"),
+    ]),
+    ("office", "Office & Supplies", "expense", "c3", "paperclip", [
+        ("office.supplies", "Supplies", "paperclip"),
+        ("office.equipment", "Equipment", "laptop"),
+    ]),
+    ("contractors", "Contractors", "expense", "c7", "users", []),
+    ("payroll", "Payroll", "expense", "c1", "wallet", [
+        ("payroll.wages", "Wages", "banknote"),
+        ("payroll.taxes", "Payroll Taxes", "landmark"),
+    ]),
+    ("professional", "Professional Fees", "expense", "c9", "briefcase", [
+        ("professional.legal", "Legal", "file-text"),
+        ("professional.accounting", "Accounting", "pie-chart"),
+    ]),
+    ("rent", "Rent & Premises", "expense", "c7", "home", []),
+    ("utilities", "Utilities", "expense", "c9", "zap", [
+        ("utilities.electricity", "Electricity", "zap"),
+        ("utilities.internet", "Internet", "wifi"),
+        ("utilities.phone", "Phone", "smartphone"),
+    ]),
+    ("travel", "Travel", "expense", "c5", "plane", [
+        ("travel.flights", "Flights", "plane"),
+        ("travel.hotels", "Hotels", "bed"),
+        ("travel.car_rental", "Car Rental", "car"),
+    ]),
+    ("dining", "Meals", "expense", "c2", "utensils", [
+        ("dining.restaurants", "Restaurants", "utensils"),
+        ("dining.coffee", "Coffee", "coffee"),
+    ]),
+    ("transport", "Vehicle & Transport", "expense", "c1", "car", [
+        ("transport.fuel", "Fuel", "fuel"),
+        ("transport.parking", "Parking & Tolls", "parking"),
+        ("transport.rideshare", "Rideshare", "car-taxi"),
+        ("transport.maintenance", "Vehicle Maintenance", "wrench"),
+    ]),
+    ("shopping", "General Purchases", "expense", "c4", "shopping-bag", [
+        ("shopping.online", "Online", "globe"),
+    ]),
+    ("insurance", "Insurance", "expense", "c11", "shield", []),
+    ("fees", "Bank & Card Fees", "expense", "c8", "receipt", [
+        ("fees.bank", "Bank Fees", "landmark"),
+        ("fees.interest", "Interest Charges", "percent"),
+        ("fees.processing", "Payment Processing", "credit-card"),
+    ]),
+    ("taxes", "Taxes", "expense", "c9", "landmark", []),
+]
+
+TAXONOMIES = {"personal": DEFAULT_TAXONOMY, "business": BUSINESS_TAXONOMY}
+
 
 def seed_for_profile(conn, user_id, profile_id, taxonomy=None):
     """Add any default category the profile does not have yet. Existing categories are never
@@ -126,7 +199,7 @@ def _find(cur, profile_id, parent_id, slug, name):
 
 def default_icons():
     icons = set()
-    for _slug, _name, _kind, _color, icon, children in DEFAULT_TAXONOMY:
+    for _slug, _name, _kind, _color, icon, children in DEFAULT_TAXONOMY + BUSINESS_TAXONOMY:
         icons.add(icon)
         for _s, _n, cicon in children:
             icons.add(cicon)

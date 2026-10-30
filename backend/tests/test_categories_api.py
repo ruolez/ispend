@@ -102,7 +102,7 @@ class CategoriesApiTest(unittest.TestCase):
                 mock.patch.object(categories_api, "load_tree", return_value=[{"id": 1, "children": []}]):
             res = self._call("post", "/api/categories/reset-defaults")
         self.assertEqual(res.get_json(), [{"id": 1, "children": []}])
-        self.assertEqual(seed.call_args.args, (FAKE, 1, 1))
+        self.assertEqual(seed.call_args.args, (FAKE, 1, 1, seed_categories.DEFAULT_TAXONOMY))
 
     def test_unknown_category_is_404_for_update_and_merge(self):
         self.assertEqual(self._call("put", "/api/categories/55", {"name": "x"}).status_code, 404)

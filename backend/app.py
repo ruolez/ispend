@@ -45,6 +45,7 @@ def create_app():
     import budgets_api
     import import_layouts_api
     import merchants_api
+    import profiles_api
     import public_api
     import reports_api
     import review_api
@@ -60,7 +61,7 @@ def create_app():
         transactions_api, review_api, rules_api, merchants_api, import_layouts_api, reports_api, ai_api, budgets_api, tags_api,
         support_api,
         admin_api, admin_users, admin_backup, admin_billing, admin_email, admin_metrics, admin_support, admin_system,
-        billing_api, public_api,
+        billing_api, public_api, profiles_api,
     ):
         app.register_blueprint(module.bp)
 

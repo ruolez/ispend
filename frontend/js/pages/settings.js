@@ -1,6 +1,7 @@
-/* Settings page: Accounts, AI (per user), Appearance, My account, Your data. */
+/* Settings page: Profiles, Accounts, AI (per user), Appearance, My account, Your data. */
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TAB_META = {
+  profiles: { label: 'Profiles', icon: 'users' },
   accounts: { label: 'Accounts', icon: 'landmark' },
   ai: { label: 'AI', icon: 'sparkles' },
   appearance: { label: 'Preferences', icon: 'sliders' },
@@ -8,7 +9,8 @@ const TAB_META = {
   data: { label: 'Your data', icon: 'download' },
 };
 const ACCOUNT_TYPES = [['checking', 'Checking'], ['savings', 'Savings'], ['credit_card', 'Credit card'], ['line_of_credit', 'Line of credit'], ['loan', 'Loan'], ['investment', 'Investment'], ['cash', 'Cash'], ['other', 'Other']];
-const state = { me: null, accounts: [], institutions: [], layouts: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
+const PROFILE_KINDS = [['personal', 'Personal'], ['business', 'Business']];
+const state = { me: null, profiles: [], accounts: [], institutions: [], layouts: [], settings: null, models: null, dirty: false, aiStatus: null, modelIdx: -1, modelRows: [] };
 
 initNav('settings').then(async (me) => {
   state.me = me;
@@ -18,6 +20,8 @@ initNav('settings').then(async (me) => {
     a.innerHTML = `${icon(t.icon)}<span class="label">${t.label}</span>`;
   });
   $('[data-act="add-account"]').innerHTML = `${icon('plus')}<span class="label">Add account</span>`;
+  $('[data-act="add-profile"]').innerHTML = `${icon('plus')}<span class="label">New profile</span>`;
+  if (me.profile && (me.profiles || []).length > 1) $('#accounts-sub').textContent = `The bank and card accounts in your ${me.profile.name} profile.`;
   $('[data-act="renormalize"]').innerHTML = `${icon('sparkles')}<span class="label">Re-detect merchant names</span>`;
   $('[data-act="learn-history"]').innerHTML = `${icon('book')}<span class="label">Learn from history</span>`;
   window.addEventListener('hashchange', showTab);
@@ -29,11 +33,16 @@ initNav('settings').then(async (me) => {
 function showTab() {
   if (modelPop) modelPop.close();
   let tab = (location.hash || '#accounts').slice(1);
+  if (tab === 'profiles-new') {
+    history.replaceState(null, '', '#profiles');
+    tab = 'profiles';
+    setTimeout(() => openProfileModal(null), 0);
+  }
   if (!TAB_META[tab]) tab = 'accounts';
   $$('#settings-nav .nav-item').forEach((a) => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
   setPageTitle(TAB_META[tab].label);
-  ({ accounts: () => { loadAccounts(); loadLayouts(); }, ai: loadAI, appearance: renderAppearance, account: renderAccount, data: renderData })[tab]();
+  ({ profiles: loadProfiles, accounts: () => { loadAccounts(); loadLayouts(); }, ai: loadAI, appearance: renderAppearance, account: renderAccount, data: renderData })[tab]();
 }
 
 /* ---------- Accounts ---------- */
@@ -58,6 +67,84 @@ async function loadAccounts() {
       <td class="text-3" data-label="Last import">${a.last_import_at ? fmtRelative(a.last_import_at) : '—'}</td>
       <td class="col-actions"><div class="row-actions"><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="edit-account" data-id="${a.id}" aria-label="Edit">${icon('pencil')}</button><button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="account-menu" data-id="${a.id}" aria-label="More">${icon('more-horizontal')}</button></div></td>
     </tr>`).join('')}</tbody></table></div>`;
+}
+
+/* ---------- Profiles ---------- */
+const swatchesHtml = (id, current) => `<div class="swatches" id="${id}">${Array.from({ length: 12 }, (_, i) => `c${i + 1}`).map((c) => `<button type="button" class="swatch ${current === c ? 'active' : ''}" data-color="${c}" style="--c:var(--${c})" aria-label="${c}"></button>`).join('')}</div>`;
+
+async function loadProfiles() {
+  const host = $('#profiles-list');
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Profile</th><th>Kind</th><th class="right">Accounts</th><th class="right">Transactions</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${ui.skeletonRows(2, 5)}</tbody></table></div>`;
+  try { state.profiles = await api('/api/profiles'); } catch (err) { host.innerHTML = ui.errorBox(err.message, { retry: 'reload-profiles' }); return; }
+  const active = (state.me.profile || {}).id;
+  host.innerHTML = `<div class="tbl-wrap"><table class="tbl tbl--cards tbl--list"><thead><tr><th>Profile</th><th>Kind</th><th class="right">Accounts</th><th class="right">Transactions</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+    ${state.profiles.map((p) => `<tr data-id="${p.id}">
+      <td><span class="acct"><span class="dot" style="--c:var(--${esc(p.color)})"></span><span class="text-1 fw-500">${esc(p.name)}</span>${p.id === active ? '<span class="badge badge-accent">In use</span>' : ''}</span></td>
+      <td data-label="Kind">${esc((PROFILE_KINDS.find((k) => k[0] === p.kind) || [])[1] || p.kind)}</td>
+      <td class="right num" data-label="Accounts" data-unit=" accounts">${fmtNumber(p.accounts)}</td>
+      <td class="right num" data-label="Transactions" data-unit=" transactions">${fmtNumber(p.transactions)}</td>
+      <td class="col-actions"><div class="row-actions">${p.id === active ? '' : `<button type="button" class="btn btn-secondary btn-xs" data-act="use-profile" data-id="${p.id}">Switch to</button>`}<button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="profile-menu" data-id="${p.id}" aria-label="More for ${esc(p.name)}">${icon('more-horizontal')}</button></div></td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="text-3 fs-sm mt-3">Money moving between two profiles (an owner’s draw, paying yourself) shows up in each as money in or out. Business profiles have an “Owner Draw / Contribution” category for it.</p>`;
+}
+
+function openProfileModal(p) {
+  const others = state.profiles.length ? state.profiles : (state.me.profiles || []);
+  const m = ui.modal({
+    title: p ? 'Edit profile' : 'New profile',
+    html: `<form id="profile-form">
+      <div class="field"><label for="profile-name">Name</label><input id="profile-name" class="input" maxlength="40" value="${esc(p ? p.name : '')}" placeholder="e.g. Business" required autofocus></div>
+      <div class="field"><label for="profile-kind">Kind</label><select id="profile-kind" class="select">${PROFILE_KINDS.map(([v, l]) => `<option value="${v}" ${(p ? p.kind : 'business') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      ${p ? '' : `<fieldset class="field"><legend>Start with</legend>
+        <div class="radio-list">
+          <label class="radio-item"><input type="radio" name="profile-start" value="defaults" checked><span id="profile-start-label">The standard business categories</span></label>
+          ${others.length ? `<label class="radio-item"><input type="radio" name="profile-start" value="copy"><span>The categories, rules and tags of another profile</span></label>` : ''}
+        </div>
+        ${others.length ? `<select id="profile-copy" class="select mt-2" aria-label="Profile to copy from" hidden>${others.map((o) => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select>` : ''}
+        <div class="text-3 fs-sm mt-2">Accounts and transactions are never copied. To bring an account over, use “Move to profile” on the Accounts tab.</div>
+      </fieldset>`}
+      <div class="field"><label>Color</label>${swatchesHtml('profile-colors', p ? p.color : 'c4')}</div>
+      <button type="submit" hidden></button></form>`,
+    actions: [{ label: 'Cancel' }, { label: p ? 'Save' : 'Create profile', primary: true, onClick: async () => {
+      if (!ui.validate(m.el, [{ sel: '#profile-name', message: 'Give the profile a name' }])) return false;
+      const body = { name: m.el.querySelector('#profile-name').value.trim(), kind: m.el.querySelector('#profile-kind').value,
+        color: (m.el.querySelector('.swatch.active') || {}).dataset?.color || 'c1' };
+      if (!p) {
+        body.start = (m.el.querySelector('[name="profile-start"]:checked') || {}).value || 'defaults';
+        if (body.start === 'copy') body.copy_from = Number(m.el.querySelector('#profile-copy').value);
+      }
+      const saved = await api(p ? `/api/profiles/${p.id}` : '/api/profiles', { method: p ? 'PUT' : 'POST', body });
+      await store.get('me', '/api/auth/me', { force: true }).then((me) => { state.me = me; }).catch(() => {});
+      if (p) { toast('Profile saved', { type: 'success' }); loadProfiles(); return; }
+      loadProfiles();
+      toast(`${saved.name} created`, { type: 'success', duration: 8000, action: { label: 'Switch to it', fn: () => switchProfile(saved.id) } });
+    } }],
+  });
+  const kind = m.el.querySelector('#profile-kind');
+  const label = m.el.querySelector('#profile-start-label');
+  if (label) kind.addEventListener('change', () => { label.textContent = kind.value === 'business' ? 'The standard business categories' : 'The standard personal categories'; });
+  const copy = m.el.querySelector('#profile-copy');
+  if (copy) m.el.querySelectorAll('[name="profile-start"]').forEach((r) => r.addEventListener('change', () => { copy.hidden = r.value !== 'copy' || !r.checked; }));
+  m.el.querySelector('#profile-colors').addEventListener('click', (e) => { const b = e.target.closest('.swatch'); if (!b) return; $$('.swatch', m.el).forEach((s) => s.classList.remove('active')); b.classList.add('active'); });
+  m.el.querySelector('#profile-form').addEventListener('submit', (e) => { e.preventDefault(); m.el.querySelector('.modal-foot .btn-primary').click(); });
+}
+
+async function deleteProfile(p) {
+  if (state.profiles.length < 2) {
+    toast('This is your only profile. Create another one before deleting it.', { type: 'error' });
+    return;
+  }
+  const parts = [p.accounts && plural(p.accounts, 'account'), p.transactions && plural(p.transactions, 'transaction')].filter(Boolean);
+  const ok = await ui.confirmTyped({
+    title: `Delete ${p.name}?`, phrase: p.name, confirmText: 'Delete profile',
+    body: `This deletes the profile with ${parts.length ? parts.join(' and ') : 'everything in it'}, its categories, rules, budgets and uploaded statements. This cannot be undone.`,
+  });
+  if (!ok) return;
+  const r = await api(`/api/profiles/${p.id}`, { method: 'DELETE', body: { confirm: p.name } });
+  toast(`${p.name} deleted`);
+  if ((state.me.profile || {}).id === p.id) { showProfile(r.active_profile_id); return; }
+  await store.get('me', '/api/auth/me', { force: true }).then((me) => { state.me = me; }).catch(() => {});
+  loadProfiles();
 }
 
 /* ---------- Saved file layouts ---------- */
@@ -376,6 +463,18 @@ async function onAction(e) {
   const act = el.dataset.act, id = Number(el.dataset.id);
   const acct = state.accounts.find((a) => a.id === id);
   switch (act) {
+    case 'add-profile': return openProfileModal(null);
+    case 'reload-profiles': return loadProfiles();
+    case 'use-profile': return switchProfile(id);
+    case 'profile-menu': {
+      const p = state.profiles.find((x) => x.id === id);
+      return ui.menu(el, [
+        { label: 'Edit', icon: 'pencil', onClick: () => openProfileModal(p) },
+        ...((state.me.profile || {}).id === p.id ? [] : [{ label: 'Switch to', icon: 'arrow-right', onClick: () => switchProfile(p.id) }]),
+        { divider: true },
+        { label: 'Delete…', icon: 'trash', danger: true, onClick: () => deleteProfile(p) },
+      ]);
+    }
     case 'add-account': return openAccountModal(null);
     case 'edit-account': return openAccountModal(acct);
     case 'account-menu': return ui.menu(el, [

@@ -20,9 +20,10 @@
 </head>
 <body>
   <main id="main" class="main">
-    <div class="page-head"><div><h1>Settings</h1><div class="page-sub">Accounts, AI and appearance</div></div></div>
+    <div class="page-head"><div><h1>Settings</h1><div class="page-sub">Profiles, accounts, AI and appearance</div></div></div>
     <div class="settings-layout">
       <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+        <a class="nav-item" href="#profiles" data-tab="profiles"></a>
         <a class="nav-item" href="#accounts" data-tab="accounts"></a>
         <a class="nav-item" href="#ai" data-tab="ai"></a>
         <a class="nav-item" href="#appearance" data-tab="appearance"></a>
@@ -30,9 +31,16 @@
         <a class="nav-item" href="#data" data-tab="data"></a>
       </nav>
       <div id="settings-panels">
+        <section class="tab-panel" data-panel="profiles">
+          <div class="settings-section">
+            <div class="row-between mb-4"><div><h2>Profiles</h2><div class="sub m-0">Separate sets of books, such as Personal and Business. Each profile has its own accounts, categories, rules, budgets and reports, and nothing is shared between them.</div></div>
+              <button type="button" class="btn btn-primary" data-needs-write data-tip="Subscribe to make changes" data-act="add-profile">New profile</button></div>
+            <div id="profiles-list"></div>
+          </div>
+        </section>
         <section class="tab-panel" data-panel="accounts">
           <div class="settings-section">
-            <div class="row-between mb-4"><div><h2>Accounts</h2><div class="sub m-0">The bank and card accounts your statements go into.</div></div>
+            <div class="row-between mb-4"><div><h2>Accounts</h2><div class="sub m-0" id="accounts-sub">The bank and card accounts your statements go into.</div></div>
               <button type="button" class="btn btn-primary" data-needs-write data-tip="Subscribe to make changes" data-act="add-account">Add account</button></div>
             <div id="accounts-table"></div>
           </div>

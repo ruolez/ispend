@@ -121,6 +121,7 @@ async function initNav(activePage, opts = {}) {
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
       <div class="sb-brand"><span class="sb-mark">${brandMark()}</span><span class="sb-name">iSpend</span>${opts.brandBadge ? `<span class="badge badge-accent sb-badge">${esc(opts.brandBadge)}</span>` : ''}
         <button type="button" class="sb-collapse" id="sb-collapse" data-tip="Collapse sidebar ([)" aria-label="Collapse sidebar">${icon('chevrons-left')}</button></div>
+      ${adminShell ? '' : '<div class="sb-profile-wrap"><button type="button" class="sb-profile" id="sb-profile" aria-haspopup="menu" hidden></button></div>'}
       <nav class="sb-nav">
         ${groups.map((g) => `<div class="sb-group">${g.label ? `<div class="sb-group-label">${esc(g.label)}</div>` : ''}${g.items.map((i) => navItemHtml(i, activePage)).join('')}</div>`).join('')}
       </nav>
@@ -142,6 +143,7 @@ async function initNav(activePage, opts = {}) {
       <div class="tb-title" id="tb-title">${esc(active ? active.label : 'iSpend')}</div>
       <button type="button" class="tb-search" id="tb-search" aria-label="Search (⌘K)">${icon('search')}<span>${esc(opts.searchLabel || 'Search transactions…')}</span><kbd>⌘K</kbd></button>
       <div class="tb-actions">
+        ${adminShell ? '' : '<button type="button" class="tb-profile" id="tb-profile" aria-haspopup="menu" hidden></button>'}
         <button type="button" class="btn btn-icon btn-ghost" id="tb-theme" aria-label="Toggle theme">${icon('sun')}</button>
         <button type="button" class="tb-avatar-btn" id="tb-user" aria-haspopup="menu" aria-label="Account menu"><span class="avatar" id="tb-avatar"></span><span class="tb-username text-2 fs-base" id="tb-username"></span>${icon('chevron-down', 'ico-sm text-3')}</button>
       </div>
@@ -262,7 +264,7 @@ async function initNav(activePage, opts = {}) {
   // Billing is hidden entirely on an install that runs without subscriptions.
   if (!adminShell && me.billing && me.billing.billing_enabled) $$('[data-billing-only]').forEach((el) => el.removeAttribute('hidden'));
   else $$('[data-billing-only]').forEach((el) => el.remove());
-  if (!adminShell) paintBillingBanner(me);
+  if (!adminShell) { paintBillingBanner(me); paintProfile(me); }
   watchConnectivity();
   if (!opts.groups) {
     refreshReviewPill();
@@ -301,6 +303,7 @@ function applyFreshMe(cached, fresh) {
     return;
   }
   window.currentUser = fresh;
+  if (!window.NAV_ADMIN_SHELL) paintProfile(fresh);
   $('#tb-avatar').textContent = initials(fresh.username);
   $('#tb-username').textContent = fresh.username;
   if (!window.NAV_ADMIN_SHELL) { paintPinnedViews(fresh); paintSupportPill(fresh); }
@@ -493,7 +496,12 @@ function openMoreSheet(activePage) {
   const items = shellMore || MORE_ORDER.map((p) => NAV_ITEMS.find((i) => i.page === p)).filter(Boolean).filter(allowed);
   const views = window.NAV_ADMIN_SHELL ? [] : (((me.preferences || {}).saved_views) || []).filter((v) => v.pinned);
   const mode = Theme.get();
-  const html = `
+  const profileList = window.NAV_ADMIN_SHELL || !me.profile ? '' : `
+    <div class="section-label">Profile</div>
+    <div class="more-list mb-4" role="radiogroup" aria-label="Profile">${(me.profiles || []).map((p) => `<button type="button" class="more-row" role="radio" aria-checked="${p.id === me.profile.id}" data-profile="${p.id}">${profileDot(p)}<span class="grow truncate">${esc(p.name)}</span>${p.id === me.profile.id ? icon('check', 'ico-sm') : ''}</button>`).join('')}
+      <a class="more-row" href="/settings.html#profiles">${icon('users', 'ico-sm')}<span class="grow">Manage profiles</span>${icon('chevron-right', 'ico-sm text-4')}</a>
+    </div>`;
+  const html = `${profileList}
     <nav class="more-grid" aria-label="More pages">${items.map((i) => `<a class="more-tile" href="${esc(itemHref(i))}" data-page="${esc(i.page)}" ${i.page === activePage ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${esc(i.label)}</span>${typeof i.pill === 'string' && NAV_PILLS[i.pill] ? `<span class="pill">${esc(String(NAV_PILLS[i.pill]))}</span>` : ''}</a>`).join('')}</nav>
     ${views.length ? `<div class="section-label mt-4">Saved views</div><div class="more-list">${views.map((v) => `<a class="more-row" href="/transactions.html${esc(v.query)}&view=${encodeURIComponent(v.id)}">${icon('star', 'ico-sm')}<span class="grow truncate">${esc(v.name)}</span>${icon('chevron-right', 'ico-sm text-4')}</a>`).join('')}</div>` : ''}
     <div class="section-label mt-4">Appearance</div>
@@ -508,6 +516,10 @@ function openMoreSheet(activePage) {
   const sh = ui.sheet({ title: 'More', html, className: 'more-sheet' });
   sh.body.addEventListener('click', (e) => { if (e.target.closest('.more-tile[href^="#"]')) sh.close(); });
   ui.segmented(sh.body.querySelector('.more-theme'), { onChange: (btn) => setThemePref(btn.dataset.themeSet) });
+  sh.body.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-profile]');
+    if (p) { sh.close(); switchProfile(Number(p.dataset.profile)).catch((err) => toast(err.message, { type: 'error' })); }
+  });
   sh.body.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-more]');
     if (!b) return;
@@ -524,12 +536,68 @@ async function signOut() {
   location.href = '/login.html';
 }
 
+/* ---------- Profiles: separate sets of books ---------- */
+const PROFILE_SWITCHED_KEY = 'ispend.switched';
+const profileDot = (p) => `<span class="dot" style="--c:var(--${/^c\d+$/.test(p.color) ? p.color : 'c1'})"></span>`;
+
+/* Which books are on screen: a pill under the brand (desktop) and, once there is more than one
+   profile, a chip in the phone top bar. Both open the switcher. */
+function paintProfile(me) {
+  const p = me && me.profile;
+  if (!p) return;
+  const sb = $('#sb-profile');
+  if (sb) {
+    sb.innerHTML = `${profileDot(p)}<span class="sb-profile-name truncate">${esc(p.name)}</span>${icon('chevron-down', 'ico-sm')}`;
+    sb.setAttribute('aria-label', `Profile: ${p.name}. Switch profile`);
+    sb.dataset.tip = p.name;
+    sb.hidden = false;
+    if (!sb.dataset.bound) { sb.dataset.bound = '1'; sb.addEventListener('click', () => openProfileMenu(sb)); }
+  }
+  const tb = $('#tb-profile');
+  if (tb) {
+    tb.innerHTML = `${profileDot(p)}<span class="truncate">${esc(p.name)}</span>`;
+    tb.setAttribute('aria-label', `Profile: ${p.name}. Switch profile`);
+    tb.hidden = (me.profiles || []).length < 2;
+    if (!tb.dataset.bound) { tb.dataset.bound = '1'; tb.addEventListener('click', () => openProfileMenu(tb)); }
+  }
+  let switched = null;
+  try { switched = sessionStorage.getItem(PROFILE_SWITCHED_KEY); sessionStorage.removeItem(PROFILE_SWITCHED_KEY); } catch { /* storage unavailable */ }
+  if (switched) toast(`Now in ${p.name}`, { type: 'success', duration: 2500 });
+}
+
+function profileItems(me) {
+  const current = me.profile && me.profile.id;
+  return (me.profiles || []).map((p) => ({ label: p.name, dot: p.color, checked: p.id === current,
+    onClick: () => switchProfile(p.id) }));
+}
+
+function openProfileMenu(anchor) {
+  const me = window.currentUser || {};
+  ui.menu(anchor, [
+    { label: 'Profiles', header: true },
+    ...profileItems(me),
+    { divider: true },
+    { label: 'New profile…', icon: 'plus', href: '/settings.html#profiles-new' },
+    { label: 'Manage profiles', icon: 'settings', href: '/settings.html#profiles' },
+  ], { placement: anchor.id === 'sb-profile' ? 'bottom-start' : 'bottom-end' });
+}
+
+/* The session moves to the other books; this page starts over in them. */
+async function switchProfile(id) {
+  const me = window.currentUser || {};
+  if (!id || (me.profile && me.profile.id === id)) return;
+  await api('/api/auth/me/profile', { method: 'POST', body: { id } });
+  try { sessionStorage.setItem(PROFILE_SWITCHED_KEY, '1'); } catch { /* storage unavailable */ }
+  showProfile(id);
+}
+
 /* ---------- User menu ---------- */
 function openUserMenu(anchor) {
   const me = window.currentUser || {};
   const mode = Theme.get();
   ui.menu(anchor, [
     { label: window.NAV_ADMIN_SHELL ? `${me.username || ''} · Admin` : (me.username || ''), header: true },
+    ...((me.profiles || []).length > 1 ? [{ label: 'Profiles', header: true }, ...profileItems(me), { divider: true }] : []),
     { label: 'Theme: System', icon: 'monitor', checked: mode === 'system', onClick: () => setThemePref('system') },
     { label: 'Theme: Light', icon: 'sun', checked: mode === 'light', onClick: () => setThemePref('light') },
     { label: 'Theme: Dark', icon: 'moon', checked: mode === 'dark', onClick: () => setThemePref('dark') },
@@ -540,6 +608,7 @@ function openUserMenu(anchor) {
     ...(window.NAV_ADMIN_SHELL ? (window.NAV_SHELL.menu || []) : [
       ...(me.billing && me.billing.billing_enabled ? [{ label: 'Billing', icon: 'credit-card', href: '/billing.html' }] : []),
       { label: 'Settings', icon: 'settings', href: '/settings.html' },
+      { label: 'Profiles', icon: 'users', href: '/settings.html#profiles' },
       { divider: true },
       { label: 'Help & support', icon: 'help', href: '/help.html' },
       { label: 'Report a problem', icon: 'alert-circle', onClick: () => openReport() },

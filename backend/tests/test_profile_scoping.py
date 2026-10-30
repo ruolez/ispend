@@ -3,9 +3,9 @@ shows one profile's rows in another. This guard counts every SQL string in the b
 user_id as a predicate, join key or conflict target and holds each module to the number below.
 
 Modules in PER_USER_MODULES work on users, billing, support or whole accounts by design and are not
-counted. Everywhere else the number may only go down: convert the site to profile_id, then lower
-the count. A site that really is per user (users, auth_tokens, ai_calls, audit_log, settings…)
-stays in the count with the reason next to it.
+counted, nor is SQL that only touches per-person tables (PER_USER_TABLES). Everywhere else the
+number may only go down: convert the site to profile_id, then lower the count. A site that really
+is per user stays in the count with the reason next to it.
 """
 import ast
 import os
@@ -15,6 +15,10 @@ import unittest
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PER_USER_MODULES = re.compile(r"^(admin_\w+|privacy|billing\w*|ledger|support\w*|activity|backup/\w+)\.py$")
+
+PER_USER_TABLES = {"users", "profiles", "subscriptions", "auth_tokens", "data_exports", "ai_calls", "settings",
+                   "audit_log", "login_events", "support_reports", "user_activity_days"}
+TABLE = re.compile(r"\b(?:FROM|JOIN|INTO|UPDATE)\s+(\w+)", re.I)
 
 PREDICATE = re.compile(
     r"(?<!\w)(?:\w+\.)?user_id\s*(?:=|<>|!=|\bIN\b|\bANY\b)"   # t.user_id = %s, user_id IN (…)
@@ -26,11 +30,9 @@ PREDICATE = re.compile(
 # Remaining user_id predicates per module. Lower a number when you convert a site; never raise one
 # for finance data.
 ALLOWED = {
-    "ai_api.py": 2,               # AI usage is metered per person (ai_calls)
-    "auth.py": 18,                # users, subscriptions, auth tokens, exports, the user's own profiles
+    "auth.py": 3,                 # the session hook's join of the person, subscription and profiles
     "db.py": 3,                   # startup seeding by owner; promote_admin checks the person's data
-    "profiles.py": 2,             # the user's own profiles
-    "reports.py": 1,              # the owner's week start (users join)
+    "profiles.py": 1,             # the person's profiles, with counts per profile
     "statements_api.py": 2,       # the uploader's name (users join)
     "transactions_api.py": 1,     # who acted on an event (users join)
 }
@@ -56,6 +58,9 @@ def scoping_sites():
         hits = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                tables = {t.lower() for t in TABLE.findall(node.value)}
+                if tables and tables <= PER_USER_TABLES:
+                    continue
                 for m in PREDICATE.finditer(node.value):
                     start = node.value.rfind("\n", 0, m.start()) + 1
                     end = node.value.find("\n", m.end())

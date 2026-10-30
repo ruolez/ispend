@@ -368,7 +368,7 @@ const ui = (() => {
       if (it.label && it.header) return `<div class="menu-label">${esc(it.label)}</div>`;
       const tag = it.href ? 'a' : 'button';
       return `<${tag} ${it.href ? `href="${esc(it.href)}"` : 'type="button"'} class="menu-item${it.danger ? ' danger' : ''}${it.disabled ? ' is-disabled' : ''}" role="${it.checked != null ? 'menuitemcheckbox' : 'menuitem'}" ${it.checked != null ? `aria-checked="${!!it.checked}"` : ''} data-i="${i}" ${it.disabled ? 'aria-disabled="true"' : ''}>
-        ${it.icon ? icon(it.icon) : ''}<span class="grow truncate">${esc(it.label)}</span>
+        ${it.icon ? icon(it.icon) : ''}${it.dot ? `<span class="dot" style="--c:var(--${esc(it.dot)})"></span>` : ''}<span class="grow truncate">${esc(it.label)}</span>
         ${it.checked ? `<span class="menu-check">${icon('check')}</span>` : ''}${it.shortcut ? `<kbd>${esc(it.shortcut)}</kbd>` : ''}
       </${tag}>`;
     }).join('');

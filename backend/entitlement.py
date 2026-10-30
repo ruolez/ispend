@@ -171,6 +171,8 @@ WRITE_ALLOWLIST = frozenset({
 # admin_required owns these, and the acting admin is admin_exempt anyway.
 WRITE_ALLOWLIST_PREFIXES = ("/api/admin/",)
 _READ_ONLY_POST = re.compile(r"^/api/transactions/\d+/rule-draft$")
+# Renaming or deleting one's own profile only organises or removes the person's own data.
+_PROFILE_WRITE = re.compile(r"^/api/profiles/\d+$")
 # A lapsed customer can still tell us something is wrong — billing trouble is exactly when.
 _SUPPORT_WRITE = re.compile(r"^/api/support/reports(/\d+/(messages|resolve))?$")
 
@@ -180,6 +182,7 @@ def write_allowed(path):
     return (path in WRITE_ALLOWLIST
             or path.startswith(WRITE_ALLOWLIST_PREFIXES)
             or bool(_READ_ONLY_POST.match(path))
+            or bool(_PROFILE_WRITE.match(path))
             or bool(_SUPPORT_WRITE.match(path)))
 
 
