@@ -907,3 +907,52 @@ window.toast = toast;
   window.addEventListener('unhandledrejection', (e) => report(e.reason));
   window.addEventListener('error', (e) => { if (e.error || e.message) report(e.error || e.message); });
 })();
+
+/* Every password field gets an eye to show or hide what was typed, including fields in modals that
+   open later. Fields that already carry their own toggle (sign-in, sign-up, API keys) are left alone. */
+(() => {
+  const paint = (btn, shown) => {
+    btn.innerHTML = icon(shown ? 'eye-off' : 'eye');
+    btn.setAttribute('aria-label', shown ? 'Hide password' : 'Show password');
+    btn.setAttribute('aria-pressed', String(shown));
+  };
+  function enhance(root) {
+    const inputs = root.matches && root.matches('input[type="password"]') ? [root] : (root.querySelectorAll ? root.querySelectorAll('input[type="password"]') : []);
+    inputs.forEach((input) => {
+      if (input.dataset.pwReady) return;
+      input.dataset.pwReady = '1';
+      const group = input.parentElement && input.parentElement.classList.contains('input-group') ? input.parentElement : null;
+      if (group && group.querySelector('.trailing')) return;
+      const wrap = group || document.createElement('div');
+      if (!group) {
+        wrap.className = 'input-group pw-group';
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+      }
+      input.classList.add('has-trailing');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-icon btn-ghost btn-sm trailing';
+      btn.dataset.pwToggle = '';
+      if (input.id) btn.setAttribute('aria-controls', input.id);
+      paint(btn, false);
+      wrap.appendChild(btn);
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-pw-toggle]');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input');
+    if (!input) return;
+    const shown = input.type === 'password';
+    input.type = shown ? 'text' : 'password';
+    paint(btn, shown);
+    input.focus();
+  });
+  const start = () => {
+    enhance(document.body);
+    new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => { if (n.nodeType === 1) enhance(n); })))
+      .observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();

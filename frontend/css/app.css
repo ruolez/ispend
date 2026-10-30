@@ -285,6 +285,8 @@ html[data-sidebar="rail"] .sb-expand { display: grid; }
 .input-group > .input { padding-left: 34px; }
 .input-group > .btn-icon.trailing { position: absolute; right: 2px; }
 .input-group > .input.has-trailing { padding-right: 36px; }
+.input-group.pw-group > .input { padding-left: 12px; }
+.input-group.pw-group > .input-sm { padding-left: 8px; }
 .input-group .ico-wrap { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-4); display: flex; pointer-events: none; }
 .input-group .ico-wrap .ico { width: 15px; height: 15px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-4); }
