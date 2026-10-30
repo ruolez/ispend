@@ -15,20 +15,23 @@ SYSTEM_PROMPT = (
     "\"body\": \"<1-3 sentences>\", \"severity\": \"info|good|warn\", \"category\": \"<category or merchant name or null>\"}]} "
     "with 4 to 8 insights ordered by importance."
 )
+# A business profile's books are a business's money: the same advisor, talking about the business.
+BUSINESS_NOTE = (" These are the books of a small business, not a household: speak about the business's revenue, "
+                 "costs and cash flow.")
 
 
-def build_context(uid, start, end, account_ids=None):
-    cur = reports.summary(uid, start, end, account_ids)
+def build_context(pid, start, end, account_ids=None):
+    cur = reports.summary(pid, start, end, account_ids)
     length = (end - start).days + 1
     prev_end = start.__class__.fromordinal(start.toordinal() - 1)
     prev_start = prev_end.__class__.fromordinal(prev_end.toordinal() - length + 1)
-    prev = reports.summary(uid, prev_start, prev_end, account_ids)
-    cats = reports.by_category(uid, start, end, "top", account_ids)[:10]
-    mom = reports.month_over_month(uid, f"{start.year:04d}-{start.month:02d}", account_ids)
-    merchants = reports.top_merchants(uid, start, end, 10, account_ids)
-    rec = [s for s in reports.recurring(uid) if s["is_active"]][:10]
-    anomalies = reports.anomalies(uid)[:8]
-    big = reports.largest(uid, start, end, 5, account_ids)
+    prev = reports.summary(pid, prev_start, prev_end, account_ids)
+    cats = reports.by_category(pid, start, end, "top", account_ids)[:10]
+    mom = reports.month_over_month(pid, f"{start.year:04d}-{start.month:02d}", account_ids)
+    merchants = reports.top_merchants(pid, start, end, 10, account_ids)
+    rec = [s for s in reports.recurring(pid) if s["is_active"]][:10]
+    anomalies = reports.anomalies(pid)[:8]
+    big = reports.largest(pid, start, end, 5, account_ids)
     return {
         "period": {"start": start.isoformat(), "end": end.isoformat(), "days": length},
         "totals": {"income": cur["income"], "expenses": cur["expenses"], "net": cur["net"],
@@ -58,25 +61,25 @@ def _row_payload(row, cached):
             "created_at": created.isoformat() if hasattr(created, "isoformat") else created, "cached": cached}
 
 
-def _data_changed_since(uid, start, end, since):
+def _data_changed_since(pid, start, end, since):
     """True when a transaction in the period was added or edited after the insight was written."""
     if since is None:
         return False
     row = db.query(
         """SELECT GREATEST(MAX(created_at), MAX(updated_at)) AS latest FROM transactions
-           WHERE user_id = %s AND txn_date BETWEEN %s AND %s""",
-        (uid, start, end), one=True,
+           WHERE profile_id = %s AND txn_date BETWEEN %s AND %s""",
+        (pid, start, end), one=True,
     )
     latest = row and row.get("latest")
     return bool(latest and latest > since)
 
 
-def cached(uid, start, end):
+def cached(pid, start, end):
     row = db.query(
-        "SELECT content, model, created_at FROM insights WHERE user_id = %s AND period_start = %s AND period_end = %s",
-        (uid, start, end), one=True,
+        "SELECT content, model, created_at FROM insights WHERE profile_id = %s AND period_start = %s AND period_end = %s",
+        (pid, start, end), one=True,
     )
-    if not row or _data_changed_since(uid, start, end, row.get("created_at")):
+    if not row or _data_changed_since(pid, start, end, row.get("created_at")):
         return None
     return _row_payload(row, True)
 
@@ -97,18 +100,21 @@ def _validate(parsed):
     return {"summary": str(parsed.get("summary") or "")[:2000], "insights": clean}
 
 
-def generate(uid, start, end, force=False, account_ids=None):
+def generate(scope, start, end, force=False, account_ids=None):
+    uid, pid = scope.uid, scope.pid
     if not force:
-        hit = cached(uid, start, end)
+        hit = cached(pid, start, end)
         if hit:
             return hit
     if not openrouter.enabled("insights", uid):
         raise OpenRouterError("AI insights are not enabled. Add an OpenRouter key and model in Settings.")
-    context = build_context(uid, start, end, account_ids)
+    context = build_context(pid, start, end, account_ids)
     model_id = openrouter.model(uid)
+    profile = db.query("SELECT kind FROM profiles WHERE id = %s", (pid,), one=True) or {}
+    prompt = SYSTEM_PROMPT + (BUSINESS_NOTE if profile.get("kind") == "business" else "")
     started = time.time()
     try:
-        parsed, usage = openrouter.chat_json(SYSTEM_PROMPT, json.dumps(context, default=str), max_tokens=5000,
+        parsed, usage = openrouter.chat_json(prompt, json.dumps(context, default=str), max_tokens=5000,
                                              temperature=0.4, user_id=uid)
         clean = _validate(parsed)
     except OpenRouterError as e:
@@ -117,11 +123,11 @@ def generate(uid, start, end, force=False, account_ids=None):
     openrouter.log_call(uid, "insights", model_id, 1, usage, "ok", None, int((time.time() - started) * 1000))
     content = json.dumps(clean)
     row = db.execute(
-        """INSERT INTO insights (user_id, period_start, period_end, model, content)
-           VALUES (%s, %s, %s, %s, %s)
-           ON CONFLICT (user_id, period_start, period_end)
+        """INSERT INTO insights (user_id, profile_id, period_start, period_end, model, content)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON CONFLICT (profile_id, period_start, period_end)
            DO UPDATE SET model = EXCLUDED.model, content = EXCLUDED.content, created_at = now()
            RETURNING content, model, created_at""",
-        (uid, start, end, model_id, content), returning=True,
+        (uid, pid, start, end, model_id, content), returning=True,
     )
     return _row_payload(row or {"content": content, "model": model_id, "created_at": None}, False)

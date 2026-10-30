@@ -6,13 +6,14 @@ import db
 import openrouter
 import reports
 from auth import login_required
+from scope import current_profile_id, current_scope
 from util import api_error, audit, csv_response, json_body, parse_int_list
 
 bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
 
-def _uid():
-    return session["user_id"]
+def _pid():
+    return current_profile_id()
 
 
 def _accounts():
@@ -26,7 +27,7 @@ def _range():
         if value and reports._parse_date(value) is None:
             abort(400, f"{key} must be a date (YYYY-MM-DD)")
     rng = request.args.get("range")
-    week_start = reports.user_week_start(_uid()) if rng in ("this-week", "last-week") else 0
+    week_start = reports.user_week_start(session["user_id"]) if rng in ("this-week", "last-week") else 0
     return reports.resolve_range(rng, request.args.get("from"), request.args.get("to"), week_start=week_start)
 
 
@@ -44,17 +45,17 @@ def _flow():
     return "income" if request.args.get("flow") == "income" else "spending"
 
 
-def setup_status(uid, data):
+def setup_status(scope, data):
     """What a new account has done so far; drives the dashboard's first-run checklist."""
     counts = db.query(
-        """SELECT (SELECT COUNT(*) FROM statements WHERE user_id = %s AND status = 'committed') AS statements,
-                  (SELECT COUNT(*) FROM rules WHERE user_id = %s) AS rules,
-                  (SELECT COUNT(*) FROM transactions WHERE user_id = %s) AS transactions""",
-        (uid, uid, uid), one=True,
+        """SELECT (SELECT COUNT(*) FROM statements WHERE profile_id = %s AND status = 'committed') AS statements,
+                  (SELECT COUNT(*) FROM rules WHERE profile_id = %s) AS rules,
+                  (SELECT COUNT(*) FROM transactions WHERE profile_id = %s) AS transactions""",
+        (scope.pid, scope.pid, scope.pid), one=True,
     ) or {}
     review = data.get("review_count") or {}
     try:
-        ai = bool(openrouter.configured(uid))
+        ai = bool(openrouter.configured(scope.uid))
     except Exception:  # noqa: BLE001 - a status flag must never break the dashboard
         ai = False
     return {
@@ -70,9 +71,9 @@ def setup_status(uid, data):
 @bp.get("/dashboard")
 @login_required
 def dashboard():
-    uid = _uid()
-    data = reports.dashboard(uid, request.args.get("range"), _accounts(), request.args.get("from"), request.args.get("to"))
-    data["setup"] = setup_status(uid, data)
+    scope = current_scope()
+    data = reports.dashboard(scope.pid, request.args.get("range"), _accounts(), request.args.get("from"), request.args.get("to"))
+    data["setup"] = setup_status(scope, data)
     return jsonify(data)
 
 
@@ -80,8 +81,8 @@ def dashboard():
 @login_required
 def summary():
     r = _range()
-    data = reports.summary(_uid(), r["start"], r["end"], _accounts(), include_transfers=_inc())
-    prev = reports.summary(_uid(), r["prev_start"], r["prev_end"], _accounts(), include_transfers=_inc()) if r["prev_start"] else None
+    data = reports.summary(_pid(), r["start"], r["end"], _accounts(), include_transfers=_inc())
+    prev = reports.summary(_pid(), r["prev_start"], r["prev_end"], _accounts(), include_transfers=_inc()) if r["prev_start"] else None
     out = {"range": reports.range_json(r), **data, "previous": prev}
     if _wants_csv():
         return csv_response([data], "summary.csv")
@@ -97,7 +98,7 @@ def by_category():
     # prev=1: the period before the requested one, so a page can fetch both at once from one range query.
     prev = request.args.get("prev") in ("1", "true")
     start, end = (r["prev_start"], r["prev_end"]) if prev else (r["start"], r["end"])
-    rows = reports.by_category(_uid(), start, end, level, _accounts(), include_transfers=_inc(), flow=flow) if start else []
+    rows = reports.by_category(_pid(), start, end, level, _accounts(), include_transfers=_inc(), flow=flow) if start else []
     if _wants_csv():
         return csv_response(rows, f"{flow}-by-category.csv", ["name", "total", "count", "pct", "parent_id", "id"])
     return jsonify({"range": reports.range_json(r), "period": "previous" if prev else "current", "level": level,
@@ -120,7 +121,7 @@ def monthly():
     end = request.args.get("end") or None
     if end and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end):
         return api_error("end must be a month (YYYY-MM)")
-    data = reports.monthly_by_category(_uid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id,
+    data = reports.monthly_by_category(_pid(), months, _accounts(), include_transfers=_inc(), parent_id=parent_id,
                                        flow=_flow(), end=end)
     if _wants_csv():
         rows = []
@@ -141,7 +142,7 @@ def trends():
         months = int(request.args.get("months", 12))
     except ValueError:
         return api_error("months must be an integer")
-    rows = reports.trends(_uid(), months, _accounts(), include_transfers=_inc())
+    rows = reports.trends(_pid(), months, _accounts(), include_transfers=_inc())
     if _wants_csv():
         return csv_response(rows, "cash-flow.csv")
     return jsonify(rows)
@@ -156,7 +157,7 @@ def top_merchants():
     except ValueError:
         return api_error("limit must be an integer")
     flow = _flow()
-    rows = reports.top_merchants(_uid(), r["start"], r["end"], limit, _accounts(), include_transfers=_inc(), flow=flow)
+    rows = reports.top_merchants(_pid(), r["start"], r["end"], limit, _accounts(), include_transfers=_inc(), flow=flow)
     if _wants_csv():
         return csv_response(rows, "income-sources.csv" if flow == "income" else "top-merchants.csv",
                              ["merchant_name", "count", "total", "avg", "pct", "last_date", "category_id", "merchant_key"])
@@ -166,7 +167,7 @@ def top_merchants():
 @bp.get("/month-over-month")
 @login_required
 def month_over_month():
-    data = reports.month_over_month(_uid(), request.args.get("month"), _accounts(), include_transfers=_inc(),
+    data = reports.month_over_month(_pid(), request.args.get("month"), _accounts(), include_transfers=_inc(),
                                     vs=request.args.get("vs"), flow=_flow())
     if _wants_csv():
         rows = [*data["categories"], {"name": "Total", **data["totals"]}]
@@ -178,7 +179,7 @@ def month_over_month():
 @bp.get("/recurring")
 @login_required
 def recurring():
-    rows = reports.recurring(_uid(), include_dismissed=request.args.get("include_dismissed") == "1")
+    rows = reports.recurring(_pid(), include_dismissed=request.args.get("include_dismissed") == "1")
     if _wants_csv():
         return csv_response(rows, "recurring.csv",
                              ["merchant_name", "cadence", "median_amount", "monthly_equivalent", "occurrences",
@@ -194,8 +195,8 @@ def dismiss_recurring():
     if not key:
         return api_error("merchant_key is required")
     db.execute(
-        "INSERT INTO recurring_dismissals (user_id, merchant_key) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (_uid(), key),
+        "INSERT INTO recurring_dismissals (user_id, profile_id, merchant_key) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+        (session["user_id"], _pid(), key),
     )
     audit("recurring.dismiss", {"merchant_key": key})
     return jsonify({"ok": True})
@@ -204,6 +205,6 @@ def dismiss_recurring():
 @bp.delete("/recurring/dismiss/<path:merchant_key>")
 @login_required
 def undismiss_recurring(merchant_key):
-    db.execute("DELETE FROM recurring_dismissals WHERE user_id = %s AND merchant_key = %s", (_uid(), merchant_key))
+    db.execute("DELETE FROM recurring_dismissals WHERE profile_id = %s AND merchant_key = %s", (_pid(), merchant_key))
     audit("recurring.undismiss", {"merchant_key": merchant_key})
     return jsonify({"ok": True})

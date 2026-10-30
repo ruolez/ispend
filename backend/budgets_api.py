@@ -165,7 +165,7 @@ def progress():
     pid = _pid()
     start, end = _month(request.args.get("month"))
     account_ids = parse_int_list(request.args.get("account_id")) or None
-    rows = reports.by_category(session["user_id"], start, end, "sub", account_ids)
+    rows = reports.by_category(pid, start, end, "sub", account_ids)
     budgets = db.query(f"SELECT {FIELDS} FROM budgets b WHERE b.profile_id = %s AND b.month = %s", (pid, start)) or []
     cats = {c["id"]: c for c in (db.query("SELECT id, name, color, icon, parent_id FROM categories WHERE profile_id = %s", (pid,)) or [])}
     on = reports.today()

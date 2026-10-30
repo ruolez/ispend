@@ -78,7 +78,7 @@ class DashboardAssemblyTest(unittest.TestCase):
         trend = [{"month": "2026-01", "expenses": 500.0, "income": 900.0, "net": 400.0, "count": 12}]
         router = _stubs.Router([
             ("FILTER (WHERE category_id IS NULL", {"uncategorized": 3, "suggested": 2}),
-            ("FROM accounts a WHERE a.user_id", [{"id": 1, "name": "Card", "currency": "USD", "account_type": "credit_card",
+            ("FROM accounts a WHERE a.profile_id", [{"id": 1, "name": "Card", "currency": "USD", "account_type": "credit_card",
                                                   "color": "c1", "balance": Decimal("-10.00"), "last_txn_date": date(2026, 1, 10)}]),
             ("ORDER BY t.txn_date DESC, t.id DESC LIMIT 10", [{"id": 9, "txn_date": date(2026, 1, 10), "amount": Decimal("-5.00")}]),
         ])

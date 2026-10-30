@@ -216,7 +216,7 @@ class IncludeTransfersTest(unittest.TestCase):
                 sql = self._sql(fn, True)
                 self.assertNotIn("is_transfer", sql)
                 self.assertNotIn("is_excluded", sql)
-                self.assertIn("t.user_id = %s", sql)
+                self.assertIn("t.profile_id = %s", sql)
 
     def test_summary_case_expressions_follow_the_flag(self):
         with mock.patch.object(DB, "query", return_value={"income": 0, "expenses": 0, "txn_count": 0,

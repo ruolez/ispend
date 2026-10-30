@@ -23,6 +23,7 @@ sys.modules.setdefault("db", types.SimpleNamespace(
 DB = sys.modules["db"]
 
 import insights  # noqa: E402
+from scope import Scope  # noqa: E402
 import openrouter  # noqa: E402
 import reports  # noqa: E402
 
@@ -73,7 +74,7 @@ class InsightsTest(unittest.TestCase):
 
         def fake_execute(sql, params=None, returning=False, **k):
             stored["params"] = params
-            return {"content": params[4], "model": params[3], "created_at": datetime(2026, 9, 3, 12, 0)}
+            return {"content": params[5], "model": params[4], "created_at": datetime(2026, 9, 3, 12, 0)}
 
         with mock.patch.object(DB, "query", return_value=None, create=True), \
              mock.patch.object(DB, "execute", side_effect=fake_execute, create=True), \
@@ -81,25 +82,25 @@ class InsightsTest(unittest.TestCase):
              mock.patch.object(openrouter, "model", return_value="test/model"), \
              mock.patch.object(openrouter, "log_call"), \
              mock.patch.object(openrouter, "chat_json", return_value=(reply, {})):
-            out = insights.generate(1, START, END)
+            out = insights.generate(Scope(1, 1), START, END)
         self.assertEqual(out["cached"], False)
         self.assertEqual(out["model"], "test/model")
         self.assertEqual(out["content"]["summary"], "You spent less.")
         self.assertEqual([(i["title"], i["severity"]) for i in out["content"]["insights"]],
                          [("Dining up", "warn"), ("Weird severity", "info")])
-        self.assertEqual(json.loads(stored["params"][4])["summary"], "You spent less.")
+        self.assertEqual(json.loads(stored["params"][5])["summary"], "You spent less.")
 
     def test_generate_returns_cache_without_calling_model(self):
         row = {"content": json.dumps({"summary": "cached", "insights": []}), "model": "m", "created_at": datetime(2026, 9, 1)}
         with mock.patch.object(DB, "query", return_value=row, create=True), mock.patch.object(openrouter, "chat_json") as chat:
-            out = insights.generate(1, START, END)
+            out = insights.generate(Scope(1, 1), START, END)
         chat.assert_not_called()
         self.assertEqual((out["cached"], out["content"]["summary"]), (True, "cached"))
 
     def test_generate_disabled_raises(self):
         with mock.patch.object(DB, "query", return_value=None, create=True), mock.patch.object(openrouter, "enabled", return_value=False):
             with self.assertRaises(openrouter.OpenRouterError):
-                insights.generate(1, START, END)
+                insights.generate(Scope(1, 1), START, END)
 
 
 if __name__ == "__main__":

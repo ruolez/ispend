@@ -1,4 +1,4 @@
-"""Report queries. Every function takes the user id first and returns JSON-safe data.
+"""Report queries. Every function takes the profile id first and returns JSON-safe data.
 
 SPENDING is the shared predicate: money out, not a transfer, not excluded.
 """
@@ -11,16 +11,16 @@ import db
 import recurring as recurring_lib
 from util import rows_json
 
-SPENDING = "t.user_id = %s AND t.amount < 0 AND NOT t.is_transfer AND NOT t.is_excluded"
-CASHFLOW = "t.user_id = %s AND NOT t.is_transfer AND NOT t.is_excluded"
+SPENDING = "t.profile_id = %s AND t.amount < 0 AND NOT t.is_transfer AND NOT t.is_excluded"
+CASHFLOW = "t.profile_id = %s AND NOT t.is_transfer AND NOT t.is_excluded"
 _NOT_TRANSFER = " AND NOT t.is_transfer AND NOT t.is_excluded"
 
 
 def flow_where(flow="spending", include_transfers=False):
-    """Money out (spending) or money in (income) for this user; transfers/excluded rows drop out
+    """Money out (spending) or money in (income) for this profile; transfers/excluded rows drop out
     unless include_transfers."""
     sign = "t.amount > 0" if flow == "income" else "t.amount < 0"
-    return f"t.user_id = %s AND {sign}" + ("" if include_transfers else _NOT_TRANSFER)
+    return f"t.profile_id = %s AND {sign}" + ("" if include_transfers else _NOT_TRANSFER)
 
 
 def spending_where(include_transfers=False):
@@ -33,7 +33,7 @@ def _amt(flow):
 
 
 def cashflow_where(include_transfers=False):
-    return "t.user_id = %s" + ("" if include_transfers else _NOT_TRANSFER)
+    return "t.profile_id = %s" + ("" if include_transfers else _NOT_TRANSFER)
 
 RANGE_LABELS = {
     "this-week": "This week", "last-week": "Last week",
@@ -87,6 +87,16 @@ def week_bounds(ref, week_start=0):
 
 def user_week_start(uid):
     row = db.query("SELECT preferences->>'week_start' AS ws FROM users WHERE id = %s", (uid,), one=True)
+    try:
+        return int((row or {}).get("ws") or 0) % 7
+    except (TypeError, ValueError):
+        return 0
+
+
+def profile_week_start(pid):
+    """The owner's week start, for a report asked for by profile."""
+    row = db.query("""SELECT u.preferences->>'week_start' AS ws FROM profiles p JOIN users u ON u.id = p.user_id
+                       WHERE p.id = %s""", (pid,), one=True)
     try:
         return int((row or {}).get("ws") or 0) % 7
     except (TypeError, ValueError):
@@ -168,7 +178,7 @@ def _f(v):
 
 # ---------- Summary / KPIs ----------
 
-def summary(uid, start, end, account_ids=None, include_transfers=False):
+def summary(pid, start, end, account_ids=None, include_transfers=False):
     acct_sql, acct_params = _acct(account_ids)
     counted = "" if include_transfers else _NOT_TRANSFER
     row = db.query(
@@ -179,8 +189,8 @@ def summary(uid, start, end, account_ids=None, include_transfers=False):
                    COUNT(*) FILTER (WHERE t.is_transfer) AS transfers,
                    COUNT(*) FILTER (WHERE t.category_status = 'suggested') AS suggested
             FROM transactions t
-            WHERE t.user_id = %s AND t.txn_date BETWEEN %s AND %s{acct_sql}""",
-        (uid, start, end, *acct_params), one=True,
+            WHERE t.profile_id = %s AND t.txn_date BETWEEN %s AND %s{acct_sql}""",
+        (pid, start, end, *acct_params), one=True,
     )
     income, expenses = _f(row["income"]), _f(row["expenses"])
     return {
@@ -224,7 +234,7 @@ def _cat_row(r, total_all):
     }
 
 
-def by_category(uid, start, end, level="top", account_ids=None, include_transfers=False, flow="spending"):
+def by_category(pid, start, end, level="top", account_ids=None, include_transfers=False, flow="spending"):
     acct_sql, acct_params = _acct(account_ids)
     where = flow_where(flow, include_transfers)
     if level == "sub":
@@ -237,7 +247,7 @@ def by_category(uid, start, end, level="top", account_ids=None, include_transfer
             WHERE {where} AND t.txn_date BETWEEN %s AND %s{acct_sql}
             GROUP BY {select}
             ORDER BY total DESC""",
-        (uid, start, end, *acct_params),
+        (pid, start, end, *acct_params),
     )
     total_all = sum(_f(r["total"]) for r in rows)
     return [_cat_row(r, total_all) for r in rows]
@@ -252,7 +262,7 @@ def _month_list(months, end=None):
     return out
 
 
-def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None,
+def monthly_by_category(pid, months=12, account_ids=None, top_n=7, include_transfers=False, parent_id=None,
                         flow="spending", end=None):
     """Top-level categories by month; with parent_id, that category's subcategories by month
     (charges filed directly on the parent appear as 'Directly in <parent>'). `end` (YYYY-MM) makes the
@@ -277,9 +287,9 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
                 FROM transactions t LEFT JOIN transaction_splits s ON s.transaction_id = t.id
                 JOIN categories c ON c.id = COALESCE(s.category_id, t.category_id)
                 WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s
-                  AND c.user_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
+                  AND c.profile_id = %s AND (c.id = %s OR c.parent_id = %s){acct_sql}
                 GROUP BY 1, 2, 3, 4""",
-            (parent_id, uid, first, last, uid, parent_id, parent_id, *acct_params),
+            (parent_id, pid, first, last, pid, parent_id, parent_id, *acct_params),
         )
     else:
         rows = db.query(
@@ -288,7 +298,7 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
                 FROM transactions t {_CAT_JOIN_LINES}
                 WHERE {flow_where(flow, include_transfers)} AND t.txn_date >= %s AND t.txn_date <= %s{acct_sql}
                 GROUP BY 1, 2, 3, 4""",
-            (uid, first, last, *acct_params),
+            (pid, first, last, *acct_params),
         )
     cats = {}
     for r in rows:
@@ -321,7 +331,7 @@ def monthly_by_category(uid, months=12, account_ids=None, top_n=7, include_trans
     return {"months": month_keys, "series": series, "totals": totals, "parent_id": parent_id, "flow": flow}
 
 
-def trends(uid, months=12, account_ids=None, include_transfers=False):
+def trends(pid, months=12, account_ids=None, include_transfers=False):
     months = max(1, min(int(months or 12), 60))
     month_keys = _month_list(months)
     fy, fm = (int(x) for x in month_keys[0].split("-"))
@@ -334,7 +344,7 @@ def trends(uid, months=12, account_ids=None, include_transfers=False):
             FROM transactions t
             WHERE {cashflow_where(include_transfers)} AND t.txn_date >= %s{acct_sql}
             GROUP BY 1""",
-        (uid, date(fy, fm, 1), *acct_params),
+        (pid, date(fy, fm, 1), *acct_params),
     )
     by_month = {r["month"]: r for r in rows}
     out = []
@@ -346,7 +356,7 @@ def trends(uid, months=12, account_ids=None, include_transfers=False):
     return out
 
 
-def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers=False, flow="spending"):
+def top_merchants(pid, start, end, limit=20, account_ids=None, include_transfers=False, flow="spending"):
     acct_sql, acct_params = _acct(account_ids)
     limit = max(1, min(int(limit or 20), 200))
     where = flow_where(flow, include_transfers)
@@ -360,7 +370,7 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
             GROUP BY t.merchant_key
             ORDER BY total DESC, count DESC
             LIMIT %s""",
-        (uid, start, end, *acct_params, limit),
+        (pid, start, end, *acct_params, limit),
     )
     keys = [r["merchant_key"] for r in rows]
     sparks = {k: [0.0] * 6 for k in keys}
@@ -372,7 +382,7 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
                 FROM transactions t
                 WHERE {where} AND t.txn_date >= %s AND t.merchant_key = ANY(%s){acct_sql}
                 GROUP BY 1, 2""",
-            (uid, date(fy, fm, 1), keys, *acct_params),
+            (pid, date(fy, fm, 1), keys, *acct_params),
         )
         idx = {m: i for i, m in enumerate(month_keys)}
         for r in srows:
@@ -392,7 +402,7 @@ def top_merchants(uid, start, end, limit=20, account_ids=None, include_transfers
     return out
 
 
-def month_over_month(uid, month=None, account_ids=None, include_transfers=False, vs=None, flow="spending"):
+def month_over_month(pid, month=None, account_ids=None, include_transfers=False, vs=None, flow="spending"):
     """Compare one month with another (default: the month before it)."""
     y, m = parse_month(month)
     cur_start, cur_end = month_bounds(y, m)
@@ -412,7 +422,7 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False,
             WHERE {flow_where(flow, include_transfers)} AND (t.txn_date BETWEEN %s AND %s OR t.txn_date BETWEEN %s AND %s){acct_sql}
             GROUP BY g.id, g.name, g.color, g.icon
             ORDER BY current DESC, previous DESC""",
-        (cur_start, cur_end, prev_start, prev_end, uid, cur_start, cur_end, prev_start, prev_end, *acct_params),
+        (cur_start, cur_end, prev_start, prev_end, pid, cur_start, cur_end, prev_start, prev_end, *acct_params),
     )
     cats = []
     tot_cur = tot_prev = 0.0
@@ -435,22 +445,22 @@ def month_over_month(uid, month=None, account_ids=None, include_transfers=False,
     }
 
 
-def largest(uid, start, end, limit=5, account_ids=None):
+def largest(pid, start, end, limit=5, account_ids=None):
     acct_sql, acct_params = _acct(account_ids)
     rows = db.query(
         f"""SELECT t.id, t.txn_date, t.amount, t.merchant_name, t.description_clean, t.category_id, c.name AS category_name
             FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
             WHERE {SPENDING} AND t.txn_date BETWEEN %s AND %s{acct_sql}
             ORDER BY t.amount ASC LIMIT %s""",
-        (uid, start, end, *acct_params, max(1, min(int(limit or 5), 50))),
+        (pid, start, end, *acct_params, max(1, min(int(limit or 5), 50))),
     )
     return rows_json(rows)
 
 
 # ---------- Recurring / anomalies ----------
 
-def _spend_rows(uid, since=None):
-    params = [uid]
+def _spend_rows(pid, since=None):
+    params = [pid]
     where = ""
     if since:
         where = " AND t.txn_date >= %s"
@@ -465,13 +475,13 @@ def _spend_rows(uid, since=None):
 RECURRING_LOOKBACK_DAYS = 730
 
 
-def recurring(uid, include_dismissed=False):
-    rows = _spend_rows(uid, today() - timedelta(days=RECURRING_LOOKBACK_DAYS))
+def recurring(pid, include_dismissed=False):
+    rows = _spend_rows(pid, today() - timedelta(days=RECURRING_LOOKBACK_DAYS))
     dismissed = {r["merchant_key"] for r in db.query(
-        "SELECT merchant_key FROM recurring_dismissals WHERE user_id = %s", (uid,))}
+        "SELECT merchant_key FROM recurring_dismissals WHERE profile_id = %s", (pid,))}
     series = recurring_lib.detect(rows, today())
     cat_names = {r["id"]: r for r in db.query(
-        "SELECT id, name, color, icon FROM categories WHERE user_id = %s", (uid,))}
+        "SELECT id, name, color, icon FROM categories WHERE profile_id = %s", (pid,))}
     out = []
     for s in series:
         s = dict(s)
@@ -487,11 +497,12 @@ def recurring(uid, include_dismissed=False):
     return out
 
 
-def anomalies(uid, lookback_days=45):
+def anomalies(pid, lookback_days=45):
     t = today()
-    rows = _spend_rows(uid, since=t - timedelta(days=400))
+    rows = _spend_rows(pid, since=t - timedelta(days=400))
     dismissed = {r["transaction_id"] for r in db.query(
-        "SELECT transaction_id FROM anomaly_dismissals WHERE user_id = %s", (uid,))}
+        """SELECT d.transaction_id FROM anomaly_dismissals d JOIN transactions t ON t.id = d.transaction_id
+            WHERE t.profile_id = %s""", (pid,))}
     out = []
     for a in recurring_lib.anomalies(rows, t, lookback_days=lookback_days):
         if a["transaction_id"] in dismissed:
@@ -504,11 +515,11 @@ def anomalies(uid, lookback_days=45):
 
 # ---------- Dashboard aggregate ----------
 
-def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=None):
-    r = resolve_range(range_name or ("custom" if (date_from or date_to) else "this-month"), date_from, date_to, week_start=user_week_start(uid))
-    cur = summary(uid, r["start"], r["end"], account_ids)
-    prev = summary(uid, r["prev_start"], r["prev_end"], account_ids) if r["prev_start"] else None
-    cats = by_category(uid, r["start"], r["end"], "top", account_ids)
+def dashboard(pid, range_name=None, account_ids=None, date_from=None, date_to=None):
+    r = resolve_range(range_name or ("custom" if (date_from or date_to) else "this-month"), date_from, date_to, week_start=profile_week_start(pid))
+    cur = summary(pid, r["start"], r["end"], account_ids)
+    prev = summary(pid, r["prev_start"], r["prev_end"], account_ids) if r["prev_start"] else None
+    cats = by_category(pid, r["start"], r["end"], "top", account_ids)
     top = cats[:6]
     rest = cats[6:]
     if rest:
@@ -517,11 +528,11 @@ def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=No
                     "total": total, "count": sum(c["count"] for c in rest),
                     "pct": round(sum(c["pct"] for c in rest), 1)})
     monthly = [{"month": m["month"], "spent": m["expenses"], "income": m["income"], "net": m["net"]}
-               for m in trends(uid, 12, account_ids)]
+               for m in trends(pid, 12, account_ids)]
     income = {
         "total": cur["income"], "previous": prev["income"] if prev else None,
-        "categories": by_category(uid, r["start"], r["end"], "sub", account_ids, flow="income")[:6],
-        "sources": top_merchants(uid, r["start"], r["end"], 6, account_ids, flow="income"),
+        "categories": by_category(pid, r["start"], r["end"], "sub", account_ids, flow="income")[:6],
+        "sources": top_merchants(pid, r["start"], r["end"], 6, account_ids, flow="income"),
     }
     acct_sql, acct_params = _acct(account_ids)
     recent = rows_json(db.query(
@@ -531,24 +542,24 @@ def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=No
             FROM transactions t
             LEFT JOIN categories c ON c.id = t.category_id
             JOIN accounts a ON a.id = t.account_id
-            WHERE t.user_id = %s{acct_sql}
+            WHERE t.profile_id = %s{acct_sql}
             ORDER BY t.txn_date DESC, t.id DESC LIMIT 10""",
-        (uid, *acct_params),
+        (pid, *acct_params),
     ))
     review = db.query(
         """SELECT COUNT(*) FILTER (WHERE category_id IS NULL AND NOT is_transfer) AS uncategorized,
                   COUNT(*) FILTER (WHERE category_status = 'suggested') AS suggested
-           FROM transactions WHERE user_id = %s""",
-        (uid,), one=True,
+           FROM transactions WHERE profile_id = %s""",
+        (pid,), one=True,
     )
-    rec = recurring_summary(uid)
+    rec = recurring_summary(pid)
     accounts = rows_json(db.query(
         """SELECT a.id, a.name, a.currency, a.account_type, a.color,
                   (SELECT t.balance FROM transactions t WHERE t.account_id = a.id AND t.balance IS NOT NULL
                      ORDER BY t.txn_date DESC, t.id DESC LIMIT 1) AS balance,
                   (SELECT MAX(t.txn_date) FROM transactions t WHERE t.account_id = a.id) AS last_txn_date
-           FROM accounts a WHERE a.user_id = %s AND a.is_active ORDER BY a.name""",
-        (uid,),
+           FROM accounts a WHERE a.profile_id = %s AND a.is_active ORDER BY a.name""",
+        (pid,),
     ))
     return {
         "range": range_json(r),
@@ -568,8 +579,8 @@ def dashboard(uid, range_name=None, account_ids=None, date_from=None, date_to=No
     }
 
 
-def recurring_summary(uid):
-    series = [s for s in recurring(uid) if s["is_active"]]
+def recurring_summary(pid):
+    series = [s for s in recurring(pid) if s["is_active"]]
     t = today().isoformat()
     upcoming = sorted((s for s in series if s["next_expected"] >= t), key=lambda s: s["next_expected"])
     return {
