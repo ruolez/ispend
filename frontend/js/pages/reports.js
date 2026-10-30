@@ -116,7 +116,7 @@ function exportCsv() {
     compare: `/api/reports/month-over-month${toQuery({ month: state.month, vs: state.vs, ...acctQuery(), format: 'csv' })}`,
     cashflow: `/api/reports/trends${toQuery({ months: state.months, ...(state.accounts.size ? { account_id: Array.from(state.accounts).join(',') } : {}), ...(state.transfers ? { include_transfers: 1 } : {}), format: 'csv' })}`,
   };
-  const a = document.createElement('a'); a.href = urls[state.tab]; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
+  const a = document.createElement('a'); a.href = withProfile(urls[state.tab]); a.download = ''; document.body.appendChild(a); a.click(); a.remove();
 }
 function sparkColor(c) { const slot = c && (c.color || c.parent_color); return slot && slot !== 'muted' ? `var(--${slot})` : 'var(--accent)'; }
 function seriesColor(s) { return s.color === 'muted' || !s.color ? charts.theme().muted : catColor(s.color); }

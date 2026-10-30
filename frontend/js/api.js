@@ -48,10 +48,53 @@ const diag = (() => {
   };
 })();
 
+/* Which profile's books this tab shows. Per tab (sessionStorage): every tab shares one session, so
+   after a switch in one tab the others still show the profile they opened with. Each request names
+   it, and the server refuses one meant for a profile that is no longer active (409
+   profile_changed) instead of answering from the other profile's books. */
+const PROFILE_KEY = 'ispend.pid';
+function tabProfile() {
+  try { return sessionStorage.getItem(PROFILE_KEY) || ''; } catch { return ''; }
+}
+function setTabProfile(id) {
+  try { sessionStorage.setItem(PROFILE_KEY, String(id)); } catch { /* storage unavailable */ }
+}
+/* A plain link (CSV export, statement file) cannot send a header. */
+function withProfile(url) {
+  const pid = tabProfile();
+  return pid ? `${url}${url.includes('?') ? '&' : '?'}pid=${encodeURIComponent(pid)}` : url;
+}
+/* What this browser keeps about one profile's books: cached data, page filters, recent picks. */
+const PROFILE_SESSION_KEYS = [/^ispend\.cache\./, /^ispend\.q:/];
+const PROFILE_LOCAL_KEYS = [/^ispend\.recentCats$/, /^ispend\.importAccount$/, /^ispend\.catCollapsed$/, /^ispend\.breakdown\./];
+function clearProfileState() {
+  [[sessionStorage, PROFILE_SESSION_KEYS], [localStorage, PROFILE_LOCAL_KEYS]].forEach(([storage, patterns]) => {
+    try {
+      const doomed = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && patterns.some((re) => re.test(k))) doomed.push(k);
+      }
+      doomed.forEach((k) => storage.removeItem(k));
+    } catch { /* storage unavailable */ }
+  });
+}
+/* Start the page over in another profile's books. */
+function showProfile(id) {
+  clearProfileState();
+  if (id) setTabProfile(id);
+  location.reload();
+}
+function profileChangedError(data) {
+  showProfile(data && data.profile_id);
+  return Object.assign(new Error('Switched to another profile'), { status: 409, data, profileChanged: true });
+}
+
 async function api(path, options = {}) {
   const opts = { credentials: 'same-origin', headers: {}, ...options };
   const isForm = typeof FormData !== 'undefined' && opts.body instanceof FormData;
   if (!isForm) opts.headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (tabProfile()) opts.headers = { ...opts.headers, 'X-Profile': tabProfile() };
   if (opts.body && !isForm && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
   let res;
   try {
@@ -79,6 +122,7 @@ async function api(path, options = {}) {
     location.replace(ADMIN_HOME);
     throw new Error('Admin accounts use the console');
   }
+  if (res.status === 409 && data && data.code === 'profile_changed') throw profileChangedError(data);
   /* One place catches every blocked write, so no page has to know the rule. */
   if (res.status === 402 && data && data.code === 'subscription_required') {
     toast(data.error, { type: 'error', duration: 8000,
@@ -219,11 +263,13 @@ function apiUpload(path, formData, { onProgress } = {}) {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', path);
     xhr.withCredentials = true;
+    if (tabProfile()) xhr.setRequestHeader('X-Profile', tabProfile());
     if (onProgress) xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); });
     xhr.addEventListener('load', () => {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
       if (xhr.status === 401) { loginRedirect(); return reject(new Error('Not authenticated')); }
+      if (xhr.status === 409 && data && data.code === 'profile_changed') return reject(profileChangedError(data));
       if (xhr.status === 402 && data && data.code === 'subscription_required') {
         toast(data.error, { type: 'error', duration: 8000,
           action: { label: 'Subscribe', fn: () => { location.href = data.billing_url || '/billing.html'; } } });

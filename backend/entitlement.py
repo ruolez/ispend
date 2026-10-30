@@ -159,6 +159,8 @@ WRITE_ALLOWLIST = frozenset({
     "/api/auth/email/verify", "/api/auth/email/resend", "/api/auth/email/resend-pending",
     # a user's own account: preferences and security must never be trapped behind a paywall
     "/api/auth/me/preferences", "/api/auth/me/password", "/api/auth/me/email",
+    # switching books only changes which data the session reads
+    "/api/auth/me/profile",
     # data rights are never behind a paywall: a copy of everything, and deleting the account
     "/api/auth/me/exports", "/api/auth/me", "/api/public/unsubscribe",
     # a locked-out user MUST be able to pay

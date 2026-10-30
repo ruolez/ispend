@@ -94,7 +94,7 @@ function openStatementMenu(anchor, s) {
   const items = [];
   if (s.status === 'previewed') items.push({ label: 'Continue import', icon: 'upload', href: `/import.html?statement=${s.id}` });
   if (s.status === 'committed') items.push({ label: 'View transactions', icon: 'list', href: `/transactions.html?statement=${s.id}&range=all` });
-  items.push({ label: 'Download original', icon: 'download', href: `/api/statements/${s.id}/file` });
+  items.push({ label: 'Download original', icon: 'download', href: withProfile(`/api/statements/${s.id}/file`) });
   if (['error', 'previewed'].includes(s.status)) items.push({ label: 'Parse again', icon: 'refresh', onClick: () => reparseStatement(s) });
   items.push({ divider: true });
   if (s.status === 'committed') items.push({ label: 'Flip signs…', icon: 'arrow-left-right', onClick: () => flipStatement(s) });

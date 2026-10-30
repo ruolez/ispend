@@ -249,6 +249,11 @@ async function initNav(activePage, opts = {}) {
   try {
     if (localStorage.getItem(UID_KEY) !== String(me.id)) { clearUserState(); localStorage.setItem(UID_KEY, String(me.id)); }
   } catch { /* storage unavailable */ }
+  if (me.profile) {
+    // A tab that held another profile's copies (a switch it missed) starts over with this one.
+    if (tabProfile() && tabProfile() !== String(me.profile.id)) { showProfile(me.profile.id); return new Promise(() => {}); }
+    setTabProfile(me.profile.id);
+  }
   $('#tb-avatar').textContent = initials(me.username);
   $('#tb-username').textContent = me.username;
   const prefs = me.preferences || {};
@@ -288,6 +293,11 @@ function applyFreshMe(cached, fresh) {
   const billing = (m) => JSON.stringify(m.billing || null);
   if (fresh.id !== cached.id || fresh.role !== cached.role || billing(fresh) !== billing(cached)) {
     location.reload();
+    return;
+  }
+  // Switched to other books in another tab: nothing on this page belongs to them.
+  if (fresh.profile && (!cached.profile || fresh.profile.id !== cached.profile.id)) {
+    showProfile(fresh.profile.id);
     return;
   }
   window.currentUser = fresh;

@@ -20,6 +20,9 @@ bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 PREFERENCE_KEYS = {"theme", "density", "default_account_id", "currency", "week_start", "saved_views", "review_skips",
                    "onboarding", "admin_views"}
+# Kept per profile: they point at one profile's accounts, merchants and saved filters.
+PROFILE_PREFERENCE_KEYS = {"default_account_id", "saved_views", "review_skips", "onboarding"}
+PROFILE_FIELDS = ("id", "name", "kind", "color")
 TX_VIEW_KEYS = {"range", "from", "to", "acct", "cat", "status", "flow", "q", "sort", "min", "max", "transfers", "merchant_key", "tag", "tag_mode", "split"}
 VIEW_ID = re.compile(r"^[a-z0-9_-]{1,16}$")
 MAX_SAVED_VIEWS = 20
@@ -178,6 +181,25 @@ def _resolve_profile(row):
     g.profile_id = pid
     if session.get("profile_id") != pid:
         session["profile_id"] = pid
+
+
+# Paths that do not read or write one profile's books.
+PROFILE_GUARD_EXEMPT = ("/api/auth/", "/api/admin/", "/api/public/", "/api/billing/", "/api/support/", "/api/health")
+
+
+def profile_guard():
+    """before_request: every tab shares one session, so after a switch in one tab another still
+    shows the old profile. The client names the profile it shows (X-Profile header, or ?pid= on
+    a download link); a request made for a profile that is no longer active is refused instead of
+    reading or writing the other profile's books. No name, no check (older cached pages)."""
+    sent = request.headers.get("X-Profile") or request.args.get("pid")
+    pid = g.get("profile_id")
+    if not sent or pid is None or not request.path.startswith("/api/") or request.path.startswith(PROFILE_GUARD_EXEMPT):
+        return None
+    if sent != str(pid):
+        return jsonify({"error": "This page shows a profile you switched away from in another tab.",
+                        "code": "profile_changed", "profile_id": pid}), 409
+    return None
 
 
 SEEN_EVERY = timedelta(minutes=5)
@@ -547,7 +569,7 @@ def logout():
 def me():
     # The session hook has already loaded (and vetted) this user with their subscription.
     if g.get("user_row") is not None:
-        return jsonify(_with_support_unread(_me_payload(g.user_row, g.get("entitlement"))))
+        return jsonify(_with_profiles(_with_support_unread(_me_payload(g.user_row, g.get("entitlement")))))
     user = db.query(
         """SELECT u.*, s.status AS sub_status, s.plan, s.trial_end, s.current_period_end,
                   s.cancel_at_period_end, s.lapsed_at, s.grace_until, s.comped_until,
@@ -557,7 +579,42 @@ def me():
     if not user_state.can_sign_in(user):
         session.clear()
         return api_error("Not authenticated", 401)
-    return jsonify(_with_support_unread(_me_payload(user)))
+    return jsonify(_with_profiles(_with_support_unread(_me_payload(user))))
+
+
+def _with_profiles(payload):
+    """The customer's profiles, the active one, and preferences as that profile sees them."""
+    if payload["role"] != "user":
+        return payload
+    rows = db.query("SELECT id, name, kind, color, preferences FROM profiles WHERE user_id = %s ORDER BY sort_order, id",
+                    (payload["id"],)) or []
+    pid = g.get("profile_id", session.get("profile_id"))
+    active = next((r for r in rows if r["id"] == pid), rows[0] if rows else None)
+    payload["profiles"] = [{k: r[k] for k in PROFILE_FIELDS} for r in rows]
+    payload["profile"] = {k: active[k] for k in PROFILE_FIELDS} if active else None
+    if active:
+        own = {k: v for k, v in (active["preferences"] or {}).items() if k in PROFILE_PREFERENCE_KEYS}
+        payload["preferences"] = {**{k: v for k, v in payload["preferences"].items() if k not in PROFILE_PREFERENCE_KEYS},
+                                  **own}
+    return payload
+
+
+@bp.post("/me/profile")
+@login_required
+def switch_profile():
+    if session.get("role") != "user":
+        return api_error("Admin accounts have no profiles", 403)
+    try:
+        pid = to_int(json_body().get("id"), "id")
+    except ValueError as e:
+        return api_error(str(e))
+    row = db.query(f"SELECT {', '.join(PROFILE_FIELDS)} FROM profiles WHERE id = %s AND user_id = %s",
+                   (pid, session["user_id"]), one=True)
+    if not row:
+        return api_error("Profile not found", 404)
+    session["profile_id"] = g.profile_id = pid
+    db.execute("UPDATE users SET last_profile_id = %s WHERE id = %s", (pid, session["user_id"]))
+    return jsonify({"profile": row})
 
 
 def _with_support_unread(payload):
@@ -579,9 +636,21 @@ def update_preferences():
         clean = clean_preferences(data)
     except ValueError as e:
         return api_error(str(e))
+    pid = g.get("profile_id", session.get("profile_id")) if session.get("role") == "user" else None
+    books = {k: v for k, v in clean.items() if pid is not None and k in PROFILE_PREFERENCE_KEYS}
+    if books.get("default_account_id") is not None and not db.query(
+            "SELECT 1 FROM accounts WHERE id = %s AND profile_id = %s", (books["default_account_id"], pid), one=True):
+        return api_error("Account not found", 404)
     user = db.query("SELECT preferences FROM users WHERE id = %s", (session["user_id"],), one=True)
-    prefs = {**(user["preferences"] or {}), **clean}
+    prefs = {**(user["preferences"] or {}), **{k: v for k, v in clean.items() if k not in books}}
     db.execute("UPDATE users SET preferences = %s WHERE id = %s", (json.dumps(prefs), session["user_id"]))
+    if pid is not None:
+        row = db.query("SELECT preferences FROM profiles WHERE id = %s", (pid,), one=True) or {}
+        own = {k: v for k, v in {**(row.get("preferences") or {}), **books}.items() if k in PROFILE_PREFERENCE_KEYS}
+        if books:
+            db.execute("UPDATE profiles SET preferences = preferences || %s::jsonb, updated_at = now() WHERE id = %s",
+                       (json.dumps(books), pid))
+        prefs = {**{k: v for k, v in prefs.items() if k not in PROFILE_PREFERENCE_KEYS}, **own}
     response = jsonify(prefs)
     return with_theme_cookie(response, prefs.get("theme")) if "theme" in clean else response
 

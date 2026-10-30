@@ -314,7 +314,7 @@ function paintToolbar() {
     const s = f.sort;
     th.setAttribute('aria-sort', s === `-${k}` ? 'descending' : s === k ? 'ascending' : 'none');
   });
-  $('#btn-export').href = '/api/transactions/export' + toQuery(queryParams());
+  $('#btn-export').href = withProfile('/api/transactions/export' + toQuery(queryParams()));
   const nf = activeFilterCount(f);
   $('#f-sheet').innerHTML = `${icon('sliders', 'ico-sm')}<span>Filters</span>${nf ? `<span class="pill">${nf}</span>` : ''}`;
   $('#f-sheet').classList.toggle('active', !!nf);

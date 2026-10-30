@@ -72,6 +72,7 @@ def create_app():
 
     app.before_request(auth.refresh_session_user)
     app.before_request(auth.admin_scope_guard)
+    app.before_request(auth.profile_guard)
 
     @app.before_request
     def _guards():

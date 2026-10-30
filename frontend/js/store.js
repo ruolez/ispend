@@ -11,9 +11,10 @@ const store = (() => {
   }
   function ssSet(key, entry) {
     try { sessionStorage.setItem(SS_PREFIX + key, JSON.stringify(entry)); } catch { /* quota */ }
-    if (bc) { try { bc.postMessage({ key, entry }); } catch { /* ignore */ } }
+    if (bc) { try { bc.postMessage({ key, entry, pid: tabProfile() }); } catch { /* ignore */ } }
   }
-  /* Other tabs learn about fresh reference data (a renamed category, a new account) at once.
+  /* Other tabs learn about fresh reference data (a renamed category, a new account) at once, if
+     they show the same profile: a tab still on another profile's books ignores the message.
      The channel is closed while the page sits in the back/forward cache: a message arriving then
      (the next page's own revalidation) would evict it, and Back would become a full reload. */
   let bc = null;
@@ -21,8 +22,8 @@ const store = (() => {
     if (typeof BroadcastChannel === 'undefined' || bc) return;
     bc = new BroadcastChannel('ispend.store');
     bc.onmessage = (e) => {
-      const { key, entry, invalidate: inv } = e.data || {};
-      if (!key) return;
+      const { key, entry, invalidate: inv, pid } = e.data || {};
+      if (!key || (pid || '') !== tabProfile()) return;
       if (key === PAGES_ALL) { dropPages(); return; }
       if (inv) { delete mem[key]; return; }
       const changed = JSON.stringify(mem[key] && mem[key].data) !== JSON.stringify(entry && entry.data);
@@ -67,7 +68,7 @@ const store = (() => {
   function invalidate(key) {
     delete mem[key];
     try { sessionStorage.removeItem(SS_PREFIX + key); } catch { /* ignore */ }
-    if (bc) { try { bc.postMessage({ key, invalidate: true }); } catch { /* ignore */ } }
+    if (bc) { try { bc.postMessage({ key, invalidate: true, pid: tabProfile() }); } catch { /* ignore */ } }
   }
   function on(event, fn) {
     (listeners[event] = listeners[event] || []).push(fn);
@@ -176,7 +177,7 @@ const store = (() => {
     if (path.startsWith('/api/auth/me')) invalidate('me');
     invalidate('review-count');
     dropPages();
-    if (bc) { try { bc.postMessage({ key: PAGES_ALL, invalidate: true }); } catch { /* ignore */ } }
+    if (bc) { try { bc.postMessage({ key: PAGES_ALL, invalidate: true, pid: tabProfile() }); } catch { /* ignore */ } }
   }
 
   return { get, invalidate, afterWrite, page, pageStale, on, emit, flatten, categories, categoriesFlat, accounts, tags, settings, displayCurrency };
