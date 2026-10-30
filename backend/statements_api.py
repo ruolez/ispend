@@ -7,7 +7,7 @@ import db
 import importer
 import jobs
 from auth import login_required
-from scope import current_scope
+from scope import current_profile_id, current_scope
 from util import api_error, audit, json_body, parse_int_list, row_json, rows_json, to_int
 
 bp = Blueprint("statements", __name__, url_prefix="/api/statements")
@@ -20,20 +20,20 @@ def _get(statement_id):
     return db.query(
         """SELECT s.*, a.name AS account_name, u.username
            FROM statements s LEFT JOIN accounts a ON a.id = s.account_id LEFT JOIN users u ON u.id = s.user_id
-           WHERE s.id = %s AND s.user_id = %s""",
-        (statement_id, session["user_id"]), one=True,
+           WHERE s.id = %s AND s.profile_id = %s""",
+        (statement_id, current_profile_id()), one=True,
     )
 
 
 def _duplicate_of(st):
     """An earlier, still-existing upload of the same file; the upload response carries it and the
     polled detail keeps it so the preview can show 'same file was uploaded before'."""
-    if not st.get("file_sha256") or not st.get("user_id"):
+    if not st.get("file_sha256") or not st.get("profile_id"):
         return None
     row = db.query(
-        """SELECT id FROM statements WHERE user_id = %s AND file_sha256 = %s AND id < %s AND status <> 'discarded'
+        """SELECT id FROM statements WHERE profile_id = %s AND file_sha256 = %s AND id < %s AND status <> 'discarded'
            ORDER BY id LIMIT 1""",
-        (st["user_id"], st["file_sha256"], st["id"]), one=True)
+        (st["profile_id"], st["file_sha256"], st["id"]), one=True)
     return row["id"] if row else None
 
 
@@ -63,8 +63,8 @@ def _suggest_account(st):
     """Best guess for the account a statement belongs to: the account a remembered column layout was
     last imported into, else an account whose last four digits appear in the file name or statement
     text, else the only account at the detected bank."""
-    accounts = db.query("SELECT id, last4, institution, account_type FROM accounts WHERE user_id = %s AND is_active",
-                        (st["user_id"],)) or []
+    accounts = db.query("SELECT id, last4, institution, account_type FROM accounts WHERE profile_id = %s AND is_active",
+                        (st["profile_id"],)) or []
     if not accounts:
         return None
     remembered = ((st.get("stats") or {}).get("layout") or {}).get("account_id")
@@ -154,8 +154,8 @@ def list_statements():
                     s.error_message, s.created_at, s.updated_at, s.committed_at, u.username,
                     (SELECT COUNT(*) FROM transactions t WHERE t.statement_id = s.id) AS txn_count
              FROM statements s LEFT JOIN accounts a ON a.id = s.account_id LEFT JOIN users u ON u.id = s.user_id
-             WHERE s.user_id = %s AND s.status <> 'discarded'"""
-    params = [session["user_id"]]
+             WHERE s.profile_id = %s AND s.status <> 'discarded'"""
+    params = [current_profile_id()]
     status = request.args.get("status")
     if status:
         sql += " AND s.status = ANY(%s)"
@@ -179,12 +179,12 @@ def upload():
         return api_error("No file uploaded (field name 'file')")
     account_id = to_int(request.form.get("account_id"), "account_id")
     if account_id:
-        acct = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s", (account_id, session["user_id"]), one=True)
+        acct = db.query("SELECT id FROM accounts WHERE id = %s AND profile_id = %s", (account_id, current_profile_id()), one=True)
         if not acct:
             return api_error("Account not found", 404)
         account_id = acct["id"]
     try:
-        st = importer.store_upload(session["user_id"], f, account_id=account_id)
+        st = importer.store_upload(current_scope(), f, account_id=account_id)
     except importer.ImportError_ as e:
         return api_error(str(e), e.status)
     db.execute("UPDATE statements SET status = 'parsing', updated_at = now() WHERE id = %s", (st["id"],))
@@ -236,7 +236,7 @@ def put_account(statement_id):
     data = json_body()
     account_id = to_int(data.get("account_id"), "Account")
     if account_id:
-        acct = db.query("SELECT id FROM accounts WHERE id = %s AND user_id = %s", (account_id, session["user_id"]), one=True)
+        acct = db.query("SELECT id FROM accounts WHERE id = %s AND profile_id = %s", (account_id, current_profile_id()), one=True)
         if not acct:
             return api_error("Account not found", 404)
     if st["status"] == "previewed":
@@ -269,7 +269,7 @@ def put_rows(statement_id):
             return api_error("row_ids is required")
         cid = to_int(data.get("category_id"), "Category")
         if cid is not None:
-            cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (cid, session["user_id"]), one=True)
+            cat = db.query("SELECT id FROM categories WHERE id = %s AND profile_id = %s", (cid, current_profile_id()), one=True)
             if not cat:
                 return api_error("Category not found", 404)
         n = db.execute(
@@ -359,7 +359,7 @@ def flip_signs(statement_id):
     if st["status"] != "committed":
         return api_error("Only imported statements can be flipped", 409)
     ids = [r["id"] for r in db.query(
-        "SELECT id FROM transactions WHERE statement_id = %s AND user_id = %s", (statement_id, session["user_id"])) or []]
+        "SELECT id FROM transactions WHERE statement_id = %s AND profile_id = %s", (statement_id, current_profile_id())) or []]
     n = signs.flip_signs(current_scope(), ids, reason=f"statement {statement_id}")
     mapping = dict(st.get("mapping") or {})
     mapping["flip_sign"] = not bool(mapping.get("flip_sign"))
@@ -381,7 +381,7 @@ def ai_extract(statement_id):
         return api_error("Add an OpenRouter key and model in Settings → AI first", 409)
     data = json_body()
     try:
-        st = importer.ai_extract_async(statement_id, session["user_id"], replace=bool(data.get("replace")))
+        st = importer.ai_extract_async(statement_id, current_scope(), replace=bool(data.get("replace")))
     except importer.ImportError_ as e:
         return api_error(str(e), e.status)
     audit("statement.ai_extract", {"id": statement_id, "replace": bool(data.get("replace"))})

@@ -27,16 +27,13 @@ PREDICATE = re.compile(
 # for finance data.
 ALLOWED = {
     "ai_api.py": 6,
-    "ai_categorizer.py": 3,
     "auth.py": 18,                # users, subscriptions, auth tokens, exports, the user's own profiles
     "db.py": 3,
-    "importer/pipeline.py": 2,
     "insights.py": 3,
-    "layout_memory.py": 7,
     "profiles.py": 2,             # the user's own profiles
     "reports.py": 12,
     "reports_api.py": 4,
-    "statements_api.py": 10,
+    "statements_api.py": 2,       # the uploader's name (users join)
     "transactions_api.py": 1,     # who acted on an event (users join)
 }
 

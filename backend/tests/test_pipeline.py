@@ -135,7 +135,7 @@ class CommitStatementTest(unittest.TestCase):
         sql, params = lock.calls[0]
         self.assertIn("status = 'committing'", sql)
         self.assertIn("status = 'previewed'", sql)
-        self.assertEqual(params, (3, 7))
+        self.assertEqual(params, (3, 7, 1))
 
     def test_requires_an_account_the_user_owns(self):
         router = _stubs.Router([("SELECT * FROM statements WHERE id", {"id": 7, "user_id": 1, "profile_id": 1, "status": "previewed"})])
@@ -266,7 +266,7 @@ class RememberLayoutTest(unittest.TestCase):
     def test_unrecognised_bank_is_saved_with_header_account_and_filename(self):
         saved, calls = self._run(self.ST, {"layout_key": "k", "mapping_source": "auto"})
         self.assertTrue(saved)
-        self.assertEqual([p for _, p in calls], [(1, "k", '["Date", "Amount"]', '{"date": 0, "amount": 1}', None, 5, "x.csv", 1)])
+        self.assertEqual([p for _, p in calls], [(1, 1, "k", '["Date", "Amount"]', '{"date": 0, "amount": 1}', None, 5, "x.csv", 1)])
 
     def test_confidently_recognised_bank_is_saved_only_when_the_user_changed_something(self):
         chase = {**self.ST, "bank_profile": "chase", "profile_confidence": self.CONFIDENT}
@@ -373,7 +373,7 @@ class BackfillLayoutsTest(unittest.TestCase):
         key, _ = layout.fingerprint([["Date", "Payee", "Amount"], ["2026-05-01", "COFFEE", "-4.50"]])
         calls = self._backfill([self._st(30, 5), self._st(20, 5), self._st(10, 6)])  # newest first, as queried
         self.assertTrue(all("DO NOTHING" in sql for sql, _ in calls))
-        self.assertEqual([(p[1], p[2], p[3], p[5], p[6]) for _, p in calls], [
+        self.assertEqual([(p[2], p[3], p[4], p[6], p[7]) for _, p in calls], [
             (key, '["Date", "Payee", "Amount"]', '{"date": 0, "description": [1], "amount": 2, "flip_sign": false}', 6, "s10.csv"),
             (key, '["Date", "Payee", "Amount"]', '{"date": 0, "description": [1], "amount": 2, "flip_sign": true}', 5, "s30.csv"),
         ])
@@ -385,7 +385,7 @@ class BackfillLayoutsTest(unittest.TestCase):
 
     def test_a_missing_file_still_counts_when_the_statement_kept_its_layout_key(self):
         kept = self._st(13, 5, stored_path="missing.csv", stats={"layout_key": "kept", "mapping_source": "user"})
-        self.assertEqual([p[1] for _, p in self._backfill([kept])], ["kept"])
+        self.assertEqual([p[2] for _, p in self._backfill([kept])], ["kept"])
 
     def test_runs_once(self):
         self.assertEqual(len(self._backfill([self._st(10, 6)])), 1)

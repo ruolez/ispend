@@ -90,7 +90,7 @@ class CommitStateTest(unittest.TestCase):
 
     def test_commit_refuses_when_not_previewed(self):
         FAKE.query_results.append({"id": 5, "status": "committed", "user_id": 1, "profile_id": 1})
-        FAKE.query_results.append({"id": 3, "user_id": 1, "currency": "USD"})
+        FAKE.query_results.append({"id": 3, "user_id": 1, "profile_id": 1, "currency": "USD"})
         FAKE.execute_results.append(0)  # lock UPDATE affected no rows
         with self.assertRaises(pipeline.ImportError_) as ctx:
             importer.commit_statement(5, 3)
@@ -113,7 +113,7 @@ class CommitStateTest(unittest.TestCase):
             res = c.get("/api/statements/123")
         self.assertEqual(res.status_code, 404)
         q = [c for c in FAKE.calls if c[0] == "query"][0]
-        self.assertIn("s.user_id = %s", q[1])
+        self.assertIn("s.profile_id = %s", q[1])
         self.assertEqual(q[2], (123, 7))
 
 

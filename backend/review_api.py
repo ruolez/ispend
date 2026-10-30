@@ -6,7 +6,7 @@ import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
-from scope import current_profile_id, current_scope
+from scope import Scope, current_profile_id, current_scope
 from util import api_error, audit, json_body, parse_int_list, record_events, rows_json, snapshot, to_int
 
 log = logging.getLogger(__name__)
@@ -213,7 +213,7 @@ def suggest():
     if not ids:
         return jsonify({"suggested": [], "count": 0})
     try:
-        result = ai_categorizer.suggest_sync(uid, ids)
+        result = ai_categorizer.suggest_sync(Scope(uid, pid), ids)
     except openrouter.OpenRouterError as e:
         return api_error(str(e), 502)
     except Exception:

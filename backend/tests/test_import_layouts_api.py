@@ -56,7 +56,7 @@ class ForgetTest(unittest.TestCase):
             res = client(4).delete("/api/import-layouts/3?scope=layout")
         sql, params = router.sql("DELETE FROM import_layouts")[0]
         self.assertEqual((res.status_code, params), (200, (4, 4, 3)))
-        self.assertIn("layout_key = (SELECT layout_key FROM import_layouts WHERE user_id = %s AND id = %s)", sql)
+        self.assertIn("layout_key = (SELECT layout_key FROM import_layouts WHERE profile_id = %s AND id = %s)", sql)
 
     def test_another_users_layout_is_not_found(self):
         router = _stubs.Router([("DELETE FROM import_layouts", 0)])

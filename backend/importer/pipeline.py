@@ -29,7 +29,7 @@ def abs_path(rel):
     return os.path.join(config.STATEMENTS_DIR, rel)
 
 
-def store_upload(user_id, file_storage, account_id=None):
+def store_upload(scope, file_storage, account_id=None):
     data = file_storage.read()
     if not data:
         raise ImportError_("The uploaded file is empty")
@@ -41,7 +41,7 @@ def store_upload(user_id, file_storage, account_id=None):
     except ValueError as e:
         raise ImportError_(str(e)) from e
     sha = sniff.sha256_bytes(data)
-    rel = f"{user_id}/{sha}.{kind}"
+    rel = f"{scope.uid}/{sha}.{kind}"  # files are kept per person: one upload can serve several profiles
     path = abs_path(rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
@@ -52,14 +52,15 @@ def store_upload(user_id, file_storage, account_id=None):
             f.write(data)
         os.replace(tmp, path)
     dup = db.query(
-        """SELECT id FROM statements WHERE user_id = %s AND file_sha256 = %s AND status <> 'discarded'
+        """SELECT id FROM statements WHERE profile_id = %s AND file_sha256 = %s AND status <> 'discarded'
            ORDER BY id DESC LIMIT 1""",
-        (user_id, sha), one=True,
+        (scope.pid, sha), one=True,
     )
     row = db.execute(
-        """INSERT INTO statements (user_id, account_id, original_filename, stored_path, file_sha256, file_size, file_kind)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
-        (user_id, account_id, filename, rel, sha, len(data), kind), returning=True,
+        """INSERT INTO statements (user_id, profile_id, account_id, original_filename, stored_path, file_sha256, file_size,
+                                  file_kind)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (scope.uid, scope.pid, account_id, filename, rel, sha, len(data), kind), returning=True,
     )
     return {**row, "duplicate_of": dup["id"] if dup else None}
 
@@ -184,7 +185,7 @@ def _parse_table(st, rows, mapping, profile_key, delimiter):
     key, _ = layout.fingerprint(rows)
     source, hit = ("user" if mapping is not None else "auto"), None
     if mapping is None:
-        hit = _remembered_layout(st["user_id"], key, st.get("account_id"))
+        hit = _remembered_layout(st["profile_id"], key, st.get("account_id"))
         if hit:
             mapping = Mapping.from_dict(hit["mapping"])
             profile_key = profile_key or hit.get("bank_profile")
@@ -197,10 +198,10 @@ def _parse_table(st, rows, mapping, profile_key, delimiter):
     return result
 
 
-def _remembered_layout(user_id, layout_key, account_id=None):
+def _remembered_layout(profile_id, layout_key, account_id=None):
     try:
         import layout_memory
-        return layout_memory.lookup(user_id, layout_key, account_id)
+        return layout_memory.lookup(profile_id, layout_key, account_id)
     except Exception:
         log.warning("layout memory unavailable at parse", exc_info=True)
         return None
@@ -217,7 +218,7 @@ def _remember_layout(st, stats, header, account_id, used=True, overwrite=True):
         return False
     try:
         import layout_memory
-        layout_memory.learn(st["user_id"], stats["layout_key"], st["mapping"], header=header,
+        layout_memory.learn(_statement_scope(st), stats["layout_key"], st["mapping"], header=header,
                             bank_profile=st.get("bank_profile"), account_id=account_id, filename=st["original_filename"],
                             used=used, overwrite=overwrite)
         return True
@@ -247,7 +248,7 @@ def backfill_layouts():
             except Exception:
                 key, header = stats.get("layout_key"), stats.get("header")  # the file is gone or unreadable
             if key:
-                newest.setdefault((st["user_id"], key, st["account_id"]), (st, {**stats, "layout_key": key}, header))
+                newest.setdefault((st["profile_id"], key, st["account_id"]), (st, {**stats, "layout_key": key}, header))
         # oldest first, so last_used_at keeps the order the files were imported in
         for st, stats, header in reversed(list(newest.values())):
             _remember_layout(st, stats, header, st["account_id"], overwrite=False)
@@ -419,7 +420,7 @@ def recompute_dupes(statement_id, account_id):
     stats = st.get("stats") or {}
     if account_id and stats.get("layout_key") and stats.get("mapping_source") in ("auto", "memory"):
         # the account was chosen after parsing: its own saved mapping beats the one borrowed from another account
-        own = _remembered_layout(st["user_id"], stats["layout_key"], account_id)
+        own = _remembered_layout(st["profile_id"], stats["layout_key"], account_id)
         if own and own.get("account_id") == account_id and \
                 Mapping.from_dict(own["mapping"]).to_dict() != Mapping.from_dict(st.get("mapping") or {}).to_dict():
             db.execute("UPDATE statements SET account_id = %s, updated_at = now() WHERE id = %s", (account_id, statement_id))
@@ -488,13 +489,14 @@ def commit_statement(statement_id, account_id):
     st = _load(statement_id)
     if not st:
         raise ImportError_("Statement not found", 404)
-    uid = st["user_id"]
-    account = db.query("SELECT * FROM accounts WHERE id = %s AND user_id = %s", (account_id, uid), one=True)
+    account = db.query("SELECT * FROM accounts WHERE id = %s AND profile_id = %s", (account_id, st["profile_id"]), one=True)
     if not account:
         raise ImportError_("Choose an account to import into")
+    # A statement moved to other books since it was loaded is not committed with this profile's data.
     locked = db.execute(
-        "UPDATE statements SET status = 'committing', account_id = %s, updated_at = now() WHERE id = %s AND status = 'previewed'",
-        (account_id, statement_id),
+        """UPDATE statements SET status = 'committing', account_id = %s, updated_at = now()
+           WHERE id = %s AND status = 'previewed' AND profile_id = %s""",
+        (account_id, statement_id, st["profile_id"]),
     )
     if not locked:
         raise ImportError_("Statement is not ready to import (status: %s)" % st["status"], 409)
@@ -508,7 +510,7 @@ def commit_statement(statement_id, account_id):
 
 
 def _commit_locked(st, account):
-    sid, uid, account_id = st["id"], st["user_id"], account["id"]
+    sid, uid, pid, account_id = st["id"], st["user_id"], st["profile_id"], account["id"]
     started = time.perf_counter()
     all_rows = db.query("SELECT * FROM import_rows WHERE statement_id = %s ORDER BY row_index", (sid,))
     excluded_by_user = sum(1 for r in all_rows if r["is_valid"] and r["duplicate_of"] is None and not r["include"])
@@ -563,7 +565,7 @@ def _commit_locked(st, account):
             category_id, status, source, rule_id, confidence = r["category_id"], "confirmed", "manual", None, 1.0
             manual_learn[(m.key, categorizer.direction(r["amount"]))] = category_id
         values.append((
-            uid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
+            uid, pid, account_id, sid, r["txn_date"], r["posted_date"], r["amount"], account["currency"], r["balance"],
             r["description"] or "", m.clean, m.key, m.name, category_id, status, source, rule_id, confidence,
             is_transfer, is_excluded, s["fingerprint"], s["occurrence"], json.dumps(r["raw"], default=str),
         ))
@@ -575,7 +577,7 @@ def _commit_locked(st, account):
         categorizer.deactivate_timed_out(ctx.rules)
     with db.transaction():
         returned = db.execute_values(
-            """INSERT INTO transactions (user_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance,
+            """INSERT INTO transactions (user_id, profile_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance,
                    description_raw, description_clean, merchant_key, merchant_name, category_id, category_status,
                    category_source, category_rule_id, category_confidence, is_transfer, is_excluded, fingerprint,
                    occurrence, raw)
@@ -626,7 +628,7 @@ def _commit_locked(st, account):
         try:
             import ai_categorizer
             import jobs
-            jobs.spawn(ai_categorizer.suggest_for_ids, uid, uncategorized_ids)
+            jobs.spawn(ai_categorizer.suggest_for_ids, _statement_scope(st), uncategorized_ids)
         except Exception:
             log.warning("could not queue AI suggestions", exc_info=True)
             result["ai_queued"] = False
@@ -702,13 +704,13 @@ def _append_warning(statement_id, message, status=None):
     )
 
 
-def ai_extract_async(statement_id, user_id, replace=False):
+def ai_extract_async(statement_id, scope, replace=False):
     """AI page reading can outlast the request budget on long statements: mark the statement as
     parsing and finish in the background; the preview polls like a re-parse."""
     import jobs
 
     st = _load(statement_id)
-    if not st or st["user_id"] != user_id:
+    if not st or st["profile_id"] != scope.pid:
         raise ImportError_("Statement not found", 404)
     if st["status"] not in ("previewed", "error"):
         raise ImportError_("Only statements in preview can be read with AI", 409)
@@ -716,19 +718,19 @@ def ai_extract_async(statement_id, user_id, replace=False):
         raise ImportError_("AI reading is for PDF statements", 409)
     db.execute("UPDATE statements SET status = 'parsing', error_message = NULL, updated_at = now() WHERE id = %s",
                (statement_id,))
-    jobs.spawn(_ai_extract_job, statement_id, user_id, replace)
+    jobs.spawn(_ai_extract_job, statement_id, scope, replace)
     return _load(statement_id)
 
 
-def _ai_extract_job(statement_id, user_id, replace):
+def _ai_extract_job(statement_id, scope, replace):
     try:
-        ai_extract_statement(statement_id, user_id, replace=replace)
+        ai_extract_statement(statement_id, scope, replace=replace)
     except Exception as e:
         log.exception("AI extraction failed for statement %s", statement_id)
         _append_warning(statement_id, f"AI reading failed: {e}", status="previewed")
 
 
-def ai_extract_statement(statement_id, user_id, replace=False):
+def ai_extract_statement(statement_id, scope, replace=False):
     """Stage rows read by the AI model. New rows are added next to parsed ones (matched on date+amount)
     unless replace=True. Returns {"added", "total", "calls"}."""
     import ai_extract
@@ -736,7 +738,7 @@ def ai_extract_statement(statement_id, user_id, replace=False):
     from importer.models import ParseResult
 
     st = _load(statement_id)
-    if not st or st["user_id"] != user_id:
+    if not st or st["profile_id"] != scope.pid:
         raise ImportError_("Statement not found")
     if st["status"] not in ("previewed", "error", "parsing"):
         raise ImportError_("Only statements in preview can be read with AI")
@@ -745,7 +747,7 @@ def ai_extract_statement(statement_id, user_id, replace=False):
     source = abs_path(st["ocr_path"]) if st.get("ocr_path") and os.path.exists(abs_path(st["ocr_path"])) else abs_path(st["stored_path"])
     texts = pdf_text.page_texts(source)
     period = (st["period_start"], st["period_end"]) if st.get("period_start") and st.get("period_end") else None
-    ai_rows, calls = ai_extract.extract_rows(user_id, texts, period=period)
+    ai_rows, calls = ai_extract.extract_rows(scope.uid, texts, period=period)
 
     existing = db.query("SELECT row_index, txn_date, amount, description FROM import_rows WHERE statement_id = %s ORDER BY row_index",
                         (statement_id,)) or []

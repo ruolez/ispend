@@ -9,6 +9,7 @@ import openrouter
 import reports
 from auth import login_required
 from openrouter import OpenRouterError
+from scope import current_scope
 from util import api_error, audit, json_body, parse_int_list, row_json
 
 bp = Blueprint("ai", __name__, url_prefix="/api")
@@ -37,12 +38,12 @@ def categorize():
         return jsonify({"suggested": 0, "items": []})
     if len(ids) <= config.AI_BATCH_SIZE:
         try:
-            result = ai_categorizer.suggest_sync(_uid(), ids)
+            result = ai_categorizer.suggest_sync(current_scope(), ids)
         except OpenRouterError as e:
             return api_error(str(e), 502)
         audit("ai.categorize", {"count": result["suggested"]})
         return jsonify(result)
-    jobs.spawn(ai_categorizer.suggest_for_ids, _uid(), ids)
+    jobs.spawn(ai_categorizer.suggest_for_ids, current_scope(), ids)
     audit("ai.categorize.queued", {"count": len(ids)})
     return jsonify({"queued": len(ids)}), 202
 

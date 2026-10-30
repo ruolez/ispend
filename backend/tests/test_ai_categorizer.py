@@ -23,6 +23,7 @@ sys.modules.setdefault("db", types.SimpleNamespace(
 DB = sys.modules["db"]
 
 import ai_categorizer  # noqa: E402
+from scope import Scope  # noqa: E402
 import openrouter  # noqa: E402
 
 ROWS = [
@@ -62,7 +63,7 @@ class SuggestTest(unittest.TestCase):
 
     def test_disabled_is_a_silent_noop(self):
         with mock.patch.object(openrouter, "enabled", return_value=False), mock.patch.object(openrouter, "chat_json") as chat:
-            self.assertEqual(ai_categorizer.suggest_for_ids(1, [11, 12]), {"suggested": 0, "skipped": "disabled"})
+            self.assertEqual(ai_categorizer.suggest_for_ids(Scope(1, 1), [11, 12]), {"suggested": 0, "skipped": "disabled"})
         chat.assert_not_called()
 
     def test_applies_valid_suggestions_only(self):
@@ -72,7 +73,7 @@ class SuggestTest(unittest.TestCase):
             {"i": 7, "category_id": 5, "confidence": 0.9},            # bad index -> dropped
         ]}
         with mock.patch.object(openrouter, "chat_json", return_value=(reply, {"prompt_tokens": 1, "completion_tokens": 1})) as chat:
-            result = ai_categorizer.suggest_for_ids(1, [11, 12])
+            result = ai_categorizer.suggest_for_ids(Scope(1, 1), [11, 12])
         self.assertEqual(result, {"suggested": 1, "batches": 1, "errors": 0})
         self.assertEqual(self.executed, [(3, 0.93, "coffee shop", 11, 1)])
         self.assertEqual(self.events, [(11, "ai", {"category_id": 3, "confidence": 0.93, "reason": "coffee shop"}, 1)])
@@ -83,17 +84,17 @@ class SuggestTest(unittest.TestCase):
     def test_confidence_is_clamped(self):
         reply = {"items": [{"i": 1, "category_id": 5, "confidence": 7}]}
         with mock.patch.object(openrouter, "chat_json", return_value=(reply, {})):
-            out = ai_categorizer.suggest_sync(1, [12])
+            out = ai_categorizer.suggest_sync(Scope(1, 1), [12])
         self.assertEqual(out, {"suggested": 1, "items": [{"id": 12, "category_id": 5, "confidence": 1.0, "reason": ""}]})
 
     def test_batch_error_is_swallowed_in_background(self):
         with mock.patch.object(openrouter, "chat_json", side_effect=openrouter.OpenRouterError("boom")):
-            self.assertEqual(ai_categorizer.suggest_for_ids(1, [11, 12]), {"suggested": 0, "batches": 1, "errors": 1})
+            self.assertEqual(ai_categorizer.suggest_for_ids(Scope(1, 1), [11, 12]), {"suggested": 0, "batches": 1, "errors": 1})
 
     def test_sync_raises_when_disabled(self):
         with mock.patch.object(openrouter, "enabled", return_value=False):
             with self.assertRaises(openrouter.OpenRouterError):
-                ai_categorizer.suggest_sync(1, [11])
+                ai_categorizer.suggest_sync(Scope(1, 1), [11])
 
 
 if __name__ == "__main__":
