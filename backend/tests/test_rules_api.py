@@ -58,7 +58,7 @@ class RulesApiTest(unittest.TestCase):
         res = self._call("post", "/api/rules", {"pattern": "netflix ", "category_id": 2, "match_type": "contains"})
         self.assertEqual((res.status_code, res.get_json()), (201, {"id": 5, "applied": 0}))
         sql, params = self.x.sql("INSERT INTO rules")[0]
-        self.assertEqual(params[:8], (1, "contains “netflix”", 40, True, "contains", "description_clean", "netflix", False))
+        self.assertEqual(params[:9], (1, 1, "contains “netflix”", 40, True, "contains", "description_clean", "netflix", False))
 
     def test_create_can_apply_to_existing_rows(self):
         self.q.routes += [("SELECT 1 FROM categories", {"1": 1}), ("MAX(priority)", {"p": 0})]

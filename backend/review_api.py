@@ -6,6 +6,7 @@ import categorizer
 import db
 import rules as rules_mod
 from auth import login_required
+from scope import current_profile_id, current_scope
 from util import api_error, audit, json_body, parse_int_list, record_events, rows_json, snapshot, to_int
 
 log = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ bp = Blueprint("review", __name__, url_prefix="/api/review")
 
 # Needs a decision: no category yet (transfers excepted), or a category that is only a suggestion —
 # including suggested transfers, which still deserve a confirmation.
-QUEUE_WHERE = "t.user_id = %s AND ((t.category_id IS NULL AND NOT t.is_transfer) OR t.category_status = 'suggested')"
+QUEUE_WHERE = "t.profile_id = %s AND ((t.category_id IS NULL AND NOT t.is_transfer) OR t.category_status = 'suggested')"
 
 
 @bp.get("/count")
@@ -29,7 +30,7 @@ def count():
                   COUNT(*) FILTER (WHERE category_status = 'suggested') AS suggested,
                   COUNT(*) AS total
            FROM transactions t WHERE """ + QUEUE_WHERE,
-        (session["user_id"],), one=True,
+        (current_profile_id(),), one=True,
     ) or {}
     return jsonify({"uncategorized": row.get("uncategorized", 0), "suggested": row.get("suggested", 0),
                     "total": row.get("total", 0)})
@@ -38,13 +39,13 @@ def count():
 @bp.get("")
 @login_required
 def queue():
-    uid = session["user_id"]
+    pid = current_profile_id()
     mode = request.args.get("mode") or "merchant"
     try:
         limit = min(max(int(request.args.get("limit") or 50), 1), 500)
     except ValueError:
         limit = 50
-    extra, params = "", [uid]
+    extra, params = "", [pid]
     account_id = to_int(request.args.get("account_id"), "account_id")
     if account_id:
         extra += " AND t.account_id = %s"
@@ -100,39 +101,40 @@ def queue():
 @bp.post("/resolve")
 @login_required
 def resolve():
-    uid = session["user_id"]
+    scope = current_scope()
+    pid = scope.pid
     data = json_body()
     ids = parse_int_list(data.get("ids"))
     if not ids:
         return api_error("ids are required")
     own = [r["id"] for r in (db.query(
-        "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])]
+        "SELECT id FROM transactions WHERE profile_id = %s AND id = ANY(%s)", (pid, ids)) or [])]
     if not own:
         return api_error("No matching transactions", 404)
     category_id = to_int(data.get("category_id"), "Category")
     mark_transfer = bool(data.get("mark_transfer"))
     learn = bool(data.get("learn", True))
     if category_id is not None:
-        if not db.query("SELECT 1 FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True):
+        if not db.query("SELECT 1 FROM categories WHERE id = %s AND profile_id = %s", (category_id, pid), one=True):
             return api_error("Category not found", 404)
     elif not mark_transfer:
         return api_error("Choose a category or mark as transfer")
-    before = snapshot(uid, own)
+    before = snapshot(pid, own)
     try:
         with db.transaction():
-            updated, rule_id = _resolve(uid, own, category_id, mark_transfer, learn, data.get("create_rule"))
+            updated, rule_id = _resolve(scope, own, category_id, mark_transfer, learn, data.get("create_rule"))
     except ResolveError as e:
         return api_error(str(e))
     audit("review.resolve", {"count": updated, "category_id": category_id, "rule_id": rule_id, "transfer": mark_transfer})
     return jsonify({"updated": updated, "rule_id": rule_id, "ids": own, "before": before})
 
 
-def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
+def _resolve(scope, own, category_id, mark_transfer, learn, create_rule):
     updated = 0
     if mark_transfer:
         if category_id is None:
             for slug in ("transfers.internal", "transfers"):
-                row = db.query("SELECT id FROM categories WHERE user_id = %s AND slug = %s", (uid, slug), one=True)
+                row = db.query("SELECT id FROM categories WHERE profile_id = %s AND slug = %s", (scope.pid, slug), one=True)
                 if row:
                     category_id = row["id"]
                     break
@@ -144,16 +146,16 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
                WHERE id = ANY(%s)""",
             (category_id, category_id, own),
         )
-        record_events([(i, "transfer", {"is_transfer": True, "category_id": category_id}, uid) for i in own])
+        record_events([(i, "transfer", {"is_transfer": True, "category_id": category_id}, scope.uid) for i in own])
         if learn and category_id is not None:
             keys = db.query(
                 f"""SELECT merchant_key, {categorizer.direction_sql()} AS direction, MIN(merchant_name) AS name
                     FROM transactions WHERE id = ANY(%s) GROUP BY 1, 2 ORDER BY 1, 2""", (own,)) or []
             for k in keys:
-                categorizer.learn(uid, k["merchant_key"], category_id, k["direction"], display_name=k["name"],
+                categorizer.learn(scope, k["merchant_key"], category_id, k["direction"], display_name=k["name"],
                                   is_transfer=True)
     else:
-        updated = categorizer.apply_manual(uid, own, category_id, learn_memory=learn)
+        updated = categorizer.apply_manual(scope, own, category_id, learn_memory=learn)
 
     rule_id = None
     if isinstance(create_rule, dict) and str(create_rule.get("pattern") or "").strip():
@@ -171,12 +173,15 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
             })
         except ValueError as e:
             raise ResolveError(str(e)) from e
-        top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE user_id = %s", (uid,), one=True)
+        if clean["account_id"] is not None and not db.query(
+                "SELECT 1 FROM accounts WHERE id = %s AND profile_id = %s", (clean["account_id"], scope.pid), one=True):
+            raise ResolveError("Account not found")
+        top = db.query("SELECT COALESCE(MAX(priority), 0) AS p FROM rules WHERE profile_id = %s", (scope.pid,), one=True)
         row = db.execute(
-            """INSERT INTO rules (user_id, name, priority, match_type, match_field, pattern, case_sensitive,
+            """INSERT INTO rules (user_id, profile_id, name, priority, match_type, match_field, pattern, case_sensitive,
                    account_id, category_id, set_transfer, hit_count, last_hit_at, amount_min, amount_max)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s) RETURNING id""",
-            (uid, clean["name"], (top["p"] if top else 0) + 10, clean["match_type"], clean["match_field"],
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s) RETURNING id""",
+            (scope.uid, scope.pid, clean["name"], (top["p"] if top else 0) + 10, clean["match_type"], clean["match_field"],
              clean["pattern"], clean["case_sensitive"], clean["account_id"], clean["category_id"],
              clean["set_transfer"], len(own), clean["amount_min"], clean["amount_max"]),
             returning=True,
@@ -189,7 +194,7 @@ def _resolve(uid, own, category_id, mark_transfer, learn, create_rule):
 @bp.post("/suggest")
 @login_required
 def suggest():
-    uid = session["user_id"]
+    uid, pid = session["user_id"], current_profile_id()
     data = json_body()
     ids = parse_int_list(data.get("ids"))
     try:
@@ -201,8 +206,8 @@ def suggest():
         return api_error("AI categorization is not available", 502)
     if not ids:
         rows = db.query(
-            "SELECT t.id FROM transactions t WHERE t.user_id = %s AND t.category_id IS NULL AND NOT t.is_transfer ORDER BY t.txn_date DESC LIMIT 40",
-            (uid,),
+            "SELECT t.id FROM transactions t WHERE t.profile_id = %s AND t.category_id IS NULL AND NOT t.is_transfer ORDER BY t.txn_date DESC LIMIT 40",
+            (pid,),
         ) or []
         ids = [r["id"] for r in rows]
     if not ids:

@@ -49,17 +49,17 @@ class MerchantsApiTest(unittest.TestCase):
         self.assertEqual(self.x.sql("INSERT INTO merchant_memory"), [])
 
     def test_category_with_apply_existing_recategorizes_rows(self):
-        self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE user_id", [{"id": 3}, {"id": 4}])]
+        self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE profile_id", [{"id": 3}, {"id": 4}])]
         res = self._call("put", "/api/merchants/UBER", {"category_id": 7, "direction": "out", "apply_existing": True})
         self.assertEqual((res.status_code, res.get_json()["applied"]), (200, 2))
-        self.assertEqual([p[:3] for _s, p in self.x.sql("INSERT INTO merchant_memory")], [(1, "UBER", "out")])
+        self.assertEqual([p[:4] for _s, p in self.x.sql("INSERT INTO merchant_memory")], [(1, 1, "UBER", "out")])
         (_sql, params), = self.x.sql("UPDATE transactions SET category_id = %s, category_status = 'confirmed', category_source = 'merchant'")
         self.assertEqual(params, (7, [3, 4]))
 
     def test_apply_existing_only_touches_the_remembered_direction(self):
-        self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE user_id", [])]
+        self.q.routes += [("FROM categories WHERE id", {"id": 7}), ("SELECT id FROM transactions WHERE profile_id", [])]
         self._call("put", "/api/merchants/ACME", {"category_id": 7, "direction": "in", "apply_existing": True})
-        (sql, params), = self.q.sql("SELECT id FROM transactions WHERE user_id")
+        (sql, params), = self.q.sql("SELECT id FROM transactions WHERE profile_id")
         self.assertEqual((params, "(CASE WHEN amount > 0 THEN 'in' ELSE 'out' END) = %s" in sql), ((1, "ACME", "in", 7), True))
 
     def test_renaming_with_a_category_names_both_directions(self):

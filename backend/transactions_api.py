@@ -15,6 +15,7 @@ import db
 import splits
 import transfers
 from auth import login_required
+from scope import current_profile_id, current_scope
 from util import (drop_splits, api_error, audit, clean_restore_items, csv_safe, json_body, parse_int_list, record_event, record_events,
                   row_json, rows_json, snapshot, to_int)
 
@@ -384,7 +385,7 @@ def pair_transfer():
     data = json_body()
     a_id = to_int(data.get("a_id"), "a_id", required=True)
     b_id = to_int(data.get("b_id"), "b_id", required=True)
-    before = snapshot(session["user_id"], [a_id, b_id])
+    before = snapshot(current_profile_id(), [a_id, b_id])
     try:
         out = transfers.pair(session["user_id"], a_id, b_id)
     except transfers.AlreadyPaired as e:
@@ -407,7 +408,7 @@ def auto_pair():
         return api_error("min_confidence must be a number between 0 and 1")
     uid = session["user_id"]
     legs = [t["id"] for c in transfers.candidates(uid, limit=1000) if c["confidence"] >= min_confidence for t in (c["a"], c["b"])]
-    before = snapshot(uid, sorted(set(legs)))
+    before = snapshot(current_profile_id(), sorted(set(legs)))
     paired = transfers.auto_pair(uid, min_confidence=min_confidence)
     audit("transactions.auto_pair", {"paired": paired})
     return jsonify({"paired": paired, "before": before})
@@ -602,7 +603,7 @@ def create_transaction():
         if category_id:
             record_event(row["id"], "manual", {"category_id": category_id}, uid)
             if data.get("learn", True):
-                categorizer.learn(uid, key, category_id, categorizer.direction(amount), display_name=name)
+                categorizer.learn(current_scope(), key, category_id, categorizer.direction(amount), display_name=name)
         audit("transaction.create", {"id": row["id"]})
     return jsonify(row_json(_get_own(row["id"], uid))), 201
 
@@ -622,7 +623,7 @@ def update_transaction(txn_id):
             cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
             if not cat:
                 return api_error("Category not found", 404)
-        categorizer.apply_manual(uid, [txn_id], category_id, learn_memory=learn)
+        categorizer.apply_manual(current_scope(), [txn_id], category_id, learn_memory=learn)
     if "tag_ids" in data:
         tag_ids = _own_tag_ids(uid, data.get("tag_ids"))
         if tag_ids is None:
@@ -735,7 +736,7 @@ def bulk():
         "SELECT id FROM transactions WHERE user_id = %s AND id = ANY(%s)", (uid, ids)) or [])]
     if not own:
         return api_error("No matching transactions", 404)
-    before = None if action in ("delete", "restore") else snapshot(uid, own)
+    before = None if action in ("delete", "restore") else snapshot(current_profile_id(), own)
     updated = 0
     if action == "categorize":
         category_id = to_int(data.get("category_id"), "Category")
@@ -744,9 +745,9 @@ def bulk():
         cat = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (category_id, uid), one=True)
         if not cat:
             return api_error("Category not found", 404)
-        updated = categorizer.apply_manual(uid, own, category_id, learn_memory=bool(data.get("learn", True)))
+        updated = categorizer.apply_manual(current_scope(), own, category_id, learn_memory=bool(data.get("learn", True)))
     elif action == "uncategorize":
-        updated = categorizer.apply_manual(uid, own, None, learn_memory=False)
+        updated = categorizer.apply_manual(current_scope(), own, None, learn_memory=False)
     elif action == "accept_suggestion":
         rows = db.query(
             """SELECT id, merchant_key, merchant_name, category_id, amount FROM transactions
@@ -767,7 +768,7 @@ def bulk():
                     seen.setdefault((r["merchant_key"], categorizer.direction(r["amount"]), r["category_id"]),
                                     r["merchant_name"])
                 for (key, way, cid), name in seen.items():
-                    categorizer.learn(uid, key, cid, way, display_name=name)
+                    categorizer.learn(current_scope(), key, cid, way, display_name=name)
             updated = len(sids)
     elif action == "reject_suggestion":
         touched = [r["id"] for r in (db.query(

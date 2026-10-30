@@ -12,6 +12,7 @@ import _stubs  # noqa: E402
 FAKE = _stubs.install()
 
 import maintenance  # noqa: E402
+from scope import Scope  # noqa: E402
 
 
 
@@ -45,18 +46,18 @@ class RenormalizeUserTest(unittest.TestCase):
         ]
         self.rows = rows
         self.queries = _stubs.Router([
-            ("FROM transactions WHERE user_id = %s ORDER BY account_id", rows),
-            ("SELECT id, stats FROM statements WHERE user_id", [{"id": 7, "stats": {}}]),
+            ("FROM transactions WHERE profile_id = %s ORDER BY account_id", rows),
+            ("SELECT id, stats FROM statements WHERE profile_id", [{"id": 7, "stats": {}}]),
             ("SELECT fingerprint, occurrence FROM transactions", []),
-            ("FROM rules WHERE user_id", rules),
-            ("FROM merchant_memory WHERE user_id", memory),
+            ("FROM rules WHERE profile_id", rules),
+            ("FROM merchant_memory WHERE profile_id", memory),
         ])
         self.execs = _stubs.Router(default=1)
 
     def _run(self):
         with mock.patch.object(maintenance, "db", FAKE), mock.patch.object(FAKE, "query", side_effect=self.queries), \
                 mock.patch.object(FAKE, "execute", side_effect=self.execs):
-            return maintenance.renormalize_user(4)
+            return maintenance.renormalize_profile(4)
 
     def test_transactions_are_renamed_with_the_cardholder_stripped(self):
         result = self._run()
@@ -120,10 +121,10 @@ class LearnFromHistoryTest(unittest.TestCase):
         fake = types.SimpleNamespace(query=query, execute=lambda sql, params=None, **k: calls.append((sql, params)),
                                      transaction=_stubs.FakeDB().transaction)
         with mock.patch.object(maintenance, "db", fake):
-            out = maintenance.learn_from_history(1)
+            out = maintenance.learn_from_history(Scope(1, 1))
         inserts = [c for c in calls if "INSERT INTO merchant_memory" in c[0]]
         self.assertEqual(out, {"merchants_seen": 3, "memory_added": 2, "memory_updated": 1})
-        self.assertEqual([c[1][:4] for c in inserts], [(1, "ZELLE JOHN", "out", 64), (1, "ZELLE JOHN", "in", 12)])
+        self.assertEqual([c[1][:5] for c in inserts], [(1, 1, "ZELLE JOHN", "out", 64), (1, 1, "ZELLE JOHN", "in", 12)])
 
 
 class PhrasesFollowTheStatementTest(unittest.TestCase):
@@ -134,7 +135,7 @@ class PhrasesFollowTheStatementTest(unittest.TestCase):
                 txn(2, "Geico Eugene Braverman GEICO AUTO", "GEICO EUGENE BRAVERMAN", "Geico Eugene Braverman", "X", statement_id=None)]
         with mock.patch.object(maintenance, "db", FAKE), \
                 mock.patch.object(FAKE, "query", side_effect=_stubs.Router([
-                    ("SELECT id, stats FROM statements WHERE user_id", [{"id": 7, "stats": {"stripped_phrases": ["EUGENE BRAVERMAN"]}}])])):
+                    ("SELECT id, stats FROM statements WHERE profile_id", [{"id": 7, "stats": {"stripped_phrases": ["EUGENE BRAVERMAN"]}}])])):
             phrases = maintenance._phrases_by_statement(4, rows)
         self.assertEqual(phrases, {7: ["EUGENE BRAVERMAN"]})
         self.assertNotIn(None, phrases)

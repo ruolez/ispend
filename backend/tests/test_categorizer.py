@@ -10,6 +10,9 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 import db  # noqa: E402  (real module or another test's stub; attributes are patched below)
 import categorizer  # noqa: E402
 import rules  # noqa: E402
+from scope import Scope  # noqa: E402
+
+SCOPE = Scope(uid=1, pid=10)
 
 
 class FakeDB:
@@ -42,7 +45,7 @@ def patch_db(fake):
 
 
 def ctx(**kw):
-    base = dict(user_id=1, rules=[], memory={}, slug_to_id={"dining.coffee": 5, "groceries": 6, "transfers": 2,
+    base = dict(scope=SCOPE, rules=[], memory={}, slug_to_id={"dining.coffee": 5, "groceries": 6, "transfers": 2,
                                                             "transfers.internal": 3, "shopping.online": 8},
                 ai_enabled=False, memory_keys=[])
     base.update(kw)
@@ -132,23 +135,23 @@ class MemoryDirectionTest(unittest.TestCase):
                 {"merchant_key": "ACME", "direction": "out", "category_id": 41, "is_transfer": False, "display_name": None}]
         fake = FakeDB(lambda sql, params: rows if "FROM merchant_memory" in sql else [])
         with patch_db(fake), mock.patch.dict("sys.modules", {"openrouter": None}):
-            c = categorizer.load_context(1)
+            c = categorizer.load_context(SCOPE)
         self.assertEqual(({d: {k: m["category_id"] for k, m in keys.items()} for d, keys in c.memory.items()}, c.memory_keys),
                          ({"in": {"ACME": 40}, "out": {"ACME": 41}}, {"in": ["ACME"], "out": ["ACME"]}))
 
     def test_learn_writes_the_direction(self):
         fake = FakeDB()
         with patch_db(fake):
-            categorizer.learn(1, "ACME", 40, "in", display_name="Acme")
+            categorizer.learn(SCOPE, "ACME", 40, "in", display_name="Acme")
         (_kind, sql, params), = fake.calls
-        self.assertEqual((params, "ON CONFLICT (user_id, merchant_key, direction)" in sql), ((1, "ACME", "in", "Acme", 40, False), True))
+        self.assertEqual((params, "ON CONFLICT (profile_id, merchant_key, direction)" in sql), ((1, 10, "ACME", "in", "Acme", 40, False), True))
 
     def test_forget_one_direction_or_both(self):
         fake = FakeDB()
         with patch_db(fake):
-            categorizer.forget(1, "ACME", "in")
-            categorizer.forget(1, "ACME")
-        self.assertEqual([c[2] for c in fake.calls], [(1, "ACME", "in"), (1, "ACME")])
+            categorizer.forget(10, "ACME", "in")
+            categorizer.forget(10, "ACME")
+        self.assertEqual([c[2] for c in fake.calls], [(10, "ACME", "in"), (10, "ACME")])
 
 
 class ApplyManualTest(unittest.TestCase):
@@ -159,7 +162,7 @@ class ApplyManualTest(unittest.TestCase):
             {"id": 3, "merchant_key": "TIMS", "merchant_name": "Tim Hortons", "amount": Decimal("-2")},
         ] if sql.strip().startswith("SELECT") else None)
         with patch_db(fake):
-            n = categorizer.apply_manual(1, [1, 2, 3], 5)
+            n = categorizer.apply_manual(SCOPE, [1, 2, 3], 5)
         self.assertEqual(n, 3)
         updates = [c for c in fake.calls if c[0] == "execute" and "UPDATE transactions" in c[1]]
         self.assertEqual(len(updates), 1)
@@ -167,7 +170,7 @@ class ApplyManualTest(unittest.TestCase):
         events = [c for c in fake.calls if c[0] == "execute_values"]
         self.assertEqual(len(events[0][2]), 3)
         learns = [c for c in fake.calls if c[0] == "execute" and "merchant_memory" in c[1]]
-        self.assertEqual([c[2][1:3] for c in learns], [("STARBUCKS", "out"), ("TIMS", "out")])
+        self.assertEqual([c[2][2:4] for c in learns], [("STARBUCKS", "out"), ("TIMS", "out")])
 
     def test_a_merchant_seen_both_ways_is_learned_both_ways(self):
         fake = FakeDB(lambda sql, params: [
@@ -175,22 +178,22 @@ class ApplyManualTest(unittest.TestCase):
             {"id": 2, "merchant_key": "ACME", "merchant_name": "Acme", "amount": Decimal("-25")},
         ] if sql.strip().startswith("SELECT") else None)
         with patch_db(fake):
-            categorizer.apply_manual(1, [1, 2], 5)
-        learns = [c[2][1:3] for c in fake.calls if c[0] == "execute" and "merchant_memory" in c[1]]
+            categorizer.apply_manual(SCOPE, [1, 2], 5)
+        learns = [c[2][2:4] for c in fake.calls if c[0] == "execute" and "merchant_memory" in c[1]]
         self.assertEqual(learns, [("ACME", "in"), ("ACME", "out")])
 
     def test_clearing_category_does_not_learn(self):
         fake = FakeDB(lambda sql, params: [{"id": 1, "merchant_key": "X", "merchant_name": "X"}]
                       if sql.strip().startswith("SELECT") else None)
         with patch_db(fake):
-            self.assertEqual(categorizer.apply_manual(1, [1], None), 1)
+            self.assertEqual(categorizer.apply_manual(SCOPE, [1], None), 1)
         self.assertEqual([c for c in fake.calls if "merchant_memory" in str(c[1])], [])
         self.assertIn("category_id = NULL", [c for c in fake.calls if c[0] == "execute"][0][1])
 
     def test_recategorising_drops_split_lines(self):
         fake = FakeDB(lambda sql, params: [{"id": 1, "merchant_key": "X", "merchant_name": "X"}] if sql.strip().startswith("SELECT") else None)
         with patch_db(fake):
-            categorizer.apply_manual(1, [1], 5, learn_memory=False)
+            categorizer.apply_manual(SCOPE, [1], 5, learn_memory=False)
         self.assertEqual([c[2] for c in fake.calls if c[0] == "execute" and "DELETE FROM transaction_splits" in c[1]], [([1],)])
         events = [c for c in fake.calls if c[0] == "execute_values"]
         self.assertEqual([e[2][0][1] for e in events], ["manual", "split"])
@@ -198,7 +201,7 @@ class ApplyManualTest(unittest.TestCase):
 
     def test_empty_ids(self):
         with patch_db(FakeDB()):
-            self.assertEqual(categorizer.apply_manual(1, [], 5), 0)
+            self.assertEqual(categorizer.apply_manual(SCOPE, [], 5), 0)
 
 
 if __name__ == "__main__":

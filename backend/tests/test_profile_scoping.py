@@ -29,24 +29,17 @@ ALLOWED = {
     "ai_api.py": 6,
     "ai_categorizer.py": 3,
     "auth.py": 18,                # users, subscriptions, auth tokens, exports, the user's own profiles
-    "categories_api.py": 29,
-    "categorizer.py": 7,
     "db.py": 3,
     "importer/pipeline.py": 2,
     "insights.py": 3,
     "layout_memory.py": 7,
-    "maintenance.py": 7,
-    "merchants_api.py": 6,
     "profiles.py": 2,             # the user's own profiles
     "reports.py": 12,
     "reports_api.py": 4,
-    "review_api.py": 6,
-    "rules_api.py": 9,
     "signs.py": 1,
     "statements_api.py": 10,
     "transactions_api.py": 24,
     "transfers.py": 6,
-    "util.py": 1,
 }
 
 

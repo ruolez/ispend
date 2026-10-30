@@ -45,7 +45,7 @@ class CategoriesApiTest(unittest.TestCase):
             self.assertEqual((res.status_code, res.get_json()["error"]), (status, msg), body)
 
     def test_create_subcategory_inherits_parent_and_builds_slug(self):
-        self.q.routes += [("SELECT * FROM categories WHERE id = %s AND user_id", CAT),
+        self.q.routes += [("SELECT * FROM categories WHERE id = %s AND profile_id", CAT),
                           ("MAX(sort_order)", {"n": 4}),
                           ("SELECT id, parent_id, name, slug, kind, color, icon, is_system, sort_order FROM categories WHERE id",
                            {**CAT, "id": 10, "parent_id": 3, "name": "Coffee", "slug": "dining.coffee", "is_system": False})]
@@ -53,7 +53,7 @@ class CategoriesApiTest(unittest.TestCase):
         res = self._call("post", "/api/categories", {"name": "Coffee", "parent_id": 3})
         self.assertEqual(res.status_code, 201)
         sql, params = self.x.sql("INSERT INTO categories")[0]
-        self.assertEqual(params, (1, 3, "Coffee", "dining.coffee", "expense", "c2", "utensils", 4))
+        self.assertEqual(params, (1, 1, 3, "Coffee", "dining.coffee", "expense", "c2", "utensils", 4))
 
     def test_delete_refuses_while_referenced(self):
         self.q.routes += [("SELECT * FROM categories WHERE id", CAT), ("SELECT id FROM categories WHERE parent_id", [{"id": 4}]),
@@ -75,7 +75,7 @@ class CategoriesApiTest(unittest.TestCase):
     def test_delete_with_reassignment_moves_everything_then_deletes_children_too(self):
         self.q.routes += [("SELECT * FROM categories WHERE id", CAT), ("SELECT id FROM categories WHERE parent_id", [{"id": 4}]),
                           ("AS transactions", {"transactions": 7, "rules": 2, "merchants": 1}),
-                          ("SELECT id FROM categories WHERE id = %s AND user_id", {"id": 8})]
+                          ("SELECT id FROM categories WHERE id = %s AND profile_id", {"id": 8})]
         res = self._call("delete", "/api/categories/3?reassign_to=8")
         self.assertEqual(res.status_code, 200)
         moved = [(s.split(" SET")[0], p) for s, p in self.x.calls if s.startswith("UPDATE")]
@@ -88,7 +88,7 @@ class CategoriesApiTest(unittest.TestCase):
     def test_reassign_target_must_be_owned_and_different(self):
         self.q.routes += [("SELECT * FROM categories WHERE id", CAT), ("SELECT id FROM categories WHERE parent_id", []),
                           ("AS transactions", {"transactions": 1, "rules": 0, "merchants": 0}),
-                          ("SELECT id FROM categories WHERE id = %s AND user_id", {"id": 3})]
+                          ("SELECT id FROM categories WHERE id = %s AND profile_id", {"id": 3})]
         res = self._call("delete", "/api/categories/3?reassign_to=3")
         self.assertEqual(res.status_code, 404)
 
@@ -167,7 +167,7 @@ class CreateInheritsParentKindTest(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.secret_key = "test"
         self.app.register_blueprint(categories_api.bp)
-        self.q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", self.PARENT),
+        self.q = _stubs.Router([("FROM categories WHERE id = %s AND profile_id", self.PARENT),
                                 ("COALESCE(MAX(sort_order)", {"n": 0}),
                                 ("FROM categories WHERE id = %s", {"id": 10, "kind": "income"})])
         self.x = _stubs.Router(default={"id": 10})
@@ -185,7 +185,7 @@ class CreateInheritsParentKindTest(unittest.TestCase):
         res = self._post({"name": "Bonus", "parent_id": 9, "kind": "expense"})
         self.assertEqual(res.status_code, 201, res.get_json())
         (_sql, params), = self.x.sql("INSERT INTO categories")
-        self.assertEqual(params[4], "income")
+        self.assertEqual(params[5], "income")
 
     def test_non_integer_parent_is_400(self):
         res = self._post({"name": "Bonus", "parent_id": "abc"})
@@ -206,7 +206,7 @@ class KindChangeSyncsTransactionsTest(unittest.TestCase):
         self.x = _stubs.Router(default=1)
 
     def _put(self, cat, body):
-        q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", cat),
+        q = _stubs.Router([("FROM categories WHERE id = %s AND profile_id", cat),
                            ("SELECT id FROM categories WHERE parent_id", [{"id": 31}])])
         c = self.app.test_client()
         with c.session_transaction() as s:
@@ -237,7 +237,7 @@ class TransferCategoriesAreProtectedTest(unittest.TestCase):
         app = Flask(__name__)
         app.secret_key = "test"
         app.register_blueprint(categories_api.bp)
-        q = _stubs.Router([("FROM categories WHERE id = %s AND user_id", {**CAT, "id": 2, "slug": "transfers", "kind": "transfer", "is_system": True})])
+        q = _stubs.Router([("FROM categories WHERE id = %s AND profile_id", {**CAT, "id": 2, "slug": "transfers", "kind": "transfer", "is_system": True})])
         x = _stubs.Router(default=1)
         c = app.test_client()
         with c.session_transaction() as s:

@@ -1,5 +1,8 @@
 """Categorization cascade: rules -> learned merchant memory -> fuzzy memory ->
-builtin hints -> nothing (AI runs later in a batch for the remainder)."""
+builtin hints -> nothing (AI runs later in a batch for the remainder).
+
+Rules, memory and categories belong to one profile; `scope` (scope.Scope) names it, and the
+person acting, whose AI settings apply and who is recorded on events."""
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -26,7 +29,7 @@ class Decision:
 
 @dataclass
 class Context:
-    user_id: int
+    scope: object
     rules: list = field(default_factory=list)
     memory: dict = field(default_factory=dict)       # direction -> merchant_key -> memory row
     slug_to_id: dict = field(default_factory=dict)
@@ -51,25 +54,26 @@ def deactivate_timed_out(compiled_rules):
     return ids
 
 
-def load_context(user_id):
+def load_context(scope):
+    pid = scope.pid
     rule_rows = db.query(
-        "SELECT * FROM rules WHERE user_id = %s AND is_active ORDER BY priority, id", (user_id,)
+        "SELECT * FROM rules WHERE profile_id = %s AND is_active ORDER BY priority, id", (pid,)
     ) or []
     mem_rows = db.query(
-        "SELECT merchant_key, direction, category_id, is_transfer, display_name FROM merchant_memory WHERE user_id = %s",
-        (user_id,),
+        "SELECT merchant_key, direction, category_id, is_transfer, display_name FROM merchant_memory WHERE profile_id = %s",
+        (pid,),
     ) or []
-    cat_rows = db.query("SELECT id, slug FROM categories WHERE user_id = %s", (user_id,)) or []
+    cat_rows = db.query("SELECT id, slug FROM categories WHERE profile_id = %s", (pid,)) or []
     try:
         import openrouter
-        ai_enabled = bool(openrouter.enabled("categorize", user_id))
+        ai_enabled = bool(openrouter.enabled("categorize", scope.uid))
     except Exception:
         ai_enabled = False
     memory = {}
     for r in mem_rows:
         memory.setdefault(r["direction"], {})[r["merchant_key"]] = dict(r)
     return Context(
-        user_id=user_id,
+        scope=scope,
         rules=[rules_mod.compile_rule(dict(r)) for r in rule_rows],
         memory=memory,
         slug_to_id={r["slug"]: r["id"] for r in cat_rows},
@@ -129,39 +133,40 @@ def categorize(txn, ctx):
     return Decision()
 
 
-def learn(user_id, merchant_key, category_id, direction, display_name=None, is_transfer=False):
+def learn(scope, merchant_key, category_id, direction, display_name=None, is_transfer=False):
     if not merchant_key or category_id is None:
         return
     db.execute(
-        """INSERT INTO merchant_memory (user_id, merchant_key, direction, display_name, category_id, is_transfer)
-           VALUES (%s, %s, %s, %s, %s, %s)
-           ON CONFLICT (user_id, merchant_key, direction) DO UPDATE SET
+        """INSERT INTO merchant_memory (user_id, profile_id, merchant_key, direction, display_name, category_id, is_transfer)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (profile_id, merchant_key, direction) DO UPDATE SET
              category_id = EXCLUDED.category_id,
              is_transfer = EXCLUDED.is_transfer,
              display_name = COALESCE(EXCLUDED.display_name, merchant_memory.display_name),
              times_used = merchant_memory.times_used + 1,
              last_used_at = now()""",
-        (user_id, merchant_key, direction, display_name, category_id, bool(is_transfer)),
+        (scope.uid, scope.pid, merchant_key, direction, display_name, category_id, bool(is_transfer)),
     )
 
 
-def forget(user_id, merchant_key, direction=None):
+def forget(profile_id, merchant_key, direction=None):
     if direction is None:
-        db.execute("DELETE FROM merchant_memory WHERE user_id = %s AND merchant_key = %s", (user_id, merchant_key))
+        db.execute("DELETE FROM merchant_memory WHERE profile_id = %s AND merchant_key = %s", (profile_id, merchant_key))
     else:
-        db.execute("DELETE FROM merchant_memory WHERE user_id = %s AND merchant_key = %s AND direction = %s",
-                   (user_id, merchant_key, direction))
+        db.execute("DELETE FROM merchant_memory WHERE profile_id = %s AND merchant_key = %s AND direction = %s",
+                   (profile_id, merchant_key, direction))
 
 
-def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manual"):
-    """Set (or clear, when category_id is None) the category on the user's
+def apply_manual(scope, txn_ids, category_id, learn_memory=True, source="manual"):
+    """Set (or clear, when category_id is None) the category on the profile's
     transactions, record events, and remember the choice per merchant."""
     ids = [int(i) for i in (txn_ids or [])]
     if not ids:
         return 0
+    user_id = scope.uid
     rows = db.query(
-        "SELECT id, merchant_key, merchant_name, amount FROM transactions WHERE user_id = %s AND id = ANY(%s)",
-        (user_id, ids),
+        "SELECT id, merchant_key, merchant_name, amount FROM transactions WHERE profile_id = %s AND id = ANY(%s)",
+        (scope.pid, ids),
     ) or []
     if not rows:
         return 0
@@ -191,7 +196,7 @@ def apply_manual(user_id, txn_ids, category_id, learn_memory=True, source="manua
             if r["merchant_key"]:
                 seen.setdefault((r["merchant_key"], direction(r["amount"])), r["merchant_name"])
         for (key, way), name in seen.items():
-            learn(user_id, key, category_id, way, display_name=name)
+            learn(scope, key, category_id, way, display_name=name)
     return len(ids)
 
 

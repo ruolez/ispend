@@ -12,6 +12,7 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 import db  # noqa: E402
 import categorizer  # noqa: E402
 import review_api  # noqa: E402
+from scope import Scope  # noqa: E402
 from flask import Flask  # noqa: E402
 
 
@@ -94,7 +95,7 @@ class ReviewTest(unittest.TestCase):
 
     def test_resolve_categorizes_and_creates_rule(self):
         def handler(sql, params, one):
-            if "FROM transactions WHERE user_id" in sql:
+            if "FROM transactions WHERE profile_id" in sql:
                 return [{"id": 1}, {"id": 2}]
             if "FROM categories" in sql:
                 return {"id": 5}
@@ -112,19 +113,19 @@ class ReviewTest(unittest.TestCase):
         body = json.loads(res.get_data())
         self.assertEqual(res.status_code, 200)
         self.assertEqual(body, {"updated": 2, "rule_id": 77, "ids": [1, 2], "before": [{"id": 1}, {"id": 2}]})
-        snap = next(i for i, c in enumerate(fake.calls) if "FROM transactions WHERE user_id = %s AND id = ANY(%s) ORDER BY id" in " ".join(c[1].split()))
+        snap = next(i for i, c in enumerate(fake.calls) if "FROM transactions WHERE profile_id = %s AND id = ANY(%s) ORDER BY id" in " ".join(c[1].split()))
         self.assertTrue(all(c[0] == "query" for c in fake.calls[:snap]))  # the snapshot is captured before anything is written
-        apply.assert_called_once_with(1, [1, 2], 5, learn_memory=True)
+        apply.assert_called_once_with(Scope(1, 1), [1, 2], 5, learn_memory=True)
         insert = [c for c in fake.calls if "INSERT INTO rules" in c[1]][0]
-        self.assertEqual(insert[2][2], 40)          # priority after the current max
-        self.assertEqual(insert[2][8], 5)           # category_id
-        self.assertEqual(insert[2][10], 2)          # hit_count = rows resolved
+        self.assertEqual(insert[2][3], 40)          # priority after the current max
+        self.assertEqual(insert[2][9], 5)           # category_id
+        self.assertEqual(insert[2][11], 2)          # hit_count = rows resolved
         link = [c for c in fake.calls if "category_rule_id = %s" in c[1]][0]
         self.assertEqual(link[2], (77, [1, 2]))
 
     def test_resolve_rule_keeps_the_amount_bounds(self):
         def handler(sql, params, one):
-            if "FROM transactions WHERE user_id" in sql:
+            if "FROM transactions WHERE profile_id" in sql:
                 return [{"id": 1}]
             if "FROM categories" in sql:
                 return {"id": 5}
@@ -148,7 +149,7 @@ class ReviewTest(unittest.TestCase):
                 {"merchant_key": "ACME", "direction": "out", "name": "Acme"}]
 
         def handler(sql, params, one):
-            if "FROM transactions WHERE user_id" in sql:
+            if "FROM transactions WHERE profile_id" in sql:
                 return [{"id": 1}, {"id": 2}]
             if "FROM categories" in sql:
                 return {"id": 3}
@@ -157,8 +158,8 @@ class ReviewTest(unittest.TestCase):
             return None
         with patch_db(FakeDB(handler)), mock.patch.object(categorizer, "learn") as learn:
             self.client.post("/api/review/resolve", json={"ids": [1, 2], "category_id": 3, "mark_transfer": True})
-        self.assertEqual(learn.call_args_list, [mock.call(1, "ACME", 3, "in", display_name="Acme", is_transfer=True),
-                                                mock.call(1, "ACME", 3, "out", display_name="Acme", is_transfer=True)])
+        self.assertEqual(learn.call_args_list, [mock.call(Scope(1, 1), "ACME", 3, "in", display_name="Acme", is_transfer=True),
+                                                mock.call(Scope(1, 1), "ACME", 3, "out", display_name="Acme", is_transfer=True)])
 
     def test_suggest_without_ai_is_502(self):
         import openrouter

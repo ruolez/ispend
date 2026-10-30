@@ -11,6 +11,7 @@ import dedupe
 import merchant
 from importer import sniff
 from importer.models import Mapping
+from scope import Scope
 from util import record_events
 
 log = logging.getLogger(__name__)
@@ -256,11 +257,15 @@ def backfill_layouts():
         log.warning("layout backfill failed", exc_info=True)
 
 
-def _categorize_rows(user_id, account_id, staged):
+def _statement_scope(st):
+    return Scope(st["user_id"], st["profile_id"])
+
+
+def _categorize_rows(scope, account_id, staged):
     """Fill predicted category ids at preview time; never fatal."""
     try:
         import categorizer
-        ctx = categorizer.load_context(user_id)
+        ctx = categorizer.load_context(scope)
     except Exception:
         log.info("categorizer unavailable at preview", exc_info=True)
         return
@@ -304,12 +309,12 @@ def _build_staged(rows, account_id, phrases=None):
 
 
 def _stage(st, result, ocr_rel):
-    uid, account_id, sid = st["user_id"], st["account_id"], st["id"]
+    account_id, sid = st["account_id"], st["id"]
     phrases = merchant.frequent_phrases([r.description for r in result.rows])
     staged = _build_staged(result.rows, account_id, phrases)
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
-    _categorize_rows(uid, account_id, staged)  # rules, memory and hints do not need an account
+    _categorize_rows(_statement_scope(st), account_id, staged)  # rules, memory and hints do not need an account
     values = []
     for s in staged:
         r = s["row"]
@@ -439,7 +444,7 @@ def recompute_dupes(statement_id, account_id):
     dedupe.assign_occurrences(staged)
     existing = dedupe.find_existing(account_id, [(s["fingerprint"], s["occurrence"]) for s in staged if s["fingerprint"]]) \
         if account_id else {}
-    _categorize_rows(st["user_id"], account_id, staged)
+    _categorize_rows(_statement_scope(st), account_id, staged)
     for s_ in staged:
         if s_["id"] in manual:  # a category chosen by hand in the preview survives re-detection
             s_["category_id"], s_["category_source"], s_["category_rule_id"] = manual[s_["id"]], "manual", None
@@ -522,7 +527,7 @@ def _commit_locked(st, account):
     ctx = None
     try:
         import categorizer
-        ctx = categorizer.load_context(uid)
+        ctx = categorizer.load_context(_statement_scope(st))
     except Exception:
         log.warning("categorizer unavailable during commit", exc_info=True)
         categorizer = None
@@ -629,7 +634,7 @@ def _commit_locked(st, account):
             db.execute("UPDATE statements SET stats = %s WHERE id = %s", (json.dumps(stats, default=str), sid))
     for (key, way), cid in manual_learn.items():
         try:
-            categorizer.learn(uid, key, cid, way)
+            categorizer.learn(_statement_scope(st), key, cid, way)
         except Exception:
             log.debug("learn failed for %s", key, exc_info=True)
     result["layout_saved"] = _remember_layout(st, stats, header, account_id)

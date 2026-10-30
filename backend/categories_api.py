@@ -19,24 +19,24 @@ def slugify(name, parent_slug=None):
     return f"{parent_slug}.{base}" if parent_slug else base
 
 
-def _unique_slug(user_id, slug):
+def _unique_slug(profile_id, slug):
     candidate, n = slug, 2
-    while db.query("SELECT 1 FROM categories WHERE user_id = %s AND slug = %s", (user_id, candidate), one=True):
+    while db.query("SELECT 1 FROM categories WHERE profile_id = %s AND slug = %s", (profile_id, candidate), one=True):
         candidate = f"{slug}_{n}"
         n += 1
     return candidate
 
 
-def load_tree(user_id, with_counts=True):
+def load_tree(profile_id, with_counts=True):
     rows = db.query(
         """SELECT c.id, c.parent_id, c.name, c.slug, c.kind, c.color, c.icon, c.is_system, c.sort_order,
                   COALESCE(t.n, 0) AS txn_count
            FROM categories c
-           LEFT JOIN (SELECT category_id, COUNT(*) AS n FROM transactions WHERE user_id = %s GROUP BY category_id) t
+           LEFT JOIN (SELECT category_id, COUNT(*) AS n FROM transactions WHERE profile_id = %s GROUP BY category_id) t
              ON t.category_id = c.id
-           WHERE c.user_id = %s
+           WHERE c.profile_id = %s
            ORDER BY c.sort_order, c.name""",
-        (user_id, user_id),
+        (profile_id, profile_id),
     )
     by_id = {r["id"]: {**r, "children": []} for r in rows}
     roots = []
@@ -54,11 +54,11 @@ def list_categories():
     if request.args.get("flat") == "1":
         rows = db.query(
             """SELECT id, parent_id, name, slug, kind, color, icon, is_system, sort_order
-               FROM categories WHERE user_id = %s ORDER BY sort_order, name""",
-            (session["user_id"],),
+               FROM categories WHERE profile_id = %s ORDER BY sort_order, name""",
+            (current_profile_id(),),
         )
         return jsonify(rows)
-    return jsonify(load_tree(session["user_id"]))
+    return jsonify(load_tree(current_profile_id()))
 
 
 @bp.post("")
@@ -68,11 +68,11 @@ def create_category():
     name = (data.get("name") or "").strip()
     if not name:
         return api_error("Name is required")
-    uid = session["user_id"]
+    pid = current_profile_id()
     parent_id = to_int(data.get("parent_id"), "Parent category")
     parent = None
     if parent_id:
-        parent = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (parent_id, uid), one=True)
+        parent = db.query("SELECT * FROM categories WHERE id = %s AND profile_id = %s", (parent_id, pid), one=True)
         if not parent:
             return api_error("Parent category not found", 404)
         if parent["parent_id"]:
@@ -80,27 +80,27 @@ def create_category():
     kind = parent["kind"] if parent else (data.get("kind") or "expense")
     if kind not in KINDS:
         return api_error("Invalid kind")
-    color = data.get("color") or (parent["color"] if parent else _next_color(uid))
+    color = data.get("color") or (parent["color"] if parent else _next_color(pid))
     if color not in COLOR_SLOTS:
         return api_error("Invalid color slot")
     icon = _clean_icon(data.get("icon") or (parent["icon"] if parent else "tag"))
     if not icon:
         return api_error("Invalid icon name")
     dup = db.query(
-        "SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
-        (uid, parent_id or 0, name), one=True,
+        "SELECT id FROM categories WHERE profile_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
+        (pid, parent_id or 0, name), one=True,
     )
     if dup:
         return api_error("A category with that name already exists here")
-    slug = _unique_slug(uid, slugify(name, parent["slug"] if parent else None))
+    slug = _unique_slug(pid, slugify(name, parent["slug"] if parent else None))
     order = db.query(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s",
-        (uid, parent_id or 0), one=True,
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM categories WHERE profile_id = %s AND COALESCE(parent_id, 0) = %s",
+        (pid, parent_id or 0), one=True,
     )["n"]
     row = db.execute(
-        """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, sort_order)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (uid, parent_id, name, slug, kind, color, icon, order), returning=True,
+        """INSERT INTO categories (user_id, profile_id, parent_id, name, slug, kind, color, icon, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (session["user_id"], pid, parent_id, name, slug, kind, color, icon, order), returning=True,
     )
     audit("category.create", {"id": row["id"], "name": name})
     cat = db.query("SELECT id, parent_id, name, slug, kind, color, icon, is_system, sort_order FROM categories WHERE id = %s",
@@ -137,8 +137,8 @@ def _sync_transfer_flags(category_ids, new_kind, old_kind):
             (category_ids,))
 
 
-def _next_color(uid):
-    used = db.query("SELECT color, COUNT(*) AS n FROM categories WHERE user_id = %s AND parent_id IS NULL GROUP BY color", (uid,))
+def _next_color(pid):
+    used = db.query("SELECT color, COUNT(*) AS n FROM categories WHERE profile_id = %s AND parent_id IS NULL GROUP BY color", (pid,))
     counts = {r["color"]: r["n"] for r in used}
     return min((f"c{i}" for i in range(1, 13)), key=lambda c: (counts.get(c, 0), int(c[1:])))
 
@@ -146,8 +146,8 @@ def _next_color(uid):
 @bp.put("/<int:cat_id>")
 @login_required
 def update_category(cat_id):
-    uid = session["user_id"]
-    cat = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
+    pid = current_profile_id()
+    cat = db.query("SELECT * FROM categories WHERE id = %s AND profile_id = %s", (cat_id, pid), one=True)
     if not cat:
         return api_error("Category not found", 404)
     data = json_body()
@@ -167,7 +167,7 @@ def update_category(cat_id):
     if parent_id == cat_id:
         return api_error("A category cannot be its own parent")
     if parent_id:
-        parent = db.query("SELECT id, parent_id, kind FROM categories WHERE id = %s AND user_id = %s", (parent_id, uid), one=True)
+        parent = db.query("SELECT id, parent_id, kind FROM categories WHERE id = %s AND profile_id = %s", (parent_id, pid), one=True)
         if not parent or parent["parent_id"]:
             return api_error("Invalid parent category")
         has_children = db.query("SELECT 1 FROM categories WHERE parent_id = %s LIMIT 1", (cat_id,), one=True)
@@ -175,9 +175,9 @@ def update_category(cat_id):
             return api_error("A category with subcategories cannot be nested")
         kind = parent["kind"]
     dup = db.query(
-        """SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s
+        """SELECT id FROM categories WHERE profile_id = %s AND COALESCE(parent_id, 0) = %s
            AND lower(name) = lower(%s) AND id <> %s""",
-        (uid, parent_id or 0, name, cat_id), one=True,
+        (pid, parent_id or 0, name, cat_id), one=True,
     )
     if dup:
         return api_error("A category with that name already exists here")
@@ -201,29 +201,29 @@ def update_category(cat_id):
 def reorder():
     data = json_body()
     ids = parse_int_list(data.get("ids"))
-    uid = session["user_id"]
+    pid = current_profile_id()
     with db.transaction():
         for i, cid in enumerate(ids):
-            db.execute("UPDATE categories SET sort_order = %s WHERE id = %s AND user_id = %s", (i, cid, uid), commit=False)
+            db.execute("UPDATE categories SET sort_order = %s WHERE id = %s AND profile_id = %s", (i, cid, pid), commit=False)
     return jsonify({"ok": True})
 
 
 @bp.post("/<int:cat_id>/merge")
 @login_required
 def merge(cat_id):
-    uid = session["user_id"]
+    pid = current_profile_id()
     data = json_body()
     into = to_int(data.get("into"), "Target category")
-    src = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
-    dst = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (into, uid), one=True) if into else None
+    src = db.query("SELECT * FROM categories WHERE id = %s AND profile_id = %s", (cat_id, pid), one=True)
+    dst = db.query("SELECT * FROM categories WHERE id = %s AND profile_id = %s", (into, pid), one=True) if into else None
     if not src or not dst or src["id"] == dst["id"]:
         return api_error("Choose a different category to merge into")
     child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,))]
     ids = [cat_id] + child_ids
     with db.transaction():
-        moved = db.query("SELECT COUNT(*) AS n FROM transactions WHERE category_id = ANY(%s) AND user_id = %s",
-                         (ids, uid), one=True, commit=False)["n"]
-        _move_references(uid, ids, dst["id"])
+        moved = db.query("SELECT COUNT(*) AS n FROM transactions WHERE category_id = ANY(%s) AND profile_id = %s",
+                         (ids, pid), one=True, commit=False)["n"]
+        _move_references(pid, ids, dst["id"])
         db.execute("DELETE FROM categories WHERE id = ANY(%s)", (ids,), commit=False)
     audit("category.merge", {"from": cat_id, "into": dst["id"], "moved": moved})
     return jsonify({"ok": True, "moved": moved})
@@ -233,8 +233,8 @@ def merge(cat_id):
 @login_required
 def delete_category(cat_id):
     """Refuses while anything references the category unless ?reassign_to= names the new home."""
-    uid = session["user_id"]
-    cat = db.query("SELECT * FROM categories WHERE id = %s AND user_id = %s", (cat_id, uid), one=True)
+    pid = current_profile_id()
+    cat = db.query("SELECT * FROM categories WHERE id = %s AND profile_id = %s", (cat_id, pid), one=True)
     if not cat:
         return api_error("Category not found", 404)
     if cat["is_system"] and str(cat["slug"] or "").startswith("transfers"):
@@ -242,12 +242,12 @@ def delete_category(cat_id):
     child_ids = [r["id"] for r in db.query("SELECT id FROM categories WHERE parent_id = %s", (cat_id,))]
     ids = [cat_id] + child_ids
     refs = db.query(
-        """SELECT (SELECT COUNT(*) FROM transactions WHERE user_id = %s AND category_id = ANY(%s)) AS transactions,
-                  (SELECT COUNT(*) FROM rules WHERE user_id = %s AND category_id = ANY(%s)) AS rules,
-                  (SELECT COUNT(*) FROM merchant_memory WHERE user_id = %s AND category_id = ANY(%s)) AS merchants,
+        """SELECT (SELECT COUNT(*) FROM transactions WHERE profile_id = %s AND category_id = ANY(%s)) AS transactions,
+                  (SELECT COUNT(*) FROM rules WHERE profile_id = %s AND category_id = ANY(%s)) AS rules,
+                  (SELECT COUNT(*) FROM merchant_memory WHERE profile_id = %s AND category_id = ANY(%s)) AS merchants,
                   (SELECT COUNT(*) FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
-                   WHERE t.user_id = %s AND s.category_id = ANY(%s)) AS splits""",
-        (uid, ids, uid, ids, uid, ids, uid, ids), one=True,
+                   WHERE t.profile_id = %s AND s.category_id = ANY(%s)) AS splits""",
+        (pid, ids, pid, ids, pid, ids, pid, ids), one=True,
     )
     reassign = to_int(request.args.get("reassign_to"), "reassign_to")
     in_use = refs["transactions"] or refs["rules"] or refs["merchants"] or refs.get("splits")
@@ -258,36 +258,36 @@ def delete_category(cat_id):
         return jsonify({"error": msg, "references": dict(refs)}), 409
     target = None
     if reassign:
-        target = db.query("SELECT id FROM categories WHERE id = %s AND user_id = %s", (reassign, uid), one=True)
+        target = db.query("SELECT id FROM categories WHERE id = %s AND profile_id = %s", (reassign, pid), one=True)
         if not target or target["id"] in ids:
             return api_error("Target category not found", 404)
     with db.transaction():
         if target:
-            _move_references(uid, ids, target["id"])
+            _move_references(pid, ids, target["id"])
         db.execute("DELETE FROM categories WHERE id = ANY(%s)", (ids,), commit=False)
     audit("category.delete", {"id": cat_id, "reassigned_to": target["id"] if target else None, "references": dict(refs)})
     return jsonify({"ok": True, "references": dict(refs)})
 
 
-def _move_references(uid, ids, dst_id):
+def _move_references(pid, ids, dst_id):
     """Point transactions, rules, preview rows and merchant memory at dst_id (memory duplicates merge)."""
-    db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
-    db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s", (dst_id, ids, uid), commit=False)
+    db.execute("UPDATE transactions SET category_id = %s WHERE category_id = ANY(%s) AND profile_id = %s", (dst_id, ids, pid), commit=False)
+    db.execute("UPDATE rules SET category_id = %s WHERE category_id = ANY(%s) AND profile_id = %s", (dst_id, ids, pid), commit=False)
     db.execute("UPDATE import_rows SET category_id = %s WHERE category_id = ANY(%s)", (dst_id, ids), commit=False)
     db.execute("""UPDATE transaction_splits s SET category_id = %s FROM transactions t
-                  WHERE t.id = s.transaction_id AND s.category_id = ANY(%s) AND t.user_id = %s""", (dst_id, ids, uid), commit=False)
-    db.execute("""DELETE FROM merchant_memory m WHERE m.user_id = %s AND m.category_id = ANY(%s)
-                  AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.user_id = m.user_id
+                  WHERE t.id = s.transaction_id AND s.category_id = ANY(%s) AND t.profile_id = %s""", (dst_id, ids, pid), commit=False)
+    db.execute("""DELETE FROM merchant_memory m WHERE m.profile_id = %s AND m.category_id = ANY(%s)
+                  AND EXISTS (SELECT 1 FROM merchant_memory o WHERE o.profile_id = m.profile_id
                               AND o.merchant_key = m.merchant_key AND o.direction = m.direction AND o.category_id = %s
                               AND (o.times_used > m.times_used OR (o.times_used = m.times_used AND o.id < m.id)))""",
-               (uid, ids, dst_id), commit=False)
-    db.execute("""DELETE FROM merchant_memory o WHERE o.user_id = %s AND o.category_id = %s
-                  AND EXISTS (SELECT 1 FROM merchant_memory m WHERE m.user_id = o.user_id
+               (pid, ids, dst_id), commit=False)
+    db.execute("""DELETE FROM merchant_memory o WHERE o.profile_id = %s AND o.category_id = %s
+                  AND EXISTS (SELECT 1 FROM merchant_memory m WHERE m.profile_id = o.profile_id
                               AND m.merchant_key = o.merchant_key AND m.direction = o.direction
                               AND m.category_id = ANY(%s))""",
-               (uid, dst_id, ids), commit=False)
-    db.execute("UPDATE merchant_memory SET category_id = %s WHERE category_id = ANY(%s) AND user_id = %s",
-               (dst_id, ids, uid), commit=False)
+               (pid, dst_id, ids), commit=False)
+    db.execute("UPDATE merchant_memory SET category_id = %s WHERE category_id = ANY(%s) AND profile_id = %s",
+               (dst_id, ids, pid), commit=False)
 
 
 @bp.post("/reset-defaults")
@@ -296,4 +296,4 @@ def reset_defaults():
     with db.transaction() as conn:
         seed_categories.seed_for_profile(conn, session["user_id"], current_profile_id())
     audit("category.reset_defaults")
-    return jsonify(load_tree(session["user_id"]))
+    return jsonify(load_tree(current_profile_id()))

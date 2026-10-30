@@ -213,13 +213,13 @@ RESTORE_STATUSES = ("none", "suggested", "confirmed")
 RESTORE_SOURCES = ("manual", "rule", "merchant", "builtin", "ai")
 
 
-def snapshot(user_id, ids):
-    """Undo-relevant fields of the user's rows among ids, as JSON-safe dicts ordered by id."""
+def snapshot(profile_id, ids):
+    """Undo-relevant fields of the profile's rows among ids, as JSON-safe dicts ordered by id."""
     if not ids:
         return []
     rows = db.query(
-        f"SELECT id, {', '.join(SNAPSHOT_FIELDS)} FROM transactions WHERE user_id = %s AND id = ANY(%s) ORDER BY id",
-        (user_id, list(ids)),
+        f"SELECT id, {', '.join(SNAPSHOT_FIELDS)} FROM transactions WHERE profile_id = %s AND id = ANY(%s) ORDER BY id",
+        (profile_id, list(ids)),
     ) or []
     return rows_json(rows)
 

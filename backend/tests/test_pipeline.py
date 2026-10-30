@@ -123,8 +123,8 @@ class RecoverInterruptedTest(unittest.TestCase):
 class CommitStatementTest(unittest.TestCase):
     def test_refuses_statement_that_is_not_previewed(self):
         router = _stubs.Router([
-            ("SELECT * FROM statements WHERE id", {"id": 7, "user_id": 1, "status": "committed"}),
-            ("SELECT * FROM accounts WHERE id", {"id": 3, "user_id": 1, "currency": "USD"}),
+            ("SELECT * FROM statements WHERE id", {"id": 7, "user_id": 1, "profile_id": 1, "status": "committed"}),
+            ("SELECT * FROM accounts WHERE id", {"id": 3, "user_id": 1, "profile_id": 1, "currency": "USD"}),
         ])
         lock = _stubs.Router(default=0)
         with BOUND(), mock.patch.object(FAKE, "query", side_effect=router), mock.patch.object(FAKE, "execute", side_effect=lock):
@@ -138,7 +138,7 @@ class CommitStatementTest(unittest.TestCase):
         self.assertEqual(params, (3, 7))
 
     def test_requires_an_account_the_user_owns(self):
-        router = _stubs.Router([("SELECT * FROM statements WHERE id", {"id": 7, "user_id": 1, "status": "previewed"})])
+        router = _stubs.Router([("SELECT * FROM statements WHERE id", {"id": 7, "user_id": 1, "profile_id": 1, "status": "previewed"})])
         with BOUND(), mock.patch.object(FAKE, "query", side_effect=router):
             with self.assertRaises(pipeline.ImportError_) as ctx:
                 pipeline.commit_statement(7, 99)
@@ -198,7 +198,7 @@ class LayoutMemoryParseTest(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         with open(os.path.join(self.dir, "u1.csv"), "w") as f:
             f.write(self.CSV)
-        self.st = {"id": 7, "user_id": 1, "stored_path": "u1.csv", "file_kind": "csv", "account_id": None}
+        self.st = {"id": 7, "user_id": 1, "profile_id": 1, "stored_path": "u1.csv", "file_kind": "csv", "account_id": None}
 
     def _parse(self, routes, mapping=None):
         router = _stubs.Router(routes)
@@ -235,7 +235,7 @@ class LayoutMemoryParseTest(unittest.TestCase):
     def _parse_statement_with(self, source):
         result = ParseResult(rows=positive_rows(), mapping=Mapping(), mapping_source=source)
         flip = mock.Mock()
-        with BOUND(), mock.patch.object(FAKE, "query", side_effect=_stubs.Router(default={"id": 7, "user_id": 1})), \
+        with BOUND(), mock.patch.object(FAKE, "query", side_effect=_stubs.Router(default={"id": 7, "user_id": 1, "profile_id": 1})), \
                 mock.patch.object(FAKE, "execute", side_effect=_stubs.Router(default=1)), \
                 mock.patch.object(pipeline, "_parse_file", return_value=(result, None)), \
                 mock.patch.object(pipeline, "_auto_flip", flip), mock.patch.object(pipeline, "_stage"):
@@ -253,7 +253,7 @@ class LayoutMemoryParseTest(unittest.TestCase):
 
 
 class RememberLayoutTest(unittest.TestCase):
-    ST = {"id": 7, "user_id": 1, "file_kind": "csv", "original_filename": "x.csv", "mapping": {"date": 0, "amount": 1},
+    ST = {"id": 7, "user_id": 1, "profile_id": 1, "file_kind": "csv", "original_filename": "x.csv", "mapping": {"date": 0, "amount": 1},
           "bank_profile": None}
     CONFIDENT, SHAKY = 0.9, 0.35
 
@@ -293,7 +293,7 @@ class LearnOnMappingTest(unittest.TestCase):
     HEADER = ["Date", "Amount"]
 
     def _remembered(self, mapping, rows_valid):
-        staged = {"id": 7, "user_id": 1, "account_id": 5, "file_kind": "csv", "mapping": self.USER_MAPPING,
+        staged = {"id": 7, "user_id": 1, "profile_id": 1, "account_id": 5, "file_kind": "csv", "mapping": self.USER_MAPPING,
                   "stats": {"layout_key": "k", "rows_valid": rows_valid, "header": self.HEADER}}
         result = ParseResult(rows=positive_rows(), mapping=Mapping(), mapping_source="user" if mapping else "auto")
         remember = mock.Mock(return_value=True)
@@ -323,7 +323,7 @@ class AccountSwitchTest(unittest.TestCase):
     OWN = {**APPLIED, "flip_sign": True}
 
     def _switch(self, source, hit):
-        st = {"id": 7, "user_id": 1, "status": "previewed", "account_id": None, "mapping": self.APPLIED,
+        st = {"id": 7, "user_id": 1, "profile_id": 1, "status": "previewed", "account_id": None, "mapping": self.APPLIED,
               "stats": {"layout_key": "k", "mapping_source": source}}
         router = _stubs.Router([("FROM import_layouts", hit), ("SELECT * FROM statements", st)])
         parse = mock.Mock()
@@ -356,7 +356,7 @@ class BackfillLayoutsTest(unittest.TestCase):
         FAKE.settings.pop("layout_backfill_done", None)
 
     def _st(self, sid, account_id, **over):
-        return {"id": sid, "user_id": 1, "account_id": account_id, "file_kind": "csv", "stored_path": "a.csv",
+        return {"id": sid, "user_id": 1, "profile_id": 1, "account_id": account_id, "file_kind": "csv", "stored_path": "a.csv",
                 "original_filename": f"s{sid}.csv", "mapping": {**self.MAPPING, "flip_sign": sid == 30},
                 "bank_profile": None, "profile_confidence": 0, "stats": {}, **over}
 

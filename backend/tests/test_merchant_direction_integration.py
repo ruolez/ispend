@@ -27,6 +27,9 @@ class MerchantDirectionTest(_pg.PgTestCase):
         db = cls.db
         cls.uid = db.execute("INSERT INTO users (username, password_hash) VALUES ('mm', 'x') RETURNING id",
                              returning=True)["id"]
+        from scope import Scope
+        cls.scope = Scope(cls.uid, db.execute("INSERT INTO profiles (user_id, name) VALUES (%s, 'Personal') RETURNING id",
+                                              (cls.uid,), returning=True)["id"])
         cls.acct = db.execute("INSERT INTO accounts (user_id, name) VALUES (%s, 'Checking') RETURNING id",
                               (cls.uid,), returning=True)["id"]
 
@@ -97,21 +100,21 @@ class MerchantDirectionTest(_pg.PgTestCase):
 
     def test_learning_one_direction_leaves_the_other_alone(self):
         import categorizer
-        categorizer.learn(self.uid, "ACME PAYROLL", self.income, "in")
-        categorizer.learn(self.uid, "ACME PAYROLL", self.fees, "out")
-        categorizer.learn(self.uid, "ACME PAYROLL", self.income, "in")
+        categorizer.learn(self.scope, "ACME PAYROLL", self.income, "in")
+        categorizer.learn(self.scope, "ACME PAYROLL", self.fees, "out")
+        categorizer.learn(self.scope, "ACME PAYROLL", self.income, "in")
         self.assertEqual(self.memory(), [("ACME PAYROLL", "in", self.income), ("ACME PAYROLL", "out", self.fees)])
-        ctx = categorizer.load_context(self.uid)
+        ctx = categorizer.load_context(self.scope)
         got = [categorizer.categorize({"merchant_key": "ACME PAYROLL", "amount": Decimal(a)}, ctx).category_id
                for a in ("1500.00", "-25.00")]
         self.assertEqual(got, [self.income, self.fees])
 
     def test_a_merchant_remembered_one_way_is_not_applied_the_other_way(self):
         import categorizer
-        categorizer.learn(self.uid, "ACME PAYROLL", self.income, "in")
+        categorizer.learn(self.scope, "ACME PAYROLL", self.income, "in")
         d = categorizer.categorize({"merchant_key": "ACME PAYROLL", "amount": Decimal("-25.00"),
                                     "description_clean": "ACME PAYROLL", "description_raw": "ACME PAYROLL"},
-                                   categorizer.load_context(self.uid))
+                                   categorizer.load_context(self.scope))
         self.assertEqual((d.category_id, d.source), (None, None))
 
 

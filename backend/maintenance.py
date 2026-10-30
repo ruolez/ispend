@@ -1,5 +1,5 @@
 """Data maintenance that follows normalizer upgrades: recompute merchant keys/names for a
-user's transactions and carry rules and merchant memory along so nothing stops matching."""
+profile's transactions and carry rules and merchant memory along so nothing stops matching."""
 import logging
 from collections import Counter, defaultdict
 
@@ -11,12 +11,12 @@ import merchant
 log = logging.getLogger(__name__)
 
 
-def _phrases_by_statement(user_id, rows):
+def _phrases_by_statement(profile_id, rows):
     """The cardholder phrases each statement was imported with (saved at parse time, else recomputed from
     that statement's own rows), so renormalized fingerprints keep matching future re-imports. Manual
     rows (no statement) are normalized without phrases, exactly like POST /api/transactions."""
     saved = {}
-    for st in db.query("SELECT id, stats FROM statements WHERE user_id = %s", (user_id,)) or []:
+    for st in db.query("SELECT id, stats FROM statements WHERE profile_id = %s", (profile_id,)) or []:
         phrases = ((st.get("stats") or {}).get("stripped_phrases"))
         if isinstance(phrases, list):
             saved[st["id"]] = [p for p in phrases if isinstance(p, str)]
@@ -27,14 +27,14 @@ def _phrases_by_statement(user_id, rows):
     return {sid: saved.get(sid, merchant.frequent_phrases(descs)) for sid, descs in by_statement.items()}
 
 
-def renormalize_user(user_id):
+def renormalize_profile(profile_id):
     rows = db.query(
         """SELECT id, account_id, statement_id, txn_date, amount, description_raw, description_clean, merchant_key,
                   merchant_name, fingerprint, occurrence
-           FROM transactions WHERE user_id = %s ORDER BY account_id, txn_date, id""",
-        (user_id,),
+           FROM transactions WHERE profile_id = %s ORDER BY account_id, txn_date, id""",
+        (profile_id,),
     ) or []
-    phrases = _phrases_by_statement(user_id, rows)
+    phrases = _phrases_by_statement(profile_id, rows)
     key_votes = defaultdict(Counter)
     changed = []
     for r in rows:
@@ -52,8 +52,8 @@ def renormalize_user(user_id):
     used = set()
     if changed:
         others = db.query(
-            "SELECT fingerprint, occurrence FROM transactions WHERE user_id = %s AND NOT (id = ANY(%s))",
-            (user_id, touched_ids),
+            "SELECT fingerprint, occurrence FROM transactions WHERE profile_id = %s AND NOT (id = ANY(%s))",
+            (profile_id, touched_ids),
         ) or []
         used = {(o["fingerprint"], o["occurrence"]) for o in others}
     plan = []
@@ -79,8 +79,8 @@ def renormalize_user(user_id):
         # Rules keyed on the old merchant key follow it; a rule that would duplicate an
         # existing rule for the new key is dropped (the earlier one keeps its priority).
         rules = db.query(
-            "SELECT id, pattern, category_id FROM rules WHERE user_id = %s AND match_field = 'merchant_key' "
-            "AND match_type = 'equals' ORDER BY priority, id", (user_id,), commit=False) or []
+            "SELECT id, pattern, category_id FROM rules WHERE profile_id = %s AND match_field = 'merchant_key' "
+            "AND match_type = 'equals' ORDER BY priority, id", (profile_id,), commit=False) or []
         seen = {r["pattern"] for r in rules if r["pattern"] not in key_map}
         for r in rules:
             new = key_map.get(r["pattern"])
@@ -97,8 +97,8 @@ def renormalize_user(user_id):
             rules_updated += 1
         memory = db.query(
             """SELECT id, merchant_key, direction, category_id, times_used FROM merchant_memory
-               WHERE user_id = %s ORDER BY times_used DESC, id""",
-            (user_id,), commit=False) or []
+               WHERE profile_id = %s ORDER BY times_used DESC, id""",
+            (profile_id,), commit=False) or []
         have = {(m["merchant_key"], m["direction"]): m for m in memory if m["merchant_key"] not in key_map}
         for m in memory:
             new = key_map.get(m["merchant_key"])
@@ -125,16 +125,16 @@ def renormalize_user(user_id):
     }
 
 
-def learn_from_history(user_id):
+def learn_from_history(scope):
     """Mine confirmed categorizations into merchant memory: for every merchant and direction the
-    user has categorized, the category they used most often (latest wins ties) is remembered."""
+    profile has categorized, the category they used most often (latest wins ties) is remembered."""
     rows = db.query(
         f"""SELECT merchant_key, {categorizer.direction_sql()} AS direction, category_id, COUNT(*) AS n,
                    MAX(updated_at) AS last_at, BOOL_OR(is_transfer) AS is_transfer
             FROM transactions
-            WHERE user_id = %s AND category_id IS NOT NULL AND category_status = 'confirmed' AND merchant_key <> ''
+            WHERE profile_id = %s AND category_id IS NOT NULL AND category_status = 'confirmed' AND merchant_key <> ''
             GROUP BY 1, 2, 3""",
-        (user_id,),
+        (scope.pid,),
     ) or []
     best = {}
     for r in rows:
@@ -146,13 +146,13 @@ def learn_from_history(user_id):
         for (key, direction), r in best.items():
             existing = db.query(
                 """SELECT id, category_id, times_used FROM merchant_memory
-                   WHERE user_id = %s AND merchant_key = %s AND direction = %s""",
-                (user_id, key, direction), one=True, commit=False)
+                   WHERE profile_id = %s AND merchant_key = %s AND direction = %s""",
+                (scope.pid, key, direction), one=True, commit=False)
             if existing is None:
                 db.execute(
-                    """INSERT INTO merchant_memory (user_id, merchant_key, direction, category_id, is_transfer, times_used)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (user_id, key, direction, r["category_id"], bool(r["is_transfer"]), int(r["n"])), commit=False)
+                    """INSERT INTO merchant_memory (user_id, profile_id, merchant_key, direction, category_id, is_transfer, times_used)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (scope.uid, scope.pid, key, direction, r["category_id"], bool(r["is_transfer"]), int(r["n"])), commit=False)
                 added += 1
             elif existing["times_used"] < r["n"]:
                 db.execute("UPDATE merchant_memory SET times_used = %s WHERE id = %s", (int(r["n"]), existing["id"]), commit=False)

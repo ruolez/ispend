@@ -89,7 +89,7 @@ class CommitStateTest(unittest.TestCase):
         FAKE.execute_results.clear()
 
     def test_commit_refuses_when_not_previewed(self):
-        FAKE.query_results.append({"id": 5, "status": "committed", "user_id": 1})
+        FAKE.query_results.append({"id": 5, "status": "committed", "user_id": 1, "profile_id": 1})
         FAKE.query_results.append({"id": 3, "user_id": 1, "currency": "USD"})
         FAKE.execute_results.append(0)  # lock UPDATE affected no rows
         with self.assertRaises(pipeline.ImportError_) as ctx:
@@ -97,7 +97,7 @@ class CommitStateTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status, 409)
 
     def test_commit_requires_account(self):
-        FAKE.query_results.append({"id": 5, "status": "previewed", "user_id": 1})
+        FAKE.query_results.append({"id": 5, "status": "previewed", "user_id": 1, "profile_id": 1})
         FAKE.query_results.append(None)
         with self.assertRaises(pipeline.ImportError_) as ctx:
             importer.commit_statement(5, 99)
@@ -154,7 +154,7 @@ class SuggestAccountTest(unittest.TestCase):
         from unittest import mock
 
         import statements_api as sapi
-        st = {"user_id": 1, "original_filename": "export.csv", "bank_profile": "chase", "stats": stats}
+        st = {"user_id": 1, "profile_id": 1, "original_filename": "export.csv", "bank_profile": "chase", "stats": stats}
         with mock.patch.object(sapi.db, "query", return_value=list(self.ACCOUNTS)):
             return sapi._suggest_account(st)
 
