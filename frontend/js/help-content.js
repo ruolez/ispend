@@ -34,6 +34,15 @@ const HELP_FAQ = [
   { id: 'splits', topic: 'organize', q: 'Can one transaction count toward several categories?',
     a: 'Yes. Choose <b>Split…</b> from a transaction’s menu and divide the amount across categories. Reports and budgets count each part separately. Tags label transactions across categories without changing them.',
     k: 'split divide several categories tag label' },
+  { id: 'profiles', topic: 'organize', q: 'Can I keep my business money separate from my personal money?',
+    a: 'Yes. Create a profile for each set of books on <a href="/settings.html#profiles">Settings → Profiles</a>, for example Personal and Business. Each profile has its own accounts, categories, rules, budgets and reports, and nothing is shared between them. A business profile starts with business categories. Switch with the profile button under the logo, or from the More tab on a phone.',
+    k: 'profile profiles business personal separate books company side hustle switch household' },
+  { id: 'move-account', topic: 'organize', q: 'I imported a business account into my personal profile. How do I move it?',
+    a: 'On <a href="/settings.html#accounts">Settings → Accounts</a>, choose <b>Move to profile…</b> from the account’s menu. Its transactions, statements, account rules and file layouts go with it, filed under the other profile’s categories, and any that are missing are created there. A preview shows what will happen first. A transfer between a moved account and one that stays is unlinked, so each side is counted in its own profile.',
+    k: 'move account profile business personal wrong transfer' },
+  { id: 'owner-draw', topic: 'organize', q: 'How do I record paying myself from the business?',
+    a: 'Money moving between two profiles appears in each one: money out in the business, money in at home. File the business side under <b>Owner Draw / Contribution</b>, a transfer category, so it is not counted as a business expense.',
+    k: 'owner draw pay myself salary contribution between profiles business personal transfer' },
   { id: 'budgets', topic: 'analyze', q: 'How do budgets work?',
     a: 'Set a monthly limit per category, or one limit for all spending, on <a href="/budgets.html">Budgets</a>. Each shows how fast you are spending against the month. <b>Copy last month</b> carries the limits forward.',
     k: 'budget limit monthly pace copy last month overall' },
@@ -62,6 +71,7 @@ const HELP_FAQ = [
 
 /* Newest first. Keep each line to what a customer notices. */
 const HELP_RELEASES = [
+  { date: '2026-10-30', title: 'Personal and business profiles', body: 'Keep separate sets of books, each with its own accounts, categories, rules, budgets and reports, and move accounts between them.' },
   { date: '2026-09-29', title: 'Help and problem reports', body: 'Answers to common questions and a way to report a problem, with screenshots, right inside iSpend.' },
   { date: '2026-09-27', title: 'Your data, your call', body: 'Download a full copy of your data, or delete your account, from Settings.' },
   { date: '2026-09-25', title: 'Built for phones', body: 'New phone navigation, bottom sheets, swipe actions on transactions, and Review and Import on the go.' },

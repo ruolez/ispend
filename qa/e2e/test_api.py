@@ -2439,3 +2439,104 @@ class TestRobustness:
         assert r.status_code != 500, r.text
         if r.status_code == 201:
             u1.delete(f"/api/statements/{r.json()['id']}")
+
+
+# ======================================================================================
+# Profiles: separate sets of books for one person
+# ======================================================================================
+
+@pytest.fixture(scope="module")
+def pro(admin):
+    """qa_prof: a person with Personal (from signup) and a Business profile, a little in each."""
+    from conftest import _ensure_user, _purge_user
+    uid = _ensure_user(admin, "qa_prof", "qa-prof-pass")
+    s = api_login("qa_prof", "qa-prof-pass")
+    me = s.get("/api/auth/me").json()
+    personal = me["profile"]["id"]
+    r = s.post("/api/profiles", json={"name": "QA Studio", "kind": "business", "color": "c4"})
+    assert r.status_code == 201, r.text
+    studio = r.json()["id"]
+    home_acct = create_account(s, "QA Home Checking")
+    home_txn = add_txn(s, home_acct, "2026-09-02", "-12.00", "QA HOME GROCER")
+    assert s.post("/api/auth/me/profile", json={"id": studio}).status_code == 200
+    biz_acct = create_account(s, "QA Biz Checking")
+    biz_txn = add_txn(s, biz_acct, "2026-09-03", "-99.00", "QA BIZ SOFTWARE")
+    biz_rule = s.post("/api/rules", json={"match_type": "contains", "pattern": "QA BIZ",
+                                          "category_id": cat_by_slug(s, "subscriptions.software")["id"]}).json()["id"]
+    assert s.post("/api/auth/me/profile", json={"id": personal}).status_code == 200
+    yield {"s": s, "personal": personal, "studio": studio, "home_acct": home_acct, "home_txn": home_txn["id"],
+           "biz_acct": biz_acct, "biz_txn": biz_txn["id"], "biz_rule": biz_rule}
+    if os.environ.get("QA_KEEP_USERS") != "1":
+        _purge_user(admin, uid, "qa_prof", required=False)
+
+
+class TestProfiles:
+    def _use(self, pro, which):
+        assert pro["s"].post("/api/auth/me/profile", json={"id": pro[which]}).status_code == 200
+
+    def test_me_lists_both_profiles_and_the_one_in_use(self, pro):
+        me = pro["s"].get("/api/auth/me").json()
+        assert [p["name"] for p in me["profiles"]] == ["Personal", "QA Studio"]
+        assert me["profile"]["id"] == pro["personal"]
+
+    def test_each_profile_sees_only_its_own_rows(self, pro):
+        s = pro["s"]
+        self._use(pro, "personal")
+        accounts = {a["name"] for a in s.get("/api/accounts?all=1").json()}
+        assert "QA Home Checking" in accounts and "QA Biz Checking" not in accounts
+        descriptions = {t["description_raw"] for t in list_all(s)[0]}
+        assert "QA HOME GROCER" in descriptions and "QA BIZ SOFTWARE" not in descriptions
+        self._use(pro, "studio")
+        try:
+            assert {a["name"] for a in s.get("/api/accounts?all=1").json()} == {"QA Biz Checking"}
+            slugs = {c["slug"] for c in s.get("/api/categories?flat=1").json()}
+            assert "transfers.owner" in slugs and "groceries" not in slugs, "a business profile has business categories"
+        finally:
+            self._use(pro, "personal")
+
+    @pytest.mark.parametrize("method,path,body", [
+        ("GET", "/api/transactions/{biz_txn}", None),
+        ("PUT", "/api/transactions/{biz_txn}", {"notes": "pwned"}),
+        ("PUT", "/api/accounts/{biz_acct}", {"name": "pwned"}),
+        ("GET", "/api/rules/{biz_rule}", None),
+        ("DELETE", "/api/rules/{biz_rule}", None),
+        ("GET", "/api/transactions?account_id={biz_acct}", None),
+    ])
+    def test_another_profiles_rows_are_out_of_reach(self, pro, method, path, body):
+        self._use(pro, "personal")
+        r = pro["s"].request(method, path.format(**pro), json=body)
+        if path.startswith("/api/transactions?"):
+            assert r.status_code == 200 and r.json()["items"] == []
+        else:
+            assert r.status_code == 404, r.text
+
+    def test_a_tab_left_on_the_other_profile_is_told_to_reload(self, pro):
+        self._use(pro, "personal")
+        r = pro["s"].get("/api/transactions", headers={"X-Profile": str(pro["studio"])})
+        assert (r.status_code, r.json()["code"], r.json()["profile_id"]) == (409, "profile_changed", pro["personal"])
+        assert pro["s"].get("/api/transactions", headers={"X-Profile": str(pro["personal"])}).status_code == 200
+
+    def test_moving_an_account_takes_its_transactions_along(self, pro):
+        s = pro["s"]
+        self._use(pro, "personal")
+        side = create_account(s, "QA Side Card", "credit_card")
+        add_txn(s, side, "2026-09-04", "-30.00", "QA SIDE ADS")
+        preview = s.post(f"/api/profiles/{pro['studio']}/move-preview", json={"account_ids": [side]}).json()
+        assert preview["counts"]["transactions"] == 1 and preview["collisions"] == []
+        r = s.post(f"/api/profiles/{pro['studio']}/move", json={"account_ids": [side]})
+        assert r.status_code == 200, r.text
+        assert side not in {a["id"] for a in s.get("/api/accounts?all=1").json()}
+        self._use(pro, "studio")
+        try:
+            assert side in {a["id"] for a in s.get("/api/accounts?all=1").json()}
+            assert "QA SIDE ADS" in {t["description_raw"] for t in list_all(s, account_id=side)[0]}
+        finally:
+            self._use(pro, "personal")
+
+    def test_deleting_a_profile_needs_its_name_and_never_the_last_one(self, pro):
+        s = pro["s"]
+        extra = s.post("/api/profiles", json={"name": "QA Throwaway"}).json()["id"]
+        assert s.delete(f"/api/profiles/{extra}", json={"confirm": "nope"}).status_code == 400
+        assert s.delete(f"/api/profiles/{extra}", json={"confirm": "QA Throwaway"}).status_code == 200
+        names = [p["name"] for p in s.get("/api/profiles").json()]
+        assert "QA Throwaway" not in names

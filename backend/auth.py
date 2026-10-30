@@ -76,7 +76,7 @@ def _clean_review_skips(value):
 def _clean_onboarding(value):
     if not isinstance(value, dict):
         raise ValueError("onboarding must be an object")
-    return {k: bool(value.get(k)) for k in ("dismissed", "reports_opened") if k in value}
+    return {k: bool(value.get(k)) for k in ("dismissed", "reports_opened", "profiles_tip") if k in value}
 
 
 def _clean_admin_views(value):

@@ -27,6 +27,7 @@ DEFAULT_LANDING = {
         "badge": "",
         "features": [
             "As many statements and accounts as you like",
+            "Separate books for home and business, never mixed",
             "Spreadsheets, CSVs and PDFs, scans included",
             "12 banks with no setup, and any other bank too",
             "Learns how you sort things and does it for you",

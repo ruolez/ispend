@@ -153,7 +153,7 @@ function summaryTab() {
   const step = (done, label, when) => `<li class="${done ? 'is-done' : ''}">${icon(done ? 'check-circle' : 'circle', 'ico-sm')}
     <span class="grow">${esc(label)}</span><span class="text-3">${when ? esc(fmtDateLong(when)) : ''}</span></li>`;
   const pinned = notes.filter((n) => n.pinned);
-  const tiles = [['Accounts', c.accounts], ['Transactions', c.transactions], ['Statements', c.statements],
+  const tiles = [['Profiles', c.profiles], ['Accounts', c.accounts], ['Transactions', c.transactions], ['Statements', c.statements],
     ['Rules', c.rules], ['Categories', c.categories], ['Budgets', c.budgets], ['Tags', c.tags], ['Merchants', c.merchants]];
   return `
     ${pinned.map((n) => `<div class="notice notice-info mb-3">${icon('star')}<div class="grow p360-note-body">${esc(n.body)}</div></div>`).join('')}

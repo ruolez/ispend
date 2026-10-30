@@ -394,7 +394,8 @@ def user_detail(user_id):
     if not row:
         return api_error("User not found", 404)
     counts = db.query("""
-        SELECT (SELECT COUNT(*) FROM accounts WHERE user_id = %(u)s) AS accounts,
+        SELECT (SELECT COUNT(*) FROM profiles WHERE user_id = %(u)s) AS profiles,
+               (SELECT COUNT(*) FROM accounts WHERE user_id = %(u)s) AS accounts,
                (SELECT COUNT(*) FROM transactions WHERE user_id = %(u)s) AS transactions,
                (SELECT COUNT(*) FROM statements WHERE user_id = %(u)s AND status='committed') AS statements,
                (SELECT COUNT(*) FROM categories WHERE user_id = %(u)s) AS categories,

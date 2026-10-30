@@ -2850,3 +2850,64 @@ def test_f12_mobile(browser, qapi):
     F.check(True, "the sheet's Close button closes it")
     c.close()
     F.finish()
+
+
+# ---------------------------------------------------------------------------------------------
+# F17 — profiles: a Business profile, the switcher, a tab left behind, moving an account
+# ---------------------------------------------------------------------------------------------
+def test_f17_profiles(browser, qapi):
+    c = browser.new_context(viewport={"width": 1366, "height": 900}, service_workers="block")
+    p = c.new_page()
+    rec = Recorder(p)
+    F = Soft("F17", p, rec)
+    ui_login(p, QA)
+    personal = p.evaluate("window.currentUser.profile")
+    F.eq(p.locator("#sb-profile .sb-profile-name").inner_text().strip(), personal["name"], "the sidebar names the profile in use")
+    accounts_before = {a["name"] for a in qapi.get("/api/accounts?all=1")}
+
+    # create a Business profile from the switcher
+    p.locator("#sb-profile").click()
+    menu_click(p, "New profile…")
+    p.wait_for_selector("#profile-name", timeout=5000)
+    p.fill("#profile-name", "QA Flows Biz")
+    p.select_option("#profile-kind", "business")
+    p.locator(".modal-foot .btn-primary").click()
+    p.wait_for_selector("#profiles-list tr[data-id]:has-text('QA Flows Biz')", timeout=8000)
+    shot(p, "F17-profiles-tab")
+
+    # a second tab stays on the Personal books while the first switches
+    other = c.new_page()
+    other.goto(f"{BASE}/transactions.html")
+    other.wait_for_function("() => !!window.currentUser", timeout=15000)
+    p.locator("#profiles-list tr:has-text('QA Flows Biz') [data-act=use-profile]").click()
+    p.wait_for_function("() => window.currentUser && window.currentUser.profile.name === 'QA Flows Biz'", timeout=15000)
+    F.eq(p.locator("#sb-profile .sb-profile-name").inner_text().strip(), "QA Flows Biz", "the pill follows the switch")
+    goto(p, "/transactions.html")
+    p.wait_for_selector("#tx-body .empty, #tx-body tr[data-id]", timeout=10000)
+    F.eq(p.locator("#tx-body tr[data-id]").count(), 0, "the new profile starts with no transactions")
+    other.locator(".sidebar .nav-item[data-page='dashboard']").click()
+    other.wait_for_function("() => window.currentUser && window.currentUser.profile.name === 'QA Flows Biz'", timeout=15000)
+    F.check(True, "the tab left on Personal moved to the profile in use when it next asked for data")
+    other.close()
+
+    # move an account from Personal into the business books
+    p.locator("#sb-profile").click()
+    menu_click(p, personal["name"])
+    p.wait_for_function(f"() => window.currentUser && window.currentUser.profile.id === {personal['id']}", timeout=15000)
+    goto(p, "/settings.html#accounts")
+    p.wait_for_selector("#accounts-table tr[data-id]", timeout=10000)
+    moved_name = p.locator("#accounts-table tr[data-id] .fw-500").first.inner_text().strip()
+    p.locator("#accounts-table tr[data-id] [data-act=account-menu]").first.click()
+    menu_click(p, "Move to profile…")
+    p.wait_for_selector("#mv-preview .notice", timeout=10000)
+    preview = p.locator("#mv-preview").inner_text()
+    F.check("move to QA Flows Biz" in preview, f"the preview says where the rows go: {preview!r}")
+    shot(p, "F17-move-preview")
+    p.locator(".modal-foot .btn-primary").click()
+    p.wait_for_selector(".toast:has-text('moved to QA Flows Biz')", timeout=15000)
+    accounts_after = {a["name"] for a in qapi.get("/api/accounts?all=1")}
+    F.eq(accounts_before - accounts_after, {moved_name}, "the moved account left the Personal books")
+    rec_errors = rec.delta(F.snap).get("pageerrors", []) if F.snap is not None else []
+    F.check(not rec_errors, f"no page errors: {rec_errors[:2]}")
+    c.close()
+    F.finish()

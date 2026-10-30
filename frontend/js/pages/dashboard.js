@@ -41,6 +41,7 @@ initNav('dashboard').then(async (me) => {
     if (a.dataset.act === 'reload') load();
     if (a.dataset.act === 'drill-up') { state.drill = null; setQs({ drill: null }); renderDonut(state.data); }
     if (a.dataset.act === 'setup-dismiss') dismissSetup();
+    if (a.dataset.act === 'profiles-tip-dismiss') dismissProfilesTip();
   });
   // Back/forward restored the page as it was left: repaint from the kept copy and refresh.
   window.addEventListener('ispend:resume', () => load());
@@ -115,6 +116,7 @@ function renderDashboard(data, flat, quiet) {
   state.subCounts = new Map(flat.filter((c) => c.parent_id).reduce((m, c) => m.set(c.parent_id, (m.get(c.parent_id) || 0) + 1), new Map()));
   if (state.drill && !(state.subCounts.get(state.drill) > 0)) { state.drill = null; setQs({ drill: null }); }
   renderSetup(data);
+  renderProfilesTip(data);
   const hasAny = data.kpis.txn_count > 0 || data.monthly.some((m) => m.spent || m.income) || data.recent.length > 0;
   $('#dash-body').hidden = !hasAny;
   $('#dash-empty').hidden = hasAny;
@@ -167,6 +169,26 @@ function paintBudgetCard(host, p, ym, cur) {
   const rows = p.overall ? [{ ...p.overall, name: 'All spending', icon: 'target', color: null }, ...p.items.slice(0, 5)] : p.items.slice(0, 6);
   host.innerHTML = `<header class="card-head"><h2>Budgets · <span class="text-3 fw-500">${esc(label)}</span></h2><div class="card-actions"><span class="hint ${tone}">${esc(fmtMoney(t.spent, cur))} of ${esc(fmtMoney(t.budget, cur))}${t.remaining < 0 ? ` · over by ${esc(fmtMoney(-t.remaining, cur))}` : ''}</span><a class="btn btn-ghost btn-xs" href="/budgets.html${toQuery({ month: ym })}">All budgets</a></div></header>
     <div class="card-body bud-mini">${rows.map((it) => `<a class="bud-mini-row is-${it.pace_status}" href="/budgets.html${toQuery({ month: ym })}"><span class="cat-icon" style="--c:${it.color ? catColor(it.color) : 'var(--text-2)'}">${icon(it.icon || 'tag')}</span><span class="bud-mini-name truncate">${esc(it.name)}</span><span class="bud-mini-bar" aria-hidden="true"><span style="width:${Math.min(it.pct, 100).toFixed(1)}%"></span></span><span class="bud-mini-val num">${it.remaining < 0 ? `Over by ${esc(fmtMoney(-it.remaining, cur))}` : `${esc(fmtMoney(it.remaining, cur))} left`}</span></a>`).join('')}</div>`;
+}
+
+/* ---------- profiles, announced once to people who already keep books here ---------- */
+function renderProfilesTip(data) {
+  const host = $('#dash-profiles-tip');
+  const me = state.me || {};
+  const ob = (me.preferences || {}).onboarding || {};
+  const show = (me.profiles || []).length === 1 && !ob.profiles_tip && data && data.setup && data.setup.transactions > 0;
+  host.hidden = !show;
+  if (!show) return;
+  host.innerHTML = `${icon('users')}<div class="grow"><b>New: keep business money separate.</b> Create a Business profile with its own accounts, categories and reports, and move accounts into it. <a href="/settings.html#profiles-new">Create a profile</a></div>
+    <button type="button" class="btn btn-icon btn-ghost btn-xs" data-act="profiles-tip-dismiss" aria-label="Dismiss">${icon('x')}</button>`;
+}
+async function dismissProfilesTip() {
+  $('#dash-profiles-tip').hidden = true;
+  const ob = { ...(((state.me && state.me.preferences) || {}).onboarding || {}), profiles_tip: true };
+  try {
+    const p = await api('/api/auth/me/preferences', { method: 'PUT', body: { onboarding: ob } });
+    state.me.preferences = p; if (window.currentUser) window.currentUser.preferences = p;
+  } catch (err) { toast(err.message, { type: 'error' }); }
 }
 
 /* ---------- first-run checklist ---------- */

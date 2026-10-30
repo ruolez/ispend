@@ -8,6 +8,7 @@ Self-hosted personal finance analyzer. Upload bank and credit-card statements (C
 - **Review queue**: unknown charges grouped by merchant so one decision categorizes dozens of rows, with "always do this" creating a rule.
 - **Duplicate safe**: overlapping statements and re-uploads are detected before anything is written.
 - **Multi-user**: admin-managed accounts, every user sees only their own data.
+- **Profiles**: one person keeps separate sets of books (Personal, Business…), each with its own accounts, categories, rules, budgets and reports; accounts can be moved between them.
 - **Light and dark themes**, keyboard driven, no build step.
 - **A front door**: `/` is a public landing page whose pricing block is driven by the admin console; the app itself lives at `/index.html`.
 
@@ -111,6 +112,13 @@ install.sh          Ubuntu installer / updater
 - **Budgets** live in `budgets` (one row per category and month). `/api/budgets/progress` composes the spending breakdown with pace maths (`backend/budgets.py`); the Budgets page and the dashboard card read it. Parent and child categories cannot both carry a budget for the same month.
 - **Tags** (`tags`, `transaction_tags`) are free labels across categories. Rows carry `tag_ids`; filter with `?tag=1,2` (`&tag_mode=all`) or `?tag=none`; the CSV export has a `Tags` column.
 - **Splits** (`transaction_splits`) divide one row over several categories. The parent keeps its amount and a primary category (the first line); the category breakdowns (`by-category`, `monthly`, `month-over-month`) attribute by line while totals, trends and merchants keep the parent amount. Lines must be at least two, share the transaction's sign and add up to its amount — the API validates and a deferred trigger enforces it. Recategorising, rejecting a suggestion or marking a transfer removes the split.
+
+## Profiles
+
+- Every finance table carries `profile_id` (the books it belongs to) next to `user_id` (the owner). Queries filter on the active profile (`scope.current_profile_id()`); helpers that also need the person (AI settings, the actor recorded on events) take a `scope.Scope(uid, pid)`.
+- Accounts, categories and statements are keyed by `(id, profile_id)`, and the rows that point at them carry their own `profile_id` in the foreign key, so a reference from one profile into another cannot be stored. Those keys are deferrable: `profile_move.py` moves accounts (with transactions, statements, account rules and layouts, remapping categories, tags and merchant memory onto the target's) inside one transaction.
+- The session holds the active profile (`POST /api/auth/me/profile`). Each browser tab names the profile it shows (`X-Profile`, or `?pid=` on download links); a request for a profile another tab switched away from gets `409 profile_changed` and the page reloads in the profile in use.
+- Guards: `backend/tests/test_profile_scoping.py` fails when finance SQL filters on `user_id`, and `backend/tests/test_profiles_integration.py` calls every GET endpoint as one profile with another profile's ids and checks nothing leaks.
 
 ## Installing it as an app
 
