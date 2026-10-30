@@ -31,6 +31,7 @@ class SettingsApiTest(unittest.TestCase):
         c = self.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = uid
+            s["profile_id"] = uid
             s["role"] = role
         with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(settings_api, "db", FAKE), mock.patch.object(openrouter, "db", FAKE):

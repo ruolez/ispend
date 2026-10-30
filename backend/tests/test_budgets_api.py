@@ -36,6 +36,7 @@ class BudgetsApiTest(unittest.TestCase):
         c = self.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
         with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(budgets_api, "db", FAKE):
             return getattr(c, method)(path, data=json.dumps(body) if body is not None else None, content_type="application/json")

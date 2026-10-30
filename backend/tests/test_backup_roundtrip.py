@@ -111,7 +111,7 @@ class BackupRoundTripTest(unittest.TestCase):
     @classmethod
     def _seed(cls):
         db = cls.db
-        import seed_categories
+        import profiles
         uid = db.execute("INSERT INTO users (username, password_hash, role, preferences) "
                          "VALUES ('rt_user', 'hash$abc', 'user', %s) RETURNING id",
                          (json.dumps({"theme": "dark", "saved_views": [{"id": "v1", "name": "Café ☕"}]}),),
@@ -122,7 +122,8 @@ class BackupRoundTripTest(unittest.TestCase):
                             "VALUES ('rt_locked', 'h', 'locked', now(), 'because') RETURNING id",
                             returning=True)["id"]
         cls.uid, cls.admin_id, cls.locked_id = uid, admin_id, locked
-        seed_categories.seed_for_user(db.get_db(), uid)
+        profiles.create(db.get_db(), uid)
+        db.get_db().commit()
 
         # settings: NULL must stay distinct from '', and control characters must survive COPY
         db.execute("INSERT INTO settings (key, value) VALUES ('openrouter_api_key', 'sk-secret')")
@@ -334,6 +335,30 @@ class BackupRoundTripTest(unittest.TestCase):
                                 "VALUES (%s, NULL, 1.00)", (self.t_split,), commit=False)
         self.db.get_db().rollback()
 
+    def test_zy_an_archive_from_before_profiles_restores_into_personal_profiles(self):
+        """Named to sort just before the idempotence test, which restores the real archive again.
+        An archive older than migration 030 has no profiles and no profile_id: every finance row
+        lands in its owner's one Personal profile, which carries the per-book preferences."""
+        from backup import restore
+
+        old = os.path.join(tempfile.mkdtemp(), "pre-profiles.zip")
+        _strip_profiles(self.archive_path, old)
+        restore.restore_archive(old)
+        after = self._dump_all_for(self.db)
+
+        owners = {r["user_id"]: r for r in after["profiles"]}
+        self.assertEqual(sorted(owners), sorted([self.uid, self.locked_id]), "admin accounts own no books")
+        mine = owners[self.uid]
+        self.assertEqual((mine["name"], mine["kind"], mine["preferences"]["saved_views"]),
+                         ("Personal", "personal", [{"id": "v1", "name": "Café ☕"}]))
+        for table in self.tables.TABLE_ORDER:
+            if not after[table] or "profile_id" not in after[table][0]:
+                continue
+            with self.subTest(table=table):
+                self.assertEqual({r["profile_id"] for r in after[table]}, {mine["id"]})
+                self.assertEqual([_without(r, "profile_id") for r in after[table]],
+                                 [_without(r, "profile_id") for r in self.before[table]])
+
     def test_zz_restore_is_idempotent(self):
         """Named to sort last: it re-runs the restore, so it must not precede the others."""
         from backup import restore
@@ -382,6 +407,39 @@ class BackupRoundTripTest(unittest.TestCase):
                 rows = [r for r in rows if r["key"] != "session_epoch"]
             out[t] = rows
         return out
+
+
+def _without(row, column):
+    return {k: v for k, v in row.items() if k != column}
+
+
+def _strip_profiles(src, dst):
+    """Rewrite an archive as one made before migration 030: no profiles table, no profile_id or
+    users.last_profile_id columns, and 030 missing from its migrations."""
+    import hashlib
+    import zipfile
+
+    dropped = {"profile_id", "last_profile_id"}
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        manifest = json.loads(zin.read("manifest.json"))
+        tables = []
+        for entry in manifest["tables"]:
+            member = f"db/{entry['name']}.copy"
+            if entry["name"] == "profiles":
+                continue
+            keep = [i for i, c in enumerate(entry["columns"]) if c not in dropped]
+            lines = zin.read(member).decode().splitlines(keepends=True)
+            data = "".join("\t".join(line.rstrip("\n").split("\t")[i] for i in keep) + "\n" for line in lines).encode()
+            zout.writestr(member, data)
+            tables.append({**entry, "columns": [entry["columns"][i] for i in keep], "bytes": len(data),
+                           "sha256": hashlib.sha256(data).hexdigest()})
+        migrations = [m for m in manifest["app"]["migrations"] if m != "030_profiles.sql"]
+        manifest = {**manifest, "tables": tables,
+                    "app": {**manifest["app"], "migrations": migrations, "migration_head": migrations[-1]}}
+        for name in zin.namelist():
+            if not name.startswith("db/") and name != "manifest.json":
+                zout.writestr(name, zin.read(name))
+        zout.writestr("manifest.json", json.dumps(manifest))
 
 
 if __name__ == "__main__":

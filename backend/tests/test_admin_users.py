@@ -266,7 +266,7 @@ class NotesAndTagsTest(_Api):
 class CreateAndInviteTest(_Api):
     def test_invite_sets_a_random_password_and_emails_a_link(self):
         self.x.routes.insert(0, ("INSERT INTO users", {"id": 12}))
-        with mock.patch("seed_categories.seed_for_user"):
+        with mock.patch("profiles.create"):
             res = self._call("post", "/api/admin/users", {"email": "New@Example.com", "send_invite": True})
         self.assertEqual(res.get_json(), {"id": 12, "invited": True})
         username, email = self.x.sql("INSERT INTO users")[0][1][:2]

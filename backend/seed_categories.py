@@ -1,4 +1,4 @@
-"""Default category taxonomy seeded for every new user.
+"""Default category taxonomy seeded into every new profile.
 
 Each entry: (slug, name, kind, color slot, icon, [children as (slug, name, icon)]).
 Colors are palette slot keys c1..c12 resolved by the frontend per theme.
@@ -80,45 +80,45 @@ DEFAULT_TAXONOMY = [
 ]
 
 
-def seed_for_user(conn, user_id):
-    """Add any default category the user does not have yet. Existing categories are never
-    renamed or recolored, and a user's own category with the same name under the same parent
-    counts as present (so this can never violate the unique name index)."""
+def seed_for_profile(conn, user_id, profile_id, taxonomy=None):
+    """Add any default category the profile does not have yet. Existing categories are never
+    renamed or recolored, and a category of the profile's own with the same name under the same
+    parent counts as present (so this can never violate the unique name index). Does not commit:
+    the caller's transaction decides."""
     with conn.cursor() as cur:
-        for order, (slug, name, kind, color, icon, children) in enumerate(DEFAULT_TAXONOMY):
-            parent_id = _find(cur, user_id, None, slug, name)
+        for order, (slug, name, kind, color, icon, children) in enumerate(taxonomy or DEFAULT_TAXONOMY):
+            parent_id = _find(cur, profile_id, None, slug, name)
             if parent_id is None:
                 cur.execute(
-                    """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
-                       VALUES (%s, NULL, %s, %s, %s, %s, %s, TRUE, %s) RETURNING id""",
-                    (user_id, name, slug, kind, color, icon, order),
+                    """INSERT INTO categories (user_id, profile_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
+                       VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, TRUE, %s) RETURNING id""",
+                    (user_id, profile_id, name, slug, kind, color, icon, order),
                 )
                 parent_id = cur.fetchone()[0]
             for corder, (cslug, cname, cicon) in enumerate(children):
-                if _find(cur, user_id, parent_id, cslug, cname) is not None:
+                if _find(cur, profile_id, parent_id, cslug, cname) is not None:
                     continue
                 cur.execute(
-                    """INSERT INTO categories (user_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)""",
-                    (user_id, parent_id, cname, cslug, kind, color, cicon, corder),
+                    """INSERT INTO categories (user_id, profile_id, parent_id, name, slug, kind, color, icon, is_system, sort_order)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)""",
+                    (user_id, profile_id, parent_id, cname, cslug, kind, color, cicon, corder),
                 )
         cur.execute(
-            """UPDATE users SET preferences = preferences || '{"categories_seeded": true}'::jsonb
+            """UPDATE profiles SET preferences = preferences || '{"categories_seeded": true}'::jsonb
                WHERE id = %s""",
-            (user_id,),
+            (profile_id,),
         )
-    conn.commit()
 
 
-def _find(cur, user_id, parent_id, slug, name):
+def _find(cur, profile_id, parent_id, slug, name):
     """Existing category id by slug, else by (parent, name) so user-made twins are respected."""
-    cur.execute("SELECT id FROM categories WHERE user_id = %s AND slug = %s", (user_id, slug))
+    cur.execute("SELECT id FROM categories WHERE profile_id = %s AND slug = %s", (profile_id, slug))
     row = cur.fetchone()
     if row:
         return row[0]
     cur.execute(
-        "SELECT id FROM categories WHERE user_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
-        (user_id, parent_id or 0, name),
+        "SELECT id FROM categories WHERE profile_id = %s AND COALESCE(parent_id, 0) = %s AND lower(name) = lower(%s)",
+        (profile_id, parent_id or 0, name),
     )
     row = cur.fetchone()
     return row[0] if row else None

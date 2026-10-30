@@ -66,8 +66,9 @@ class DatabaseIntegrationTest(unittest.TestCase):
         cls.ctx.push()
         cls.uid = db.execute("INSERT INTO users (username, password_hash, role) VALUES ('it', 'x', 'user') RETURNING id",
                              returning=True)["id"]
-        import seed_categories
-        seed_categories.seed_for_user(db.get_db(), cls.uid)
+        import profiles
+        profiles.create(db.get_db(), cls.uid)
+        db.get_db().commit()
         cls.card = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Card', 'credit_card', 'USD') RETURNING id",
                               (cls.uid,), returning=True)["id"]
 

@@ -14,7 +14,6 @@ from flask import Flask  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 import auth  # noqa: E402
-import seed_categories  # noqa: E402
 import util  # noqa: E402
 
 HASH = generate_password_hash("correct-horse-battery")
@@ -70,13 +69,13 @@ class SignupTest(_Base):
         _, res = self._call("post", "/api/auth/signup", {"email": "a@b.co", "password": "long-enough-1"})
         self.assertEqual((res.status_code, res.get_json()["code"]), (409, "email_taken"))
 
-    def test_signup_creates_a_trial_seeds_categories_and_signs_in(self):
+    def test_signup_creates_a_trial_a_profile_and_signs_in(self):
         self._enable()
         FAKE.settings["billing_trial_days"] = "21"
         user = {"id": 9, "username": "a@b.co", "email": "a@b.co", "role": "user", "preferences": {}}
         self.x.routes.append(("INSERT INTO users", user))
         self.q.routes.append(("FROM users u LEFT JOIN subscriptions", {**user, "sub_status": "trialing"}))
-        with mock.patch.object(seed_categories, "seed_for_user") as seed:
+        with mock.patch("profiles.create") as seed:
             c, res = self._call("post", "/api/auth/signup", {"email": "A@B.co", "password": "long-enough-1"})
         self.assertEqual(res.status_code, 201)
         # lower-cased at the boundary so the partial unique index and _by_identity agree
@@ -105,7 +104,7 @@ class PendingVerificationTest(_Base):
         FAKE.settings["signup_enabled"] = "1"
         self.x.routes.append(("INSERT INTO users", self.USER))
         self.q.routes.append(("FROM users u LEFT JOIN subscriptions", {**self.USER, "sub_status": "trialing"}))
-        with mock.patch.object(seed_categories, "seed_for_user"):
+        with mock.patch("profiles.create"):
             return self._call("post", "/api/auth/signup", {"email": "a@b.co", "password": "long-enough-1"})
 
     def test_signup_is_pending_by_default_once_email_is_configured(self):

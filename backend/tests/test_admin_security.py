@@ -247,7 +247,7 @@ class AdminFixesTest(_Base):
             with self.subTest(access=access):
                 self.q = _stubs.Router()
                 self.x = _stubs.Router([("INSERT INTO users", {"id": 12})], default=1)
-                with mock.patch("seed_categories.seed_for_user"):
+                with mock.patch("profiles.create"):
                     res = self._send(self._client(), "post", "/api/admin/users",
                                      {"username": "new", "password": "a-long-enough-password", "access": access})
                 self.assertEqual(res.status_code, 201)

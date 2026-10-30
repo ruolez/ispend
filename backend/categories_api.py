@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request, session
 import db
 import seed_categories
 from auth import login_required
+from scope import current_profile_id
 from util import api_error, audit, json_body, parse_int_list, to_int
 
 bp = Blueprint("categories", __name__, url_prefix="/api/categories")
@@ -292,6 +293,7 @@ def _move_references(uid, ids, dst_id):
 @bp.post("/reset-defaults")
 @login_required
 def reset_defaults():
-    seed_categories.seed_for_user(db.get_db(), session["user_id"])
+    with db.transaction() as conn:
+        seed_categories.seed_for_profile(conn, session["user_id"], current_profile_id())
     audit("category.reset_defaults")
     return jsonify(load_tree(session["user_id"]))

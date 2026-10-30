@@ -135,9 +135,15 @@ def refresh_session_user():
                   (SELECT value FROM settings WHERE key = 'session_epoch') AS global_epoch,
                   s.status AS sub_status, s.plan, s.price_id, s.stripe_customer_id,
                   s.stripe_subscription_id, s.trial_end, s.current_period_end,
-                  s.cancel_at_period_end, s.lapsed_at, s.grace_until, s.comped_until, s.synced_at
+                  s.cancel_at_period_end, s.lapsed_at, s.grace_until, s.comped_until, s.synced_at,
+                  ap.id AS profile_id
              FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
-            WHERE u.id = %s""", (uid,), one=True)
+             LEFT JOIN LATERAL (
+                  SELECT p.id FROM profiles p WHERE p.user_id = u.id
+                   ORDER BY p.id IS NOT DISTINCT FROM %s DESC, p.id IS NOT DISTINCT FROM u.last_profile_id DESC,
+                            p.sort_order, p.id
+                   LIMIT 1) ap ON TRUE
+            WHERE u.id = %s""", (session.get("profile_id"), uid), one=True)
     if not user_state.can_sign_in(row):
         session.clear()
         return
@@ -157,9 +163,21 @@ def refresh_session_user():
         return
     g.user_row = row
     g.entitlement = entitlement.evaluate(row)
+    _resolve_profile(row)
     _mark_seen(row)
     if session.get("role") != row["role"]:
         session["role"] = row["role"]
+
+
+def _resolve_profile(row):
+    """The books this request works in: the session's choice when it is still one of the user's
+    profiles, else the one used last, else the first. Admin accounts own no finance data."""
+    pid = row.get("profile_id")
+    if row.get("role") != "user" or pid is None:
+        return
+    g.profile_id = pid
+    if session.get("profile_id") != pid:
+        session["profile_id"] = pid
 
 
 SEEN_EVERY = timedelta(minutes=5)
@@ -607,7 +625,7 @@ def public_config():
 @bp.post("/signup")
 def signup():
     import mailer
-    import seed_categories
+    import profiles
 
     if not signup_enabled():
         return jsonify({"error": "Sign-ups are closed on this server.",
@@ -635,7 +653,7 @@ def signup():
             """INSERT INTO subscriptions (user_id, status, trial_end)
                VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
             (user["id"], trial), commit=False)
-        seed_categories.seed_for_user(db.get_db(), user["id"])
+        profiles.create(db.get_db(), user["id"])
         _store_attribution(user["id"], data.get("attribution"))
     import ledger
     ledger.record_admin(user["id"], "trial_started", {"signup": True, "days": trial})

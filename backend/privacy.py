@@ -36,14 +36,15 @@ EXPORT_DIRNAME = "_exports"
 # table -> SQL returning that person's rows (%(u)s is their id). Order is the order in the zip.
 EXPORTED = {
     "users": "SELECT id, username, email, email_verified_at, role, status, created_at, last_login_at, last_seen_at, preferences FROM users WHERE id = %(u)s",
+    "profiles": "SELECT * FROM profiles WHERE user_id = %(u)s ORDER BY sort_order, id",
     "accounts": "SELECT * FROM accounts WHERE user_id = %(u)s ORDER BY id",
     "categories": "SELECT * FROM categories WHERE user_id = %(u)s ORDER BY id",
     "tags": "SELECT * FROM tags WHERE user_id = %(u)s ORDER BY id",
     "rules": "SELECT * FROM rules WHERE user_id = %(u)s ORDER BY id",
     "budgets": "SELECT * FROM budgets WHERE user_id = %(u)s ORDER BY id",
-    "statements": """SELECT id, account_id, original_filename, file_kind, status, bank_profile, period_start, period_end,
+    "statements": """SELECT id, profile_id, account_id, original_filename, file_kind, status, bank_profile, period_start, period_end,
                             created_at, committed_at, stats FROM statements WHERE user_id = %(u)s ORDER BY id""",
-    "transactions": """SELECT id, account_id, statement_id, txn_date, posted_date, amount, currency, balance, description_raw,
+    "transactions": """SELECT id, profile_id, account_id, statement_id, txn_date, posted_date, amount, currency, balance, description_raw,
                               description_clean, merchant_name, category_id, category_status, category_source, is_transfer,
                               is_excluded, notes, created_at FROM transactions WHERE user_id = %(u)s ORDER BY txn_date, id""",
     "transaction_splits": """SELECT s.* FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
@@ -130,6 +131,7 @@ def _settings(uid):
 README = """This is everything iSpend holds about your account, as of {when}.
 
 - Each .json file is one kind of record (accounts, categories, rules, transactions, ...).
+- profiles.json lists your sets of books (e.g. Personal, Business); records name theirs in profile_id.
 - transactions.csv is the same transactions in a form any spreadsheet opens.
 - statements/ holds the files you uploaded, named by their iSpend statement number.
 - settings.json is your settings; saved keys and passwords are shown as (hidden).
@@ -256,7 +258,7 @@ def _cancel_stripe(uid):
 
 # Deleted by user_id, in an order the foreign keys accept.
 WIPED = ("transactions", "statements", "rules", "budgets", "merchant_memory", "import_layouts", "insights",
-         "recurring_dismissals", "anomaly_dismissals", "tags", "accounts", "categories", "data_exports")
+         "recurring_dismissals", "anomaly_dismissals", "tags", "accounts", "categories", "profiles", "data_exports")
 WIPED_WITH_PARENT = {
     "import_rows": "statements", "transaction_events": "transactions",
     "transaction_tags": "transactions", "transaction_splits": "transactions",

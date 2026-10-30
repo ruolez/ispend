@@ -32,6 +32,7 @@ class CategoriesApiTest(unittest.TestCase):
         c = self.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
         with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
             return getattr(c, method)(path, data=json.dumps(body) if body is not None else None, content_type="application/json")
@@ -97,11 +98,11 @@ class CategoriesApiTest(unittest.TestCase):
         self.assertEqual([p for _s, p in self.x.sql("UPDATE categories SET sort_order")], [(0, 9, 1), (1, 7, 1), (2, 5, 1)])
 
     def test_reset_defaults_seeds_and_returns_tree(self):
-        with mock.patch.object(seed_categories, "seed_for_user") as seed, \
+        with mock.patch.object(seed_categories, "seed_for_profile") as seed, \
                 mock.patch.object(categories_api, "load_tree", return_value=[{"id": 1, "children": []}]):
             res = self._call("post", "/api/categories/reset-defaults")
         self.assertEqual(res.get_json(), [{"id": 1, "children": []}])
-        self.assertEqual(seed.call_args.args, (FAKE, 1))
+        self.assertEqual(seed.call_args.args, (FAKE, 1, 1))
 
     def test_unknown_category_is_404_for_update_and_merge(self):
         self.assertEqual(self._call("put", "/api/categories/55", {"name": "x"}).status_code, 404)
@@ -109,7 +110,7 @@ class CategoriesApiTest(unittest.TestCase):
 
 
 class SeedFindTest(unittest.TestCase):
-    """seed_for_user must skip defaults whose name already exists under the same parent."""
+    """seed_for_profile must skip defaults whose name already exists under the same parent."""
 
     def test_existing_name_counts_as_present(self):
         class Cur:
@@ -147,10 +148,10 @@ class SeedFindTest(unittest.TestCase):
                 self.committed = True
 
         conn = Conn()
-        seed_categories.seed_for_user(conn, 5)
+        seed_categories.seed_for_profile(conn, 5, 50)
         inserted = [s for s in conn.cur.sql if s.startswith("INSERT")]
         names = {ph for ph in inserted}
-        self.assertTrue(conn.committed)
+        self.assertFalse(conn.committed, "the caller's transaction commits")
         self.assertEqual(len(inserted), sum(1 + len(ch) for _s, n, _k, _c, _i, ch in seed_categories.DEFAULT_TAXONOMY) - 1)
         self.assertTrue(all("INSERT INTO categories" in s for s in names))
 
@@ -175,6 +176,7 @@ class CreateInheritsParentKindTest(unittest.TestCase):
         c = self.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
         with mock.patch.object(FAKE, "query", side_effect=self.q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
             return c.post("/api/categories", data=json.dumps(body), content_type="application/json")
@@ -209,6 +211,7 @@ class KindChangeSyncsTransactionsTest(unittest.TestCase):
         c = self.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
         with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=self.x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
             return c.put(f"/api/categories/{cat['id']}", data=json.dumps(body), content_type="application/json")
@@ -239,6 +242,7 @@ class TransferCategoriesAreProtectedTest(unittest.TestCase):
         c = app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
         with mock.patch.object(FAKE, "query", side_effect=q), mock.patch.object(FAKE, "execute", side_effect=x), \
                 mock.patch.object(util, "db", FAKE), mock.patch.object(categories_api, "db", FAKE):
             res = c.delete("/api/categories/2")

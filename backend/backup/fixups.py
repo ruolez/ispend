@@ -86,6 +86,25 @@ def _fix_029(cur):
         cur.execute(f.read().split("-- backfill:", 1)[1].split("\n", 1)[1])
 
 
+def _fix_030(cur):
+    # 030 gave every customer, and every account owning finance rows, a Personal profile. The
+    # restore made one for everybody before loading (restore._synthesize_profiles); drop those an
+    # admin account has no use for.
+    cur.execute("""
+        DELETE FROM profiles p USING users u
+         WHERE u.id = p.user_id AND u.role <> 'user'
+           AND NOT EXISTS (SELECT 1 FROM accounts x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM categories x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM rules x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM statements x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM merchant_memory x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM recurring_dismissals x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM insights x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM budgets x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM tags x WHERE x.profile_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM import_layouts x WHERE x.profile_id = p.id)""")
+
+
 FIXUPS = {
     "002_transfer_kind_trigger.sql": _fix_002,
     "005_transfer_kind_requires_confirmed.sql": _fix_005,
@@ -93,6 +112,7 @@ FIXUPS = {
     "022_billing_ledger.sql": _fix_022,
     "023_activity_and_ops.sql": _fix_023,
     "029_merchant_memory_direction.sql": _fix_029,
+    "030_profiles.sql": _fix_030,
 }
 
 # Schema-only, or data changes that a fresh load reproduces on its own.

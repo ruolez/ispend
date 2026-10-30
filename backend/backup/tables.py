@@ -25,6 +25,7 @@ TABLE_ORDER = [
     "subscriptions",
     "stripe_events",
     "auth_tokens",
+    "profiles",              # every finance table below points at (profile_id, user_id)
     "accounts",
     "categories",            # self-FK parent_id -> two-pass
     "tags",
@@ -61,6 +62,12 @@ TABLE_ORDER = [
 
 # Columns that point at the same table: inserted NULL first, wired up in a second pass.
 SELF_FK = {"categories": "parent_id", "transactions": "transfer_pair_id"}
+
+# Columns a migration added as NOT NULL and filled from data the archive does carry. An older
+# archive lacks them; the restore fills them in as it loads (restore._load_table).
+FILLED_ON_LOAD = {"profile_id"}
+# Tables an older archive lacks and the restore builds from the rows it does have.
+SYNTHESIZED = {"profiles"}
 
 # Ordering key for the COPY, so an archive of unchanged data is byte-identical run to run.
 PK = {

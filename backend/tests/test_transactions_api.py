@@ -178,6 +178,7 @@ class SplitsEndpointTest(unittest.TestCase):
         self.client = self.app.test_client()
         with self.client.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
 
     def _fake(self, row=ROW, cats=({"id": 3, "kind": "expense"}, {"id": 4, "kind": "expense"}), had=()):
         def handler(sql, params, one):
@@ -244,6 +245,7 @@ class ListEndpointTest(unittest.TestCase):
         self.client = self.app.test_client()
         with self.client.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
             s["username"] = "u"
             s["role"] = "user"
 
@@ -440,6 +442,7 @@ class SuggestTest(unittest.TestCase):
         with patch_db(fake), self.app.test_request_context(f"/api/transactions/suggest?q={q}"):
             from flask import session
             session["user_id"] = 1
+            session["profile_id"] = 1
             resp = tapi.suggest()
             body = resp[0] if isinstance(resp, tuple) else resp
             return json.loads(body.get_data()), fake
@@ -472,6 +475,7 @@ class CreateTransactionTest(unittest.TestCase):
         self.client = self.app.test_client()
         with self.client.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
             s["role"] = "user"
 
     def _post(self, body, category_lookup):

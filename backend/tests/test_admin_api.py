@@ -13,7 +13,6 @@ FAKE = _stubs.install()
 from flask import Flask  # noqa: E402
 
 import admin_api  # noqa: E402
-import seed_categories  # noqa: E402
 import util  # noqa: E402
 
 # Every route the blueprint exposes; the admin-only test walks all of them.
@@ -169,9 +168,9 @@ class AdminApiTest(unittest.TestCase):
 
     # ---------- create ----------
 
-    def test_create_user_seeds_categories(self):
+    def test_create_user_gets_a_seeded_profile(self):
         self.x.routes.append(("INSERT INTO users", {"id": 7}))
-        with mock.patch.object(seed_categories, "seed_for_user") as seed:
+        with mock.patch("profiles.create") as seed:
             res = self._call("post", "/api/admin/users", {"username": "eve", "password": "secret1234x", "role": "user"})
         self.assertEqual((res.status_code, res.get_json()), (201, {"id": 7, "invited": False}))
         self.assertEqual(seed.call_args.args, (FAKE, 7))
@@ -180,7 +179,7 @@ class AdminApiTest(unittest.TestCase):
     def test_the_console_only_creates_customers(self):
         """There is one kind of admin and it is never made from here."""
         self.x.routes.append(("INSERT INTO users", {"id": 7}))
-        with mock.patch.object(seed_categories, "seed_for_user"):
+        with mock.patch("profiles.create"):
             self._call("post", "/api/admin/users", {"username": "eve", "password": "secret1234x", "role": "admin"})
         self.assertIn("VALUES (%s, %s, %s, 'user')", self.x.sql("INSERT INTO users")[0][0])
         self.assertEqual(self._call("put", "/api/admin/users/5", {"role": "admin"}).status_code, 405)

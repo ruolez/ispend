@@ -17,7 +17,7 @@ import auth
 import config
 import db
 import entitlement
-import seed_categories
+import profiles
 import user_state
 from auth import MIN_PASSWORD_LEN, admin_required, password_problem, step_up_missing, step_up_required
 from util import (admin_audit_retention_days, api_error, audit, audit_retention_days, csv_response, iso,
@@ -142,7 +142,7 @@ def create_user():
             db.execute("""INSERT INTO subscriptions (user_id, status, trial_end)
                           VALUES (%s, 'trialing', now() + make_interval(days => %s))""",
                        (row["id"], entitlement.trial_days()), commit=False)
-        seed_categories.seed_for_user(db.get_db(), row["id"])
+        profiles.create(db.get_db(), row["id"])
     import ledger
     ledger.record_admin(row["id"], "comped" if access == "comped" else "trial_started",
                         {"created_by_admin": True})

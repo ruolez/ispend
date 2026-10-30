@@ -49,6 +49,7 @@ class ReviewTest(unittest.TestCase):
         self.client = self.app.test_client()
         with self.client.session_transaction() as s:
             s["user_id"] = 1
+            s["profile_id"] = 1
             s["role"] = "user"
 
     def test_merchant_groups_shape(self):

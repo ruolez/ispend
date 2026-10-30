@@ -287,17 +287,19 @@ def reset_admin_password(password, username=None):
 
 
 def _seed_categories(conn):
-    """Every customer gets the default taxonomy once; those who deleted it all keep it empty.
-    Admin accounts own no finance data."""
+    """Every customer profile gets the default taxonomy once; those who deleted it all keep it
+    empty. Admin accounts own no finance data."""
+    import profiles
     import seed_categories
 
+    profiles.ensure_all(conn)
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT u.id FROM users u
-               WHERE u.role = 'user' AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.user_id = u.id)
-                 AND NOT COALESCE((u.preferences->>'categories_seeded')::boolean, FALSE)"""
+            """SELECT p.user_id, p.id FROM profiles p JOIN users u ON u.id = p.user_id
+               WHERE u.role = 'user' AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.profile_id = p.id)
+                 AND NOT COALESCE((p.preferences->>'categories_seeded')::boolean, FALSE)"""
         )
-        user_ids = [r[0] for r in cur.fetchall()]
-    for uid in user_ids:
-        seed_categories.seed_for_user(conn, uid)
+        targets = cur.fetchall()
+    for uid, pid in targets:
+        seed_categories.seed_for_profile(conn, uid, pid)
     conn.commit()

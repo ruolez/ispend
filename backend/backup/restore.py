@@ -91,8 +91,8 @@ def _restore_sequences(cur):
             f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)", (table,))
 
 
-# No seed-category guard here on purpose. seed_categories.seed_for_user already stamps
-# preferences.categories_seeded when it seeds, so a user who deleted their taxonomy is already
+# No seed-category guard here on purpose. seed_categories.seed_for_profile already stamps
+# profiles.preferences.categories_seeded when it seeds, so a user who deleted their taxonomy is already
 # skipped by db._seed_categories. Stamping category-less users during a restore would instead
 # deny the default taxonomy to an account that had simply never been seeded yet, and would make
 # the restored rows differ from the archive.
@@ -108,22 +108,46 @@ def _rotate_session_epoch(cur):
         (secrets.token_urlsafe(16),))
 
 
-def _load_table(cur, arc, table, columns, sha, mode):
+def _load_table(cur, arc, table, columns, sha, mode, fill_profile=False):
     collist = ", ".join(f'"{c}"' for c in columns)
     self_fk = tables.SELF_FK.get(table)
+    two_pass = mode != "replica" and self_fk is not None and self_fk in columns
     with arc.table_reader(table, sha) as reader:
-        if mode == "replica" or self_fk is None or self_fk not in columns:
+        if not (two_pass or fill_profile):
             cur.copy_expert(f"COPY {table} ({collist}) FROM STDIN", reader)
             return
-        # Two-pass: the self-FK cannot point at a row that is not inserted yet, and no FK in
-        # this schema is DEFERRABLE.
-        nulled = ", ".join("NULL" if c == self_fk else f'"{c}"' for c in columns)
+        # Staged: a self-FK cannot point at a row that is not inserted yet, and an archive older
+        # than profiles has no profile_id, which comes from the owner's profile instead.
         cur.execute(f"CREATE TEMP TABLE _stg (LIKE {table}) ON COMMIT DROP")
+        if fill_profile:
+            cur.execute("ALTER TABLE _stg ALTER COLUMN profile_id DROP NOT NULL")
         cur.copy_expert(f"COPY _stg ({collist}) FROM STDIN", reader)
-        cur.execute(f"INSERT INTO {table} ({collist}) SELECT {nulled} FROM _stg ORDER BY id")
-        cur.execute(f'UPDATE {table} t SET "{self_fk}" = s."{self_fk}" FROM _stg s '
-                    f'WHERE s.id = t.id AND s."{self_fk}" IS NOT NULL')
+        names = list(columns)
+        values = ["NULL" if two_pass and c == self_fk else f'"{c}"' for c in columns]
+        if fill_profile:
+            names.append("profile_id")
+            values.append("(SELECT p.id FROM profiles p WHERE p.user_id = _stg.user_id ORDER BY p.sort_order, p.id LIMIT 1) AS profile_id")
+        quoted = ", ".join(f'"{c}"' for c in names)
+        cur.execute(f"INSERT INTO {table} ({quoted}) SELECT {', '.join(values)} FROM _stg ORDER BY {tables.order_by(table)}")
+        if two_pass:
+            cur.execute(f'UPDATE {table} t SET "{self_fk}" = s."{self_fk}" FROM _stg s '
+                        f'WHERE s.id = t.id AND s."{self_fk}" IS NOT NULL')
         cur.execute("DROP TABLE _stg")
+
+
+def _synthesize_profiles(cur):
+    """An archive from before profiles: every account gets one Personal profile carrying its
+    per-book preferences. Accounts left with an unused one are pruned by fixups._fix_030."""
+    cur.execute("""
+        INSERT INTO profiles (user_id, name, kind, color, preferences)
+        SELECT u.id, 'Personal', 'personal', 'c1',
+               jsonb_strip_nulls(jsonb_build_object(
+                 'default_account_id', u.preferences->'default_account_id',
+                 'saved_views', u.preferences->'saved_views',
+                 'review_skips', u.preferences->'review_skips',
+                 'onboarding', u.preferences->'onboarding',
+                 'categories_seeded', u.preferences->'categories_seeded'))
+          FROM users u ORDER BY u.id""")
 
 
 def restore_files(arc, delete_extra=False):
@@ -254,13 +278,19 @@ def restore_archive(path, progress=None, delete_extra_files=False, fast=False):
                     cur.execute("TRUNCATE " + ", ".join(tables.truncate_order()) + " RESTART IDENTITY")
 
                     loaded = []
+                    live = export.live_columns(cur)
                     for i, table in enumerate(tables.TABLE_ORDER):
+                        if table in tables.SYNTHESIZED and table not in plan.columns:
+                            _synthesize_profiles(cur)
+                            continue
                         if table not in plan.columns or not arc.has_table(table):
                             continue
                         if progress:
                             progress.phase("database", 0.05 + 0.5 * (i / len(tables.TABLE_ORDER)),
                                            f"Loading {table}")
-                        _load_table(cur, arc, table, plan.columns[table], shas.get(table), mode)
+                        fill = [c for c in tables.FILLED_ON_LOAD
+                                if c in live.get(table, {}) and c not in plan.columns[table]]
+                        _load_table(cur, arc, table, plan.columns[table], shas.get(table), mode, fill_profile=bool(fill))
                         loaded.append(table)
 
                     _restore_sequences(cur)

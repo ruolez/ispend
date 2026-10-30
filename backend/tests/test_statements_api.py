@@ -43,6 +43,7 @@ class UploadTest(unittest.TestCase):
         with self.app.test_client() as c:
             with c.session_transaction() as s:
                 s["user_id"] = 1
+                s["profile_id"] = 1
             form = {"file": (io.BytesIO(data), filename)}
             if account_id:
                 form["account_id"] = str(account_id)
@@ -62,6 +63,7 @@ class UploadTest(unittest.TestCase):
         with self.app.test_client() as c:
             with c.session_transaction() as s:
                 s["user_id"] = 1
+                s["profile_id"] = 1
             res = c.post("/api/statements", data={"file": (io.BytesIO(b"\x00\x01\x02\xff"), "blob.bin")},
                          content_type="multipart/form-data")
         self.assertEqual((res.status_code, "Unsupported" in res.get_json()["error"]), (400, True))
@@ -70,6 +72,7 @@ class UploadTest(unittest.TestCase):
         with self.app.test_client() as c:
             with c.session_transaction() as s:
                 s["user_id"] = 1
+                s["profile_id"] = 1
             res = c.post("/api/statements", data={}, content_type="multipart/form-data")
         self.assertEqual(res.status_code, 400)
 
@@ -106,6 +109,7 @@ class CommitStateTest(unittest.TestCase):
         with app.test_client() as c:
             with c.session_transaction() as s:
                 s["user_id"] = 7
+                s["profile_id"] = 7
             res = c.get("/api/statements/123")
         self.assertEqual(res.status_code, 404)
         q = [c for c in FAKE.calls if c[0] == "query"][0]

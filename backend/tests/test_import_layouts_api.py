@@ -22,6 +22,7 @@ def client(user_id=1):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = user_id
+        s["profile_id"] = user_id
     return c
 
 

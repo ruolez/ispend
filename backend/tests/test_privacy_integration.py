@@ -24,8 +24,9 @@ class PrivacyTest(_pg.PgTestCase):
         uid = db.execute("INSERT INTO users (username, email, password_hash) VALUES ('pat', 'pat@example.com', 'x') RETURNING id",
                          returning=True)["id"]
         cls.uid = uid
-        import seed_categories
-        seed_categories.seed_for_user(db.get_db(), uid)
+        import profiles
+        profiles.create(db.get_db(), uid)
+        db.get_db().commit()
         acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Joint', 'checking', 'USD') RETURNING id",
                           (uid,), returning=True)["id"]
         folder = os.path.join(config.STATEMENTS_DIR, str(uid))
@@ -105,11 +106,12 @@ class WipeOwnedDataTest(_pg.PgTestCase):
     def test_wipe_removes_the_finance_data_and_keeps_the_account(self):
         import config
         import privacy
-        import seed_categories
+        import profiles
         db = self.db
         uid = db.execute("INSERT INTO users (username, password_hash, role) VALUES ('boss', 'x', 'admin') RETURNING id",
                          returning=True)["id"]
-        seed_categories.seed_for_user(db.get_db(), uid)
+        profiles.create(db.get_db(), uid)
+        db.get_db().commit()
         acct = db.execute("INSERT INTO accounts (user_id, name, account_type, currency) VALUES (%s, 'Mine', 'checking', 'USD') RETURNING id",
                           (uid,), returning=True)["id"]
         cat = db.query("SELECT id FROM categories WHERE user_id = %s AND parent_id IS NOT NULL LIMIT 1", (uid,), one=True)["id"]

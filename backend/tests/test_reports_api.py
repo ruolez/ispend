@@ -89,6 +89,7 @@ class DashboardSetupTest(unittest.TestCase):
                 mock.patch.object(reports_api.openrouter, "configured", return_value=True):
             with self.app.test_request_context("/api/reports/dashboard"):
                 session["user_id"] = 1
+                session["profile_id"] = 1
                 data = json.loads(reports_api.dashboard().get_data())
         self.assertEqual(data["setup"], {"accounts": 1, "statements": 1, "transactions": 3, "needs_review": 3, "rules": 0, "ai_configured": True})
         self.assertEqual(q.call_args.args[1], (1, 1, 1))
@@ -103,6 +104,7 @@ class ByCategoryEndpointTest(unittest.TestCase):
     def _get(self, path):
         with self.app.test_request_context(path):
             session["user_id"] = 1
+            session["profile_id"] = 1
             return reports_api.by_category()
 
     def test_json_shape_with_uncategorized_and_pct(self):
@@ -234,6 +236,7 @@ class IncludeTransfersTest(unittest.TestCase):
                                       ("/api/reports/by-category", True)):
             with app.test_request_context(path), mock.patch.object(DB, "query", return_value=[], create=True) as q:
                 session["user_id"] = 1
+                session["profile_id"] = 1
                 reports_api.by_category()
             sql = " ".join(q.call_args.args[0].split())
             self.assertEqual("NOT t.is_transfer" in sql, expect_excluded, path)
@@ -277,6 +280,7 @@ class FlowTest(unittest.TestCase):
                              ("/api/reports/by-category?flow=income", "t.amount > 0")):
             with app.test_request_context(path), mock.patch.object(DB, "query", return_value=[], create=True) as q:
                 session["user_id"] = 1
+                session["profile_id"] = 1
                 out = reports_api.top_merchants() if "merchants" in path else reports_api.by_category()
             self.assertIn(expect, " ".join(q.call_args_list[0].args[0].split()), path)
             self.assertEqual(json.loads(out.get_data())["flow"], "income" if "flow=income" in path else "spending")

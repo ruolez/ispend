@@ -6,7 +6,7 @@ changed in between and refuse the cases we cannot honour.
 """
 
 from .archive import ArchiveError
-from .tables import EXCLUDED, TABLE_ORDER
+from .tables import EXCLUDED, FILLED_ON_LOAD, SYNTHESIZED, TABLE_ORDER
 
 
 class Plan:
@@ -51,14 +51,14 @@ def check(manifest, live_migrations, live_columns):
         for name, meta in live_columns[table].items():
             if name in archive_cols:
                 continue
-            if not (meta["nullable"] or meta["has_default"]):
+            if not (meta["nullable"] or meta["has_default"] or name in FILLED_ON_LOAD):
                 raise ArchiveError(
                     f"This version requires {table}.{name}, which the archive does not carry "
                     "and cannot be filled in automatically.")
         columns[table] = archive_cols
 
     for table in TABLE_ORDER:
-        if table not in columns:
+        if table not in columns and table not in SYNTHESIZED:
             warnings.append({"kind": "table_absent", "table": table,
                              "detail": f"The archive has no {table}; it will be left empty."})
     if missing:
